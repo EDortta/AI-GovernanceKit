@@ -13,7 +13,10 @@ The project turns repository governance rules into executable workflows that can
 
 ## Initial Status
 
-This repository is being bootstrapped. The current executable scope is a minimal local `doctor` command that validates the governance scaffold.
+Two CLI commands are available:
+
+- **`governancekit doctor`** — validates the governance scaffold (required files, readiness flags, active issue, secret tracking).
+- **`governancekit map`** — generates `docs/codemap.md`: a Markdown index of the project's file tree, entry points, and Python symbol index. AI agents read this file at session start instead of re-scanning the codebase.
 
 ## Companion: AI-Agents Policy Pack
 
@@ -33,17 +36,23 @@ Use both together for governed, auditable agentic work. Either can be used indep
 
 ## Local Usage
 
-Run the current executable directly from the repository:
+Run commands directly from the repository:
 
 ```bash
-python3 -m governancekit doctor
+python3 -m governancekit doctor   # validate governance scaffold
+python3 -m governancekit map      # generate docs/codemap.md
 ```
 
-Or install it in editable mode:
+Or install in editable mode:
 
 ```bash
 python3 -m pip install -e .
 governancekit doctor
+governancekit map
+governancekit map --output path/to/custom.md   # custom output path
+governancekit map --all                         # include private symbols
 ```
 
-The `doctor` command validates required governance files, readiness flags, active issue structure, resume next step, and tracked secret-file paths.
+`doctor` validates required governance files, readiness flags, active issue structure, resume next step, and tracked secret-file paths. It also hints when `docs/codemap.md` is missing or stale.
+
+`map` traverses the project, extracts the Python symbol tree via the standard-library `ast` module, and writes a human- and agent-readable Markdown document.

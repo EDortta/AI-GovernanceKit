@@ -29,18 +29,19 @@ AI GovernanceKit addresses that gap by providing a tool-agnostic runtime layer a
 
 - Policy documents: `AGENTS.md`, limits, role contracts, and workflow docs.
 - Machine-readable policy model: future structured configuration for automation.
-- CLI: future commands for validation, resume, start-work, session-close, and PR/issue checks.
+- CLI: commands for validation, code indexing, resume, start-work, session-close, and PR/issue checks.
 - Runtime orchestrator: future service or library that evaluates gates and coordinates workflow steps.
 - Integrations: future MCP server, IDE extension, GitHub/Jira helpers, and CI hooks.
 
 ## Current Scope
 
-The current scope is repository bootstrap:
+The current scope is repository bootstrap plus two executable CLI commands:
 
 - define product context
 - define operational limits
 - create traceable local issue artifacts
 - prepare resumable workflow files
-- provide a minimal local `doctor` CLI for scaffold validation
+- `governancekit doctor` — validate the governance scaffold (files, readiness flags, active issue, secrets)
+- `governancekit map` — generate `docs/codemap.md`, a persistent Markdown code index (file tree, entry points, Python symbol index) for AI agents to read at session start instead of re-scanning source files
 
 No long-running orchestration service, MCP server, IDE extension, or external issue/PR automation exists yet.
