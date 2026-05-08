@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -59,6 +59,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 1rem;
     }
 
     .nav-logo {
@@ -68,6 +69,7 @@
       display: flex;
       align-items: center;
       gap: 0.5rem;
+      flex-shrink: 0;
     }
 
     .nav-logo span {
@@ -97,9 +99,43 @@
       border-radius: 6px;
       font-weight: 600 !important;
       transition: background 0.15s !important;
+      flex-shrink: 0;
     }
 
     .btn-nav:hover { background: var(--teal-300) !important; color: var(--navy-950) !important; }
+
+    /* ── LANG TABS ───────────────────────── */
+    .lang-tabs {
+      display: flex;
+      gap: 0.25rem;
+      list-style: none;
+      flex-shrink: 0;
+    }
+
+    .lang-tabs button {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--slate-400);
+      font-family: var(--font-body);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      padding: 0.3rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+
+    .lang-tabs button:hover {
+      color: var(--white);
+      border-color: rgba(45, 212, 191, 0.2);
+    }
+
+    .lang-tabs button.active {
+      color: var(--teal-400);
+      border-color: rgba(45, 212, 191, 0.35);
+      background: rgba(45, 212, 191, 0.06);
+    }
 
     /* ── HERO ────────────────────────────── */
     .hero {
@@ -442,16 +478,6 @@
       border-radius: 6px;
     }
 
-    .connector {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.5rem;
-      color: var(--teal-400);
-      grid-column: 1 / -1;
-      display: none;
-    }
-
     /* ── FOOTER ──────────────────────────── */
     footer {
       border-top: 1px solid rgba(45, 212, 191, 0.1);
@@ -509,24 +535,29 @@
       <li><a href="#quickstart">Quick start</a></li>
       <li><a href="#companion">Companion</a></li>
       <li><a href="intro.html">Concepts</a></li>
-      <li><a href="https://github.com/EDortta/AI-GovernanceKit" class="btn-nav">GitHub →</a></li>
     </ul>
+    <ul class="lang-tabs" role="tablist">
+      <li><button id="tab-ptbr" onclick="setLang('ptbr')" aria-selected="false">PT-BR</button></li>
+      <li><button id="tab-es"   onclick="setLang('es')"   aria-selected="false">ES</button></li>
+      <li><button id="tab-en"   onclick="setLang('en')"   aria-selected="false">EN</button></li>
+    </ul>
+    <a href="https://github.com/EDortta/AI-GovernanceKit" class="btn-nav">GitHub →</a>
   </div>
 </nav>
 
 <!-- ── HERO ── -->
 <section class="hero">
   <div class="hero-inner">
-    <div class="badge">Bootstrap phase · v0.1.0</div>
-    <h1>Make AI-assisted work<br /><em>predictable</em></h1>
-    <p>
-      AI GovernanceKit is a local-first runtime orchestration toolkit that turns repository
-      governance rules into executable workflows — usable by CLI tools, IDE agents, MCP servers,
-      and CI jobs.
+    <div class="badge" data-i18n="hero.badge">Bootstrap phase · v0.1.0</div>
+    <h1 data-i18n="hero.h1">Torne o trabalho com IA<br /><em>previsível</em></h1>
+    <p data-i18n="hero.p">
+      AI GovernanceKit é um toolkit de orquestração local que transforma regras de governança
+      de repositório em fluxos de trabalho executáveis — utilizável por CLIs, agentes de IDE,
+      servidores MCP e jobs de CI.
     </p>
     <div class="hero-cta">
-      <a href="#quickstart" class="btn-primary">Get started →</a>
-      <a href="https://github.com/EDortta/AI-GovernanceKit" class="btn-secondary">View on GitHub</a>
+      <a href="#quickstart" class="btn-primary" data-i18n="hero.cta1">Começar →</a>
+      <a href="https://github.com/EDortta/AI-GovernanceKit" class="btn-secondary" data-i18n="hero.cta2">Ver no GitHub</a>
     </div>
   </div>
 </section>
@@ -534,30 +565,30 @@
 <!-- ── PROBLEM ── -->
 <section id="problem">
   <div class="section-inner">
-    <p class="section-label">The problem</p>
-    <h2 class="section-title">Governance rules exist.<br />They just aren't enforced.</h2>
-    <p class="section-sub">
-      Teams write AGENTS.md files, workflow docs, and coding contracts — then watch agents
-      ignore them because there is no runtime to validate and enforce them.
+    <p class="section-label" data-i18n="prob.label">O problema</p>
+    <h2 class="section-title" data-i18n="prob.title">Regras de governança existem.<br />Elas simplesmente não são aplicadas.</h2>
+    <p class="section-sub" data-i18n="prob.sub">
+      Times escrevem arquivos AGENTS.md, docs de fluxo de trabalho e contratos de código —
+      depois assistem agentes ignorá-los porque não existe runtime para validá-los e aplicá-los.
     </p>
     <div class="problem-grid">
       <div class="problem-card">
         <span class="problem-icon">📋</span>
-        <h3>Rules are copied, not enforced</h3>
-        <p>Governance Markdown is duplicated across repositories but no tool checks whether
-        agents actually follow it. Drift is invisible until something breaks.</p>
+        <h3 data-i18n="p1.h">Regras são copiadas, não aplicadas</h3>
+        <p data-i18n="p1.p">O Markdown de governança é duplicado entre repositórios mas nenhuma
+        ferramenta verifica se os agentes realmente o seguem. A deriva é invisível até que algo quebre.</p>
       </div>
       <div class="problem-card">
         <span class="problem-icon">🤖</span>
-        <h3>Agents interpret rules differently</h3>
-        <p>Claude, Codex, Cursor, and IDE assistants each execute the same instructions in
-        different ways. There is no tool-agnostic layer to normalize behavior.</p>
+        <h3 data-i18n="p2.h">Agentes interpretam regras de formas diferentes</h3>
+        <p data-i18n="p2.p">Claude, Codex, Cursor e assistentes de IDE executam as mesmas instruções
+        de maneiras diferentes. Não existe camada agnóstica de ferramenta para normalizar o comportamento.</p>
       </div>
       <div class="problem-card">
         <span class="problem-icon">🔍</span>
-        <h3>No audit trail for AI work</h3>
-        <p>When an agent modifies code, closes an issue, or pushes a branch, there is rarely
-        a record of which context it had, which gates it checked, or what evidence it collected.</p>
+        <h3 data-i18n="p3.h">Nenhuma trilha de auditoria para trabalho com IA</h3>
+        <p data-i18n="p3.p">Quando um agente modifica código, fecha uma issue ou faz push de um branch,
+        raramente existe registro do contexto que ele tinha, quais gates verificou ou qual evidência coletou.</p>
       </div>
     </div>
   </div>
@@ -566,36 +597,36 @@
 <!-- ── SOLUTION ── -->
 <section id="solution">
   <div class="section-inner">
-    <p class="section-label">How it works</p>
-    <h2 class="section-title">A runtime layer around your existing agents</h2>
-    <p class="section-sub">
-      GovernanceKit does not replace your coding agent. It wraps it with a reproducible
-      workflow: restore context, validate gates, run checks, collect evidence, close sessions.
+    <p class="section-label" data-i18n="sol.label">Como funciona</p>
+    <h2 class="section-title" data-i18n="sol.title">Uma camada de runtime ao redor dos seus agentes existentes</h2>
+    <p class="section-sub" data-i18n="sol.sub">
+      GovernanceKit não substitui seu agente de código. Ele o envolve com um fluxo de trabalho
+      reproduzível: restaurar contexto, validar gates, executar verificações, coletar evidências, encerrar sessões.
     </p>
     <div class="solution-grid">
       <div class="solution-card">
-        <p class="step">Layer 1</p>
-        <h3>Policy Pack</h3>
-        <p>Human-readable contracts — <code>AGENTS.md</code>, role guides, limits, and project
-        overview — define the "what and why" for every agent and programmer.</p>
+        <p class="step" data-i18n="s1.step">Camada 1</p>
+        <h3 data-i18n="s1.h">Policy Pack</h3>
+        <p data-i18n="s1.p">Contratos legíveis por humanos — <code>AGENTS.md</code>, guias de papel, limites e
+        visão geral do projeto — definem o "o quê e por quê" para cada agente e programador.</p>
       </div>
       <div class="solution-card">
-        <p class="step">Layer 2</p>
-        <h3>CLI</h3>
-        <p>Commands for <code>doctor</code>, <code>resume</code>, <code>start-work</code>,
-        validation, and <code>session-close</code> that any agent or human can invoke.</p>
+        <p class="step" data-i18n="s2.step">Camada 2</p>
+        <h3 data-i18n="s2.h">CLI</h3>
+        <p data-i18n="s2.p">Comandos para <code>doctor</code>, <code>resume</code>, <code>start-work</code>,
+        validação e <code>session-close</code> que qualquer agente ou humano pode invocar.</p>
       </div>
       <div class="solution-card">
-        <p class="step">Layer 3</p>
-        <h3>Runtime Core</h3>
-        <p>Orchestration logic that loads policy, evaluates gates, and records audit evidence
-        in a reproducible, tool-agnostic way.</p>
+        <p class="step" data-i18n="s3.step">Camada 3</p>
+        <h3 data-i18n="s3.h">Runtime Core</h3>
+        <p data-i18n="s3.p">Lógica de orquestração que carrega políticas, avalia gates e registra evidências
+        de auditoria de forma reproduzível e agnóstica a ferramentas.</p>
       </div>
       <div class="solution-card">
-        <p class="step">Layer 4</p>
-        <h3>Integrations</h3>
-        <p>Optional MCP server, IDE extension, GitHub and Jira helpers, and CI hooks that
-        connect the runtime to your existing toolchain.</p>
+        <p class="step" data-i18n="s4.step">Camada 4</p>
+        <h3 data-i18n="s4.h">Integrações</h3>
+        <p data-i18n="s4.p">Servidor MCP opcional, extensão de IDE, helpers para GitHub e Jira, e hooks de CI
+        que conectam o runtime ao seu toolchain existente.</p>
       </div>
     </div>
   </div>
@@ -606,17 +637,17 @@
   <div class="section-inner">
     <div class="quickstart-layout">
       <div class="quickstart-text">
-        <p class="section-label">Quick start</p>
-        <h2 class="section-title">Up and running in 60 seconds</h2>
-        <p class="section-sub" style="margin-bottom:1rem;">
-          Install the package and run <code>doctor</code> against any repository
-          that follows the <a href="https://github.com/EDortta/AI-Agents">AI-Agents</a> governance scaffold.
+        <p class="section-label" data-i18n="qs.label">Quick start</p>
+        <h2 class="section-title" data-i18n="qs.title">Em funcionamento em 60 segundos</h2>
+        <p class="section-sub" style="margin-bottom:1rem;" data-i18n="qs.sub">
+          Instale o pacote e execute <code>doctor</code> em qualquer repositório
+          que siga o scaffold de governança do <a href="https://github.com/EDortta/AI-Agents">AI-Agents</a>.
         </p>
         <ul class="check-list">
-          <li>Validates AGENTS.md, README, and handoff files</li>
-          <li>Checks readiness flags in software-overview and limits</li>
-          <li>Confirms active issue structure and RESUME next step</li>
-          <li>Detects tracked secret-file paths before they leak</li>
+          <li data-i18n="qs.li1">Valida AGENTS.md, README e arquivos de handoff</li>
+          <li data-i18n="qs.li2">Verifica flags de prontidão em software-overview e limits</li>
+          <li data-i18n="qs.li3">Confirma estrutura de issue ativa e próximo passo do RESUME</li>
+          <li data-i18n="qs.li4">Detecta caminhos de arquivos secretos rastreados antes que vazem</li>
         </ul>
       </div>
       <div>
@@ -625,14 +656,14 @@
             <div class="code-dots"><i></i><i></i><i></i></div>
             <span>terminal</span>
           </div>
-          <pre><span class="comment"># Install from GitHub</span>
+          <pre><span class="comment" data-i18n="qs.c1"># Instale pelo GitHub</span>
 <span class="cmd">pip install git+https://github.com/EDortta/AI-GovernanceKit.git</span>
 
-<span class="comment"># Or clone and install in editable mode</span>
+<span class="comment" data-i18n="qs.c2"># Ou clone e instale em modo editável</span>
 <span class="cmd">git clone https://github.com/EDortta/AI-GovernanceKit.git</span>
 <span class="cmd">pip install -e ./AI-GovernanceKit</span>
 
-<span class="comment"># Validate your governance scaffold</span>
+<span class="comment" data-i18n="qs.c3"># Valide seu scaffold de governança</span>
 <span class="highlight">governancekit doctor</span>
 
 <span class="ok">✓</span> AGENTS.md exists
@@ -654,30 +685,32 @@
 <!-- ── COMPANION ── -->
 <section id="companion">
   <div class="section-inner">
-    <p class="section-label">Companion project</p>
-    <h2 class="section-title">Policy and runtime, together</h2>
-    <p class="section-sub">
-      GovernanceKit is designed to work alongside <a href="https://github.com/EDortta/AI-Agents">AI-Agents</a>, the reusable governance policy pack.
-      Each project has a distinct role — use them independently or together.
+    <p class="section-label" data-i18n="comp.label">Projeto complementar</p>
+    <h2 class="section-title" data-i18n="comp.title">Política e runtime, juntos</h2>
+    <p class="section-sub" data-i18n="comp.sub">
+      GovernanceKit foi projetado para trabalhar junto com
+      <a href="https://github.com/EDortta/AI-Agents">AI-Agents</a>, o policy pack de governança reutilizável.
+      Cada projeto tem um papel distinto — use-os independentemente ou juntos.
     </p>
     <div class="companion-grid">
       <div class="companion-card">
-        <p class="role">Policy pack</p>
+        <p class="role" data-i18n="c1.role">Policy pack</p>
         <h3>AI-Agents</h3>
-        <p>The "what and why" — AGENTS.md templates, role contracts, issue templates, and workflow
-        docs you copy into any repository to define governance rules for agents and programmers.</p>
+        <p data-i18n="c1.p">O "o quê e por quê" — templates AGENTS.md, contratos de papel, templates de issue
+        e docs de fluxo de trabalho que você copia para qualquer repositório para definir regras de governança
+        para agentes e programadores.</p>
         <span class="companion-pill">installs by copying files</span>
         <br /><br />
-        <a href="https://github.com/EDortta/AI-Agents">View AI-Agents →</a>
+        <a href="https://github.com/EDortta/AI-Agents" data-i18n="c1.link">Ver AI-Agents →</a>
       </div>
       <div class="companion-card">
-        <p class="role">Runtime CLI</p>
+        <p class="role" data-i18n="c2.role">Runtime CLI</p>
         <h3>AI-GovernanceKit</h3>
-        <p>The "how" — a Python package that validates the policy scaffold, runs checks,
-        orchestrates session workflows, and records evidence. Tool-agnostic by design.</p>
+        <p data-i18n="c2.p">O "como" — um pacote Python que valida o scaffold de políticas, executa verificações,
+        orquestra fluxos de sessão e registra evidências. Agnóstico a ferramentas por design.</p>
         <span class="companion-pill">pip install git+https://github.com/EDortta/AI-GovernanceKit.git</span>
         <br /><br />
-        <a href="https://github.com/EDortta/AI-GovernanceKit">View AI-GovernanceKit →</a>
+        <a href="https://github.com/EDortta/AI-GovernanceKit" data-i18n="c2.link">Ver AI-GovernanceKit →</a>
       </div>
     </div>
   </div>
@@ -697,6 +730,179 @@
     </ul>
   </div>
 </footer>
+
+<script>
+  var LANGS = ['ptbr', 'es', 'en'];
+
+  var T = {
+    ptbr: {
+      'hero.badge': 'Fase bootstrap · v0.1.0',
+      'hero.h1':    'Torne o trabalho com IA<br /><em>previsível</em>',
+      'hero.p':     'AI GovernanceKit é um toolkit de orquestração local que transforma regras de governança de repositório em fluxos de trabalho executáveis — utilizável por CLIs, agentes de IDE, servidores MCP e jobs de CI.',
+      'hero.cta1':  'Começar →',
+      'hero.cta2':  'Ver no GitHub',
+      'prob.label': 'O problema',
+      'prob.title': 'Regras de governança existem.<br />Elas simplesmente não são aplicadas.',
+      'prob.sub':   'Times escrevem arquivos AGENTS.md, docs de fluxo de trabalho e contratos de código — depois assistem agentes ignorá-los porque não existe runtime para validá-los e aplicá-los.',
+      'p1.h': 'Regras são copiadas, não aplicadas',
+      'p1.p': 'O Markdown de governança é duplicado entre repositórios mas nenhuma ferramenta verifica se os agentes realmente o seguem. A deriva é invisível até que algo quebre.',
+      'p2.h': 'Agentes interpretam regras de formas diferentes',
+      'p2.p': 'Claude, Codex, Cursor e assistentes de IDE executam as mesmas instruções de maneiras diferentes. Não existe camada agnóstica de ferramenta para normalizar o comportamento.',
+      'p3.h': 'Nenhuma trilha de auditoria para trabalho com IA',
+      'p3.p': 'Quando um agente modifica código, fecha uma issue ou faz push de um branch, raramente existe registro do contexto que ele tinha, quais gates verificou ou qual evidência coletou.',
+      'sol.label': 'Como funciona',
+      'sol.title': 'Uma camada de runtime ao redor dos seus agentes existentes',
+      'sol.sub':   'GovernanceKit não substitui seu agente de código. Ele o envolve com um fluxo de trabalho reproduzível: restaurar contexto, validar gates, executar verificações, coletar evidências, encerrar sessões.',
+      's1.step': 'Camada 1', 's1.h': 'Policy Pack',
+      's1.p': 'Contratos legíveis por humanos — <code>AGENTS.md</code>, guias de papel, limites e visão geral do projeto — definem o "o quê e por quê" para cada agente e programador.',
+      's2.step': 'Camada 2', 's2.h': 'CLI',
+      's2.p': 'Comandos para <code>doctor</code>, <code>resume</code>, <code>start-work</code>, validação e <code>session-close</code> que qualquer agente ou humano pode invocar.',
+      's3.step': 'Camada 3', 's3.h': 'Runtime Core',
+      's3.p': 'Lógica de orquestração que carrega políticas, avalia gates e registra evidências de auditoria de forma reproduzível e agnóstica a ferramentas.',
+      's4.step': 'Camada 4', 's4.h': 'Integrações',
+      's4.p': 'Servidor MCP opcional, extensão de IDE, helpers para GitHub e Jira, e hooks de CI que conectam o runtime ao seu toolchain existente.',
+      'qs.label': 'Quick start',
+      'qs.title': 'Em funcionamento em 60 segundos',
+      'qs.sub':   'Instale o pacote e execute <code>doctor</code> em qualquer repositório que siga o scaffold de governança do <a href="https://github.com/EDortta/AI-Agents">AI-Agents</a>.',
+      'qs.li1': 'Valida AGENTS.md, README e arquivos de handoff',
+      'qs.li2': 'Verifica flags de prontidão em software-overview e limits',
+      'qs.li3': 'Confirma estrutura de issue ativa e próximo passo do RESUME',
+      'qs.li4': 'Detecta caminhos de arquivos secretos rastreados antes que vazem',
+      'qs.c1': '# Instale pelo GitHub',
+      'qs.c2': '# Ou clone e instale em modo editável',
+      'qs.c3': '# Valide seu scaffold de governança',
+      'comp.label': 'Projeto complementar',
+      'comp.title': 'Política e runtime, juntos',
+      'comp.sub':   'GovernanceKit foi projetado para trabalhar junto com <a href="https://github.com/EDortta/AI-Agents">AI-Agents</a>, o policy pack de governança reutilizável. Cada projeto tem um papel distinto — use-os independentemente ou juntos.',
+      'c1.role': 'Policy pack',
+      'c1.p':   'O "o quê e por quê" — templates AGENTS.md, contratos de papel, templates de issue e docs de fluxo de trabalho que você copia para qualquer repositório para definir regras de governança para agentes e programadores.',
+      'c1.link': 'Ver AI-Agents →',
+      'c2.role': 'Runtime CLI',
+      'c2.p':   'O "como" — um pacote Python que valida o scaffold de políticas, executa verificações, orquestra fluxos de sessão e registra evidências. Agnóstico a ferramentas por design.',
+      'c2.link': 'Ver AI-GovernanceKit →',
+    },
+    es: {
+      'hero.badge': 'Fase bootstrap · v0.1.0',
+      'hero.h1':    'Haz el trabajo con IA<br /><em>predecible</em>',
+      'hero.p':     'AI GovernanceKit es un toolkit de orquestación local que transforma las reglas de gobernanza del repositorio en flujos de trabajo ejecutables — usable por CLIs, agentes de IDE, servidores MCP y jobs de CI.',
+      'hero.cta1':  'Comenzar →',
+      'hero.cta2':  'Ver en GitHub',
+      'prob.label': 'El problema',
+      'prob.title': 'Las reglas de gobernanza existen.<br />Simplemente no se aplican.',
+      'prob.sub':   'Los equipos escriben archivos AGENTS.md, docs de flujo de trabajo y contratos de código — luego observan cómo los agentes los ignoran porque no hay un runtime que los valide y aplique.',
+      'p1.h': 'Las reglas se copian, no se aplican',
+      'p1.p': 'El Markdown de gobernanza se duplica entre repositorios pero ninguna herramienta verifica si los agentes realmente lo siguen. La deriva es invisible hasta que algo falla.',
+      'p2.h': 'Los agentes interpretan las reglas de manera diferente',
+      'p2.p': 'Claude, Codex, Cursor y asistentes de IDE ejecutan las mismas instrucciones de formas distintas. No existe una capa agnóstica de herramienta para normalizar el comportamiento.',
+      'p3.h': 'Sin rastro de auditoría para el trabajo con IA',
+      'p3.p': 'Cuando un agente modifica código, cierra un issue o hace push de una branch, raramente existe registro del contexto que tenía, qué gates verificó o qué evidencia recopiló.',
+      'sol.label': 'Cómo funciona',
+      'sol.title': 'Una capa de runtime alrededor de tus agentes existentes',
+      'sol.sub':   'GovernanceKit no reemplaza tu agente de código. Lo envuelve con un flujo de trabajo reproducible: restaurar contexto, validar gates, ejecutar verificaciones, recopilar evidencia, cerrar sesiones.',
+      's1.step': 'Capa 1', 's1.h': 'Policy Pack',
+      's1.p': 'Contratos legibles por humanos — <code>AGENTS.md</code>, guías de rol, límites y resumen del proyecto — definen el "qué y por qué" para cada agente y programador.',
+      's2.step': 'Capa 2', 's2.h': 'CLI',
+      's2.p': 'Comandos para <code>doctor</code>, <code>resume</code>, <code>start-work</code>, validación y <code>session-close</code> que cualquier agente o persona puede invocar.',
+      's3.step': 'Capa 3', 's3.h': 'Runtime Core',
+      's3.p': 'Lógica de orquestación que carga políticas, evalúa gates y registra evidencia de auditoría de forma reproducible y agnóstica a herramientas.',
+      's4.step': 'Capa 4', 's4.h': 'Integraciones',
+      's4.p': 'Servidor MCP opcional, extensión de IDE, helpers para GitHub y Jira, y hooks de CI que conectan el runtime a tu toolchain existente.',
+      'qs.label': 'Quick start',
+      'qs.title': 'En marcha en 60 segundos',
+      'qs.sub':   'Instala el paquete y ejecuta <code>doctor</code> en cualquier repositorio que siga el scaffold de gobernanza de <a href="https://github.com/EDortta/AI-Agents">AI-Agents</a>.',
+      'qs.li1': 'Valida AGENTS.md, README y archivos de handoff',
+      'qs.li2': 'Verifica flags de disponibilidad en software-overview y limits',
+      'qs.li3': 'Confirma estructura de issue activa y próximo paso del RESUME',
+      'qs.li4': 'Detecta rutas de archivos secretos rastreados antes de que se filtren',
+      'qs.c1': '# Instala desde GitHub',
+      'qs.c2': '# O clona e instala en modo editable',
+      'qs.c3': '# Valida tu scaffold de gobernanza',
+      'comp.label': 'Proyecto complementario',
+      'comp.title': 'Política y runtime, juntos',
+      'comp.sub':   'GovernanceKit está diseñado para funcionar junto a <a href="https://github.com/EDortta/AI-Agents">AI-Agents</a>, el policy pack de gobernanza reutilizable. Cada proyecto tiene un rol distinto — úsalos de forma independiente o juntos.',
+      'c1.role': 'Policy pack',
+      'c1.p':   'El "qué y por qué" — plantillas AGENTS.md, contratos de rol, plantillas de issue y docs de flujo de trabajo que copias en cualquier repositorio para definir reglas de gobernanza para agentes y programadores.',
+      'c1.link': 'Ver AI-Agents →',
+      'c2.role': 'Runtime CLI',
+      'c2.p':   'El "cómo" — un paquete Python que valida el scaffold de políticas, ejecuta verificaciones, orquesta flujos de sesión y registra evidencias. Agnóstico a herramientas por diseño.',
+      'c2.link': 'Ver AI-GovernanceKit →',
+    },
+    en: {
+      'hero.badge': 'Bootstrap phase · v0.1.0',
+      'hero.h1':    'Make AI-assisted work<br /><em>predictable</em>',
+      'hero.p':     'AI GovernanceKit is a local-first runtime orchestration toolkit that turns repository governance rules into executable workflows — usable by CLI tools, IDE agents, MCP servers, and CI jobs.',
+      'hero.cta1':  'Get started →',
+      'hero.cta2':  'View on GitHub',
+      'prob.label': 'The problem',
+      'prob.title': 'Governance rules exist.<br />They just aren\'t enforced.',
+      'prob.sub':   'Teams write AGENTS.md files, workflow docs, and coding contracts — then watch agents ignore them because there is no runtime to validate and enforce them.',
+      'p1.h': 'Rules are copied, not enforced',
+      'p1.p': 'Governance Markdown is duplicated across repositories but no tool checks whether agents actually follow it. Drift is invisible until something breaks.',
+      'p2.h': 'Agents interpret rules differently',
+      'p2.p': 'Claude, Codex, Cursor, and IDE assistants each execute the same instructions in different ways. There is no tool-agnostic layer to normalize behavior.',
+      'p3.h': 'No audit trail for AI work',
+      'p3.p': 'When an agent modifies code, closes an issue, or pushes a branch, there is rarely a record of which context it had, which gates it checked, or what evidence it collected.',
+      'sol.label': 'How it works',
+      'sol.title': 'A runtime layer around your existing agents',
+      'sol.sub':   'GovernanceKit does not replace your coding agent. It wraps it with a reproducible workflow: restore context, validate gates, run checks, collect evidence, close sessions.',
+      's1.step': 'Layer 1', 's1.h': 'Policy Pack',
+      's1.p': 'Human-readable contracts — <code>AGENTS.md</code>, role guides, limits, and project overview — define the "what and why" for every agent and programmer.',
+      's2.step': 'Layer 2', 's2.h': 'CLI',
+      's2.p': 'Commands for <code>doctor</code>, <code>resume</code>, <code>start-work</code>, validation, and <code>session-close</code> that any agent or human can invoke.',
+      's3.step': 'Layer 3', 's3.h': 'Runtime Core',
+      's3.p': 'Orchestration logic that loads policy, evaluates gates, and records audit evidence in a reproducible, tool-agnostic way.',
+      's4.step': 'Layer 4', 's4.h': 'Integrations',
+      's4.p': 'Optional MCP server, IDE extension, GitHub and Jira helpers, and CI hooks that connect the runtime to your existing toolchain.',
+      'qs.label': 'Quick start',
+      'qs.title': 'Up and running in 60 seconds',
+      'qs.sub':   'Install the package and run <code>doctor</code> against any repository that follows the <a href="https://github.com/EDortta/AI-Agents">AI-Agents</a> governance scaffold.',
+      'qs.li1': 'Validates AGENTS.md, README, and handoff files',
+      'qs.li2': 'Checks readiness flags in software-overview and limits',
+      'qs.li3': 'Confirms active issue structure and RESUME next step',
+      'qs.li4': 'Detects tracked secret-file paths before they leak',
+      'qs.c1': '# Install from GitHub',
+      'qs.c2': '# Or clone and install in editable mode',
+      'qs.c3': '# Validate your governance scaffold',
+      'comp.label': 'Companion project',
+      'comp.title': 'Policy and runtime, together',
+      'comp.sub':   'GovernanceKit is designed to work alongside <a href="https://github.com/EDortta/AI-Agents">AI-Agents</a>, the reusable governance policy pack. Each project has a distinct role — use them independently or together.',
+      'c1.role': 'Policy pack',
+      'c1.p':   'The "what and why" — AGENTS.md templates, role contracts, issue templates, and workflow docs you copy into any repository to define governance rules for agents and programmers.',
+      'c1.link': 'View AI-Agents →',
+      'c2.role': 'Runtime CLI',
+      'c2.p':   'The "how" — a Python package that validates the policy scaffold, runs checks, orchestrates session workflows, and records evidence. Tool-agnostic by design.',
+      'c2.link': 'View AI-GovernanceKit →',
+    }
+  };
+
+  function setLang(lang) {
+    document.querySelectorAll('[data-i18n]').forEach(function(el) {
+      var key = el.getAttribute('data-i18n');
+      if (T[lang] && T[lang][key] !== undefined) {
+        el.innerHTML = T[lang][key];
+      }
+    });
+    LANGS.forEach(function(l) {
+      var tab = document.getElementById('tab-' + l);
+      if (tab) {
+        tab.classList.toggle('active', l === lang);
+        tab.setAttribute('aria-selected', l === lang ? 'true' : 'false');
+      }
+    });
+    document.documentElement.lang = lang === 'ptbr' ? 'pt-BR' : lang === 'es' ? 'es' : 'en';
+    try { localStorage.setItem('gk-lang', lang); } catch(e) {}
+  }
+
+  (function init() {
+    var saved;
+    try { saved = localStorage.getItem('gk-lang'); } catch(e) {}
+    if (saved && LANGS.indexOf(saved) !== -1) { setLang(saved); return; }
+    var nav = (navigator.language || '').toLowerCase();
+    if (nav.indexOf('pt') === 0) { setLang('ptbr'); return; }
+    if (nav.indexOf('es') === 0) { setLang('es'); return; }
+    setLang('ptbr');
+  })();
+</script>
 
 </body>
 </html>
