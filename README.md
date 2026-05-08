@@ -18,6 +18,8 @@ Two CLI commands are available:
 - **`governancekit doctor`** — validates the governance scaffold (required files, readiness flags, active issue, secret tracking).
 - **`governancekit map`** — generates `docs/codemap.md`: a Markdown index of the project's file tree, entry points, and Python symbol index. AI agents read this file at session start instead of re-scanning the codebase.
 
+  **Why it matters:** every time an AI agent starts a fresh session it re-reads source files to orient itself — burning tokens and adding latency with no persistent benefit. A committed `codemap.md` replaces that repeated traversal with a single, cheap document read. The map lives in the repository so it is always available immediately, survives context resets, and is readable by humans too.
+
 ## Companion: AI-Agents Policy Pack
 
 AI-GovernanceKit is designed to work alongside [AI-Agents](https://github.com/EDortta/AI-Agents), the reusable governance policy pack.
