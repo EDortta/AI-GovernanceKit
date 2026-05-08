@@ -206,6 +206,24 @@ class RunMapTests(unittest.TestCase):
             self.assertGreaterEqual(result.file_count, 1)
             self.assertGreaterEqual(result.symbol_count, 1)
 
+    def test_codemap_not_in_own_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._make_project(root)
+            result = run_map(root)
+            content = result.output_path.read_text(encoding="utf-8")
+            self.assertNotIn("codemap.md", content)
+
+    def test_gitignore_excludes_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._make_project(root)
+            (root / "secret.py").write_text("SECRET = 1\n", encoding="utf-8")
+            (root / ".gitignore").write_text("secret.py\n", encoding="utf-8")
+            result = run_map(root)
+            paths = [str(f.path) for f in result.files]
+            self.assertFalse(any("secret.py" in p for p in paths))
+
 
 if __name__ == "__main__":
     unittest.main()

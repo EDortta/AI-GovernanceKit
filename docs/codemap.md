@@ -3,7 +3,7 @@
 > Generated: 2026-05-08 · Root: `/home/esteban/Sync/Projects/AI-GovernanceKit`  
 > Refresh: `governancekit map`
 
-8 file(s) · 47 symbol(s) indexed
+10 file(s) · 70 symbol(s) indexed
 
 ## Entry Points
 
@@ -19,10 +19,12 @@ governancekit/
   cli.py
   codemap.py
   doctor.py
+  resume.py
 pyproject.toml
 tests/
   test_codemap.py
   test_doctor.py
+  test_resume.py
 ```
 
 ## Symbol Index
@@ -30,7 +32,9 @@ tests/
 ### `governancekit/cli.py`
 
 - `build_parser()`
-- `format_result(result)`
+- `format_doctor(result)`
+- `format_doctor_json(result)`
+- `format_resume(result)`
 - `main(argv)`
 
 ### `governancekit/codemap.py`
@@ -49,6 +53,12 @@ tests/
 - **`DoctorResult`** *(class)*
   - `ok` *(property)*
 - `run_doctor(root)`
+
+### `governancekit/resume.py`
+
+- **`HandoffEntry`** *(class)* — "Parsed snapshot from the most recent handoff.md entry."
+- **`ResumeResult`** *(class)* — "Context assembled for the start of a new session."
+- `run_resume(root)` — "Assemble session-start context from RESUME.md and handoff.md."
 
 ### `tests/test_codemap.py`
 
@@ -79,6 +89,8 @@ tests/
   - `test_output_contains_symbol(self)` *(method)*
   - `test_custom_output_path(self)` *(method)*
   - `test_file_and_symbol_counts(self)` *(method)*
+  - `test_codemap_not_in_own_output(self)` *(method)*
+  - `test_gitignore_excludes_files(self)` *(method)*
 
 ### `tests/test_doctor.py`
 
@@ -88,4 +100,23 @@ tests/
   - `test_empty_resume_next_step_fails(self)` *(method)*
 - `write_valid_repo(root)`
 - `failed_check_names(result)`
+
+### `tests/test_resume.py`
+
+- `write_resume_md(path, work_id, branch, status, next_step)`
+- `write_valid_repo(root, next_step)`
+- **`ParseResumeMdTests`** *(class)*
+  - `test_extracts_metadata(self)` *(method)*
+  - `test_extracts_next_step(self)` *(method)*
+  - `test_next_step_stops_at_next_heading(self)` *(method)*
+  - `test_missing_next_step_returns_empty(self)` *(method)*
+- **`ParseHandoffMdTests`** *(class)*
+  - `test_single_entry_format(self)` *(method)*
+  - `test_multi_entry_format(self)` *(method)*
+  - `test_unparseable_returns_none(self)` *(method)*
+- **`RunResumeTests`** *(class)*
+  - `test_valid_repo(self)` *(method)*
+  - `test_missing_resume_md(self)` *(method)*
+  - `test_missing_handoff_warns(self)` *(method)*
+  - `test_prefers_started_epic(self)` *(method)*
 

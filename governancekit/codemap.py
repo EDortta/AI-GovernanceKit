@@ -122,12 +122,14 @@ def run_map(
         output = root / 'docs' / 'codemap.md'
     output = output.resolve()
 
+    gitignore_patterns = _load_gitignore(root)
+
     result = MapResult(
         root=root,
         project_name=_detect_project_name(root),
         generated_at=datetime.date.today().isoformat(),
         output_path=output,
-        files=tuple(_collect_files(root, include_private)),
+        files=tuple(_collect_files(root, include_private, output, gitignore_patterns)),
         entry_points=tuple(_detect_entry_points(root)),
     )
 
@@ -153,23 +155,65 @@ def _detect_language(path: Path) -> str:
     )
 
 
-def _walk_source(directory: Path):
+def _load_gitignore(root: Path) -> list[str]:
+    """Return non-comment, non-empty patterns from root/.gitignore."""
+    gitignore = root / '.gitignore'
+    if not gitignore.is_file():
+        return []
+    patterns: list[str] = []
+    try:
+        for line in gitignore.read_text(encoding='utf-8', errors='replace').splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith('#'):
+                patterns.append(stripped)
+    except OSError:
+        pass
+    return patterns
+
+
+def _is_gitignored(rel_path: Path, patterns: list[str]) -> bool:
+    """Return True if rel_path matches any .gitignore pattern (simple glob, no negation)."""
+    for pattern in patterns:
+        if pattern.startswith('!'):
+            continue
+        # Match against filename alone or full relative path
+        if rel_path.match(pattern) or rel_path.name == pattern.lstrip('/'):
+            return True
+        # Directory patterns (trailing slash) — match any part
+        if pattern.endswith('/') and any(
+            part == pattern.rstrip('/') for part in rel_path.parts
+        ):
+            return True
+    return False
+
+
+def _walk_source(directory: Path, root: Path, patterns: list[str]):
     """Yield all includable source files under directory, skipping irrelevant dirs."""
     try:
         items = sorted(directory.iterdir())
     except PermissionError:
         return
     for item in items:
+        rel = item.relative_to(root)
+        if _is_gitignored(rel, patterns):
+            continue
         if item.is_dir():
             if not _should_skip_dir(item.name):
-                yield from _walk_source(item)
+                yield from _walk_source(item, root, patterns)
         elif item.is_file() and _should_include(item):
             yield item
 
 
-def _collect_files(root: Path, include_private: bool) -> list[FileEntry]:
+def _collect_files(
+    root: Path,
+    include_private: bool,
+    output_path: Path,
+    gitignore_patterns: list[str],
+) -> list[FileEntry]:
     entries: list[FileEntry] = []
-    for file_path in _walk_source(root):
+    for file_path in _walk_source(root, root, gitignore_patterns):
+        if file_path.resolve() == output_path:
+            continue
         language = _detect_language(file_path)
         summary = ''
         symbols: tuple[SymbolInfo, ...] = ()
@@ -334,7 +378,7 @@ def _detect_entry_points(root: Path) -> list[EntryPoint]:
         except OSError:
             pass
 
-    for file_path in _walk_source(root):
+    for file_path in _walk_source(root, root, []):
         if file_path.name == '__main__.py':
             rel = file_path.relative_to(root)
             pkg = '.'.join(rel.parts[:-1])
