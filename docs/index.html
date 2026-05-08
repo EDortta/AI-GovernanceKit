@@ -815,6 +815,7 @@
       <li><a href="#solution">How it works</a></li>
       <li><a href="#quickstart">Quick start</a></li>
       <li><a href="#codemap">Code Map</a></li>
+      <li><a href="#resume">Resume</a></li>
       <li><a href="#companion">Companion</a></li>
       <li><a href="intro.html">Concepts</a></li>
     </ul>
@@ -1073,6 +1074,52 @@
   </div>
 </section>
 
+<!-- ── RESUME ── -->
+<section id="resume" class="alt">
+  <div class="section-inner">
+    <div class="quickstart-layout">
+      <div class="quickstart-text">
+        <span class="section-num">05</span>
+        <p class="section-label" data-i18n="res.label">Resume</p>
+        <h2 class="section-title" data-i18n="res.title">Start every session in seconds.</h2>
+        <p class="section-sub" style="margin-bottom:0.5rem;" data-i18n="res.sub">
+          Before touching any file, run <code>resume</code> — it prints the active work context:
+          work ID, branch, status, next step, and the most recent handoff entry.
+        </p>
+        <ul class="check-list">
+          <li data-i18n="res.li1">Active work_id and branch at a glance</li>
+          <li data-i18n="res.li2">Exact next step from RESUME.md — no file searching</li>
+          <li data-i18n="res.li3">Most recent handoff: decisions, blockers, files changed</li>
+          <li data-i18n="res.li4">Same command for agents and humans — consistent orientation</li>
+        </ul>
+      </div>
+      <div>
+        <div class="code-block">
+          <div class="code-header">
+            <div class="code-dots"><i></i><i></i><i></i></div>
+            <span>~/myproject</span>
+          </div>
+          <pre><span class="comment" data-i18n="res.c1"># Run at the start of every session</span>
+<span class="highlight">governancekit resume</span>
+
+<span class="ok">AI GovernanceKit resume</span>
+<span class="ok">work_id :</span> WK-20260508-auth-flow
+<span class="ok">branch  :</span> feature/uc-007-auth-flow
+<span class="ok">status  :</span> started
+
+<span class="ok">Next Step:</span>
+<span class="comment">  Run migrations, then open PR against development.</span>
+
+<span class="ok">Recent context (handoff.md):</span>
+<span class="comment">  - Added auth middleware</span>
+<span class="comment">  - Tests: 12/12 pass</span>
+<span class="comment">  - Blocker: none</span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ── PULL QUOTE ── -->
 <section class="alt" style="padding: 4.5rem 1.75rem;">
   <div class="pull-quote">
@@ -1085,7 +1132,7 @@
 <!-- ── COMPANION ── -->
 <section id="companion">
   <div class="section-inner">
-    <span class="section-num">05</span>
+    <span class="section-num">06</span>
     <p class="section-label" data-i18n="comp.label">Projeto complementar</p>
     <h2 class="section-title" data-i18n="comp.title">Política e runtime, juntos</h2>
     <p class="section-sub" data-i18n="comp.sub">
@@ -1182,6 +1229,14 @@
       'map.li4': 'Faça commit junto com o código — persiste entre reinícios de contexto',
       'map.c1': '# Indexe seu projeto — execute após mudanças significativas',
       'map.c2': '# Agentes carregam este arquivo no início da sessão:',
+      'res.label': 'Resume',
+      'res.title': 'Comece cada sessão em segundos.',
+      'res.sub':   'Antes de tocar em qualquer arquivo, execute <code>resume</code> — imprime o contexto de trabalho ativo: work ID, branch, status, próximo passo e a entrada mais recente do handoff.',
+      'res.li1': 'work_id e branch ativos de relance',
+      'res.li2': 'Próximo passo exato do RESUME.md — sem buscar arquivos',
+      'res.li3': 'Handoff mais recente: decisões, bloqueios, arquivos alterados',
+      'res.li4': 'Mesmo comando para agentes e humanos — orientação consistente',
+      'res.c1': '# Execute no início de cada sessão',
       'quote': 'Restaure contexto. Valide gates. Execute verificações. Colete evidências. Encerre a sessão — sempre da mesma forma.',
       'comp.label': 'Projeto complementar',
       'comp.title': 'Política e runtime, juntos',
@@ -1239,6 +1294,14 @@
       'map.li4': 'Haz commit junto con el código — persiste entre reinicios de contexto',
       'map.c1': '# Indexa tu proyecto — ejecuta tras cambios significativos',
       'map.c2': '# Los agentes cargan este archivo al inicio de la sesión:',
+      'res.label': 'Resume',
+      'res.title': 'Empieza cada sesión en segundos.',
+      'res.sub':   'Antes de tocar cualquier archivo, ejecuta <code>resume</code> — imprime el contexto de trabajo activo: work ID, branch, estado, próximo paso y la entrada más reciente del handoff.',
+      'res.li1': 'work_id y branch activos de un vistazo',
+      'res.li2': 'Próximo paso exacto del RESUME.md — sin buscar archivos',
+      'res.li3': 'Handoff más reciente: decisiones, bloqueos, archivos modificados',
+      'res.li4': 'Mismo comando para agentes y personas — orientación consistente',
+      'res.c1': '# Ejecuta al inicio de cada sesión',
       'quote': 'Restaurar contexto. Validar gates. Ejecutar verificaciones. Recopilar evidencia. Cerrar la sesión — siempre de la misma forma.',
       'comp.label': 'Proyecto complementario',
       'comp.title': 'Política y runtime, juntos',
@@ -1296,6 +1359,14 @@
       'map.li4': 'Commit alongside code — persists across context resets',
       'map.c1': '# Index your project — run after significant changes',
       'map.c2': '# Agents load this file at session start:',
+      'res.label': 'Resume',
+      'res.title': 'Start every session in seconds.',
+      'res.sub':   'Before touching any file, run <code>resume</code> — it prints the active work context: work ID, branch, status, next step, and the most recent handoff entry.',
+      'res.li1': 'Active work_id and branch at a glance',
+      'res.li2': 'Exact next step from RESUME.md — no file searching',
+      'res.li3': 'Most recent handoff: decisions, blockers, files changed',
+      'res.li4': 'Same command for agents and humans — consistent orientation',
+      'res.c1': '# Run at the start of every session',
       'quote': 'Restore context. Validate gates. Run checks. Collect evidence. Close the session — always the same way.',
       'comp.label': 'Companion project',
       'comp.title': 'Policy and runtime, together',
