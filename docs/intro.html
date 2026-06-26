@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conceitos · AI GovernanceKit</title>
+  <meta name="description" content="O que é governança de agentes de IA, para quem serve, e como AI-Agents e AI-GovernanceKit funcionam juntos." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;1,9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --celeste:        #7BB3E0;
+      --celeste-soft:   #cfe4f4;
+      --celeste-mist:   #eaf4fb;
+      --celeste-deep:   #2f6fa8;
+      --sol:            #F5C518;
+      --sol-warm:       #e8a900;
+      --sol-soft:       #fcecb0;
+      --paper:          #fbfaf5;
+      --paper-warm:     #f4eed8;
+      --ink:            #0e1f3a;
+      --ink-soft:       #3b4a66;
+      --ink-mute:       #6b7892;
+      --hairline:       #d6dde8;
+
+      --font-display: 'Fraunces', Georgia, serif;
+      --font-body:    'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
+      --radius:       14px;
+      --rule:         1px solid var(--hairline);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--paper);
+      color: var(--ink);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    ::selection { background: var(--sol); color: var(--ink); }
+
+    a {
+      color: var(--ink);
+      text-decoration: none;
+      background-image: linear-gradient(var(--sol), var(--sol));
+      background-repeat: no-repeat;
+      background-size: 100% 0.18em;
+      background-position: 0 88%;
+      transition: background-size 0.2s ease;
+    }
+    a:hover { background-size: 100% 100%; color: var(--ink); }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.92em;
+      background: var(--paper-warm);
+      padding: 0.08em 0.4em;
+      border-radius: 4px;
+      color: var(--ink);
+    }
+
+    /* ── NAV ─────────────────────────────── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(251, 250, 245, 0.92);
+      backdrop-filter: saturate(140%) blur(10px);
+      border-bottom: var(--rule);
+    }
+
+    .nav-inner {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 1.75rem;
+      height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .nav-logo {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 1.12rem;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      flex-shrink: 0;
+      background: none;
+    }
+    .nav-logo:hover { background: none; color: var(--ink); }
+
+    .nav-logo svg { width: 26px; height: 26px; flex-shrink: 0; }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--ink-soft);
+      background-image: none;
+    }
+    .nav-links a:hover { color: var(--ink); background-image: linear-gradient(var(--sol), var(--sol)); background-size: 100% 0.15em; background-position: 0 92%; background-repeat: no-repeat; }
+
+    .btn-nav {
+      background: var(--ink);
+      color: var(--paper) !important;
+      padding: 0.5rem 1rem;
+      border-radius: 999px;
+      font-weight: 600 !important;
+      font-size: 0.875rem;
+      flex-shrink: 0;
+      background-image: none !important;
+      transition: transform 0.15s, background 0.15s;
+    }
+    .btn-nav:hover { background: var(--celeste-deep); transform: translateY(-1px); }
+
+    /* ── LANG TABS ───────────────────────── */
+    .lang-tabs {
+      display: flex;
+      gap: 0;
+      list-style: none;
+      flex-shrink: 0;
+      border: var(--rule);
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--paper);
+    }
+
+    .lang-tabs button {
+      background: transparent;
+      border: none;
+      color: var(--ink-mute);
+      font-family: var(--font-body);
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 0.4rem 0.8rem;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+    }
+    .lang-tabs button + button { border-left: var(--rule); }
+    .lang-tabs button:hover { color: var(--ink); background: var(--celeste-mist); }
+    .lang-tabs button.active {
+      color: var(--ink);
+      background: var(--sol);
+    }
+
+    /* ── HERO ────────────────────────────── */
+    .hero {
+      padding: 5rem 1.75rem 4.5rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(180deg, var(--celeste-mist) 0%, var(--paper) 100%);
+      border-bottom: var(--rule);
+    }
+
+    .hero::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 4px;
+      background: linear-gradient(90deg,
+        var(--celeste) 0 20%,
+        var(--paper) 20% 40%,
+        var(--celeste) 40% 60%,
+        var(--paper) 60% 80%,
+        var(--celeste) 80% 100%);
+      opacity: 0.6;
+    }
+
+    .hero-inner { max-width: 720px; margin: 0 auto; position: relative; }
+
+    .hero h1 {
+      font-family: var(--font-display);
+      font-size: clamp(1.85rem, 4vw, 2.85rem);
+      font-weight: 600;
+      color: var(--ink);
+      line-height: 1.15;
+      margin-bottom: 1rem;
+      letter-spacing: -0.02em;
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      font-weight: 600;
+      background: linear-gradient(180deg, transparent 62%, var(--sol) 62% 92%, transparent 92%);
+      padding: 0 0.05em;
+    }
+
+    .hero p {
+      font-family: var(--font-display);
+      font-size: 1.1rem;
+      color: var(--ink-soft);
+      max-width: 560px;
+      margin: 0 auto;
+      line-height: 1.55;
+    }
+
+    /* ── SECTION SHARED ──────────────────── */
+    .intro-section { padding: 4.5rem 1.75rem; }
+    .intro-section:nth-child(even) {
+      background: var(--celeste-mist);
+      border-top: var(--rule);
+      border-bottom: var(--rule);
+    }
+
+    .section-inner { max-width: 820px; margin: 0 auto; }
+
+    .section-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--celeste-deep);
+      margin-bottom: 0.5rem;
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: clamp(1.4rem, 2.6vw, 2rem);
+      color: var(--ink);
+      line-height: 1.2;
+      margin-bottom: 1rem;
+      letter-spacing: -0.015em;
+    }
+    .section-title em {
+      font-style: italic;
+      background: linear-gradient(180deg, transparent 62%, var(--sol) 62% 92%, transparent 92%);
+      padding: 0 0.05em;
+    }
+
+    .section-body {
+      font-size: 1rem;
+      color: var(--ink-soft);
+      margin-bottom: 1.25rem;
+      line-height: 1.65;
+    }
+    .section-body + .section-body { margin-top: -0.5rem; }
+
+    /* ── PERSONA CARDS ───────────────────── */
+    .persona-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-top: 2rem;
+    }
+
+    .persona-card {
+      background: var(--paper);
+      border: var(--rule);
+      border-radius: var(--radius);
+      padding: 1.75rem 1.5rem;
+      position: relative;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .persona-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 12px 30px -18px rgba(14, 31, 58, 0.25);
+    }
+    .persona-card::before {
+      content: '';
+      position: absolute;
+      top: -1px; left: 1.5rem;
+      width: 28px; height: 4px;
+      background: var(--sol);
+      border-radius: 0 0 4px 4px;
+    }
+
+    .persona-card .icon {
+      font-size: 1.6rem;
+      margin-bottom: 0.75rem;
+      display: block;
+      filter: grayscale(0.1);
+    }
+
+    .persona-card h3 {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 0.4rem;
+      letter-spacing: -0.01em;
+    }
+
+    .persona-card p {
+      font-size: 0.9rem;
+      color: var(--ink-soft);
+      line-height: 1.6;
+    }
+
+    /* ── TWO-PROJECT SPLIT ───────────────── */
+    .split-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    @media (max-width: 640px) { .split-grid { grid-template-columns: 1fr; } }
+
+    .split-card {
+      background: var(--paper);
+      border: var(--rule);
+      border-radius: var(--radius);
+      padding: 2rem 1.75rem;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+    .split-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--celeste);
+      box-shadow: 0 14px 30px -18px rgba(47, 111, 168, 0.35);
+    }
+    .split-card::after {
+      content: '';
+      position: absolute;
+      top: 0; right: 0;
+      width: 80px; height: 80px;
+      background: radial-gradient(circle at top right, var(--sol-soft) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .split-card .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      background: var(--paper);
+      border: 1px solid var(--celeste);
+      color: var(--celeste-deep);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      margin-bottom: 1rem;
+    }
+    .split-card .pill::before {
+      content: '';
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--sol);
+      flex-shrink: 0;
+    }
+
+    .split-card h3 {
+      font-family: var(--font-display);
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    .split-card p {
+      font-size: 0.93rem;
+      color: var(--ink-soft);
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    .split-card p em {
+      font-style: italic;
+      color: var(--ink);
+    }
+
+    .split-card code {
+      background: var(--celeste-mist);
+      color: var(--celeste-deep);
+    }
+
+    .split-card a {
+      font-weight: 600;
+      font-size: 0.95rem;
+      display: inline-block;
+      margin-top: 0.25rem;
+    }
+
+    /* ── GLOSSARY ────────────────────────── */
+    .glossary-list {
+      margin-top: 2rem;
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .glossary-item {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 1rem;
+      padding: 1.1rem 1.25rem;
+      background: var(--paper);
+      border: var(--rule);
+      border-radius: var(--radius);
+      align-items: start;
+      transition: border-color 0.2s;
+    }
+    .glossary-item:hover { border-color: var(--celeste); }
+
+    @media (max-width: 640px) {
+      .glossary-item { grid-template-columns: 1fr; gap: 0.3rem; }
+    }
+
+    .glossary-term {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--celeste-deep);
+      padding-top: 0.05rem;
+    }
+
+    .glossary-def {
+      font-size: 0.9rem;
+      color: var(--ink-soft);
+      line-height: 1.6;
+    }
+
+    .glossary-def code {
+      background: var(--celeste-mist);
+      color: var(--celeste-deep);
+    }
+
+    /* ── FOOTER ──────────────────────────── */
+    footer {
+      border-top: var(--rule);
+      padding: 3rem 1.75rem 2.5rem;
+      background: var(--paper);
+      position: relative;
+    }
+    footer::before {
+      content: '';
+      position: absolute;
+      top: -1px; left: 0; right: 0;
+      height: 4px;
+      background: linear-gradient(90deg,
+        var(--celeste) 0 33.3%,
+        var(--paper-warm) 33.3% 66.6%,
+        var(--celeste) 66.6% 100%);
+      opacity: 0.55;
+    }
+
+    .footer-inner {
+      max-width: 1180px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .footer-left {
+      font-size: 0.9rem;
+      color: var(--ink-soft);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+    .footer-left strong {
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--ink);
+      letter-spacing: -0.01em;
+    }
+    .footer-left .sep { color: var(--hairline); }
+
+    .footer-links {
+      display: flex;
+      gap: 1.5rem;
+      list-style: none;
+    }
+    .footer-links a {
+      font-size: 0.9rem;
+      color: var(--ink-soft);
+      background-image: none;
+    }
+    .footer-links a:hover {
+      color: var(--ink);
+      background-image: linear-gradient(var(--sol), var(--sol));
+      background-size: 100% 0.18em;
+      background-position: 0 88%;
+      background-repeat: no-repeat;
+    }
+
+    /* ── RESPONSIVE ──────────────────────── */
+    @media (max-width: 720px) {
+      .nav-links { display: none; }
+      .intro-section { padding: 3.5rem 1.25rem; }
+      .hero { padding: 3.5rem 1.25rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav>
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <g fill="#F5C518">
+          <circle cx="32" cy="32" r="11"/>
+          <g>
+            <rect x="30.5" y="2"  width="3" height="11" rx="1.5"/>
+            <rect x="30.5" y="51" width="3" height="11" rx="1.5"/>
+            <rect x="2"  y="30.5" width="11" height="3" rx="1.5"/>
+            <rect x="51" y="30.5" width="11" height="3" rx="1.5"/>
+          </g>
+          <g transform="rotate(45 32 32)">
+            <rect x="30.5" y="2"  width="3" height="11" rx="1.5"/>
+            <rect x="30.5" y="51" width="3" height="11" rx="1.5"/>
+            <rect x="2"  y="30.5" width="11" height="3" rx="1.5"/>
+            <rect x="51" y="30.5" width="11" height="3" rx="1.5"/>
+          </g>
+        </g>
+      </svg>
+      AI GovernanceKit
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html#problem">Problem</a></li>
+      <li><a href="index.html#solution">How it works</a></li>
+      <li><a href="index.html#quickstart">Quick start</a></li>
+    </ul>
+    <ul class="lang-tabs" role="tablist">
+      <li><button id="tab-ptbr" onclick="setLang('ptbr')" aria-selected="false">PT-BR</button></li>
+      <li><button id="tab-es"   onclick="setLang('es')"   aria-selected="false">ES</button></li>
+      <li><button id="tab-en"   onclick="setLang('en')"   aria-selected="false">EN</button></li>
+    </ul>
+    <a href="https://github.com/[GITHUB_OWNER]/AI-GovernanceKit" class="btn-nav">GitHub →</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PT-BR
+═══════════════════════════════════════════════════════════ -->
+<div data-lang="ptbr">
+
+  <div class="hero">
+    <div class="hero-inner">
+      <h1>Governança de IA — <em>conceitos essenciais</em></h1>
+      <p>Uma introdução ao que significa governar agentes de IA, por que isso importa, e como as ferramentas deste ecossistema se encaixam.</p>
+    </div>
+  </div>
+
+  <!-- O que é -->
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Fundamentos</p>
+      <h2 class="section-title">O que é governança de agentes de IA?</h2>
+      <p class="section-body">
+        Agentes de IA como Claude, Copilot e Cursor escrevem código, tomam decisões e executam ações no seu repositório. São ferramentas poderosas — e sem regras claras, cada agente interpreta o trabalho à sua maneira, sem registro, sem limites de escopo e sem previsibilidade.
+      </p>
+      <p class="section-body">
+        Governança de IA é a camada de <strong style="color:var(--ink)">contratos, limites e registros</strong> que garante que agentes (e humanos) sigam os mesmos processos. Em vez de confiar que o agente "entenda" as regras pelo contexto, você as torna explícitas, executáveis e auditáveis.
+      </p>
+      <p class="section-body">
+        O resultado: trabalho com IA tão previsível quanto um pipeline de CI — onde qualquer pessoa (ou agente) que entrar no projeto sabe exatamente o que pode, o que não pode, e como documentar o que fez.
+      </p>
+    </div>
+  </div>
+
+  <!-- Para quem -->
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Público</p>
+      <h2 class="section-title">Para quem é isso?</h2>
+      <p class="section-body">Governança não é só para grandes times. Ela resolve problemas reais em qualquer escala.</p>
+      <div class="persona-grid">
+        <div class="persona-card">
+          <span class="icon">🧑‍💻</span>
+          <h3>Dev solo</h3>
+          <p>Você usa vários agentes de IA em projetos diferentes e quer que todos sigam as mesmas convenções — sem repetir instruções toda hora.</p>
+        </div>
+        <div class="persona-card">
+          <span class="icon">👥</span>
+          <h3>Time de desenvolvimento</h3>
+          <p>O time adotou IA, mas cada membro configurou seu agente de forma diferente. Governança cria um contrato compartilhado que todos os agentes seguem.</p>
+        </div>
+        <div class="persona-card">
+          <span class="icon">🏢</span>
+          <h3>Engenharia corporativa</h3>
+          <p>Você precisa de rastreabilidade, limites de escopo e trilha de auditoria para atender políticas de segurança e conformidade com uso de IA.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dois projetos -->
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Arquitetura</p>
+      <h2 class="section-title">Dois projetos, uma solução</h2>
+      <p class="section-body">O ecossistema é composto por duas peças complementares. Entender o papel de cada uma evita confusão.</p>
+      <div class="split-grid">
+        <div class="split-card">
+          <span class="pill">Política · O quê e por quê</span>
+          <h3>AI-Agents</h3>
+          <p>Um pacote de arquivos de configuração (<code>AGENTS.md</code>, <code>CLAUDE.md</code>, etc.) que você copia para o seu repositório. Define contratos, papéis, limites de escopo e o fluxo de trabalho com issues. É a <em>camada de regras</em> — funciona mesmo sem nenhuma CLI instalada.</p>
+          <a href="https://github.com/[GITHUB_OWNER]/AI-Agents">Ver AI-Agents →</a>
+        </div>
+        <div class="split-card">
+          <span class="pill">Runtime · O como</span>
+          <h3>AI-GovernanceKit</h3>
+          <p>Uma CLI Python que valida o scaffold de políticas, executa verificações, orquestra fluxos de sessão e registra evidências. É a <em>camada de execução</em> — torna as regras do AI-Agents auditáveis e automatizáveis.</p>
+          <a href="https://github.com/[GITHUB_OWNER]/AI-GovernanceKit">Ver AI-GovernanceKit →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Glossário -->
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Referência</p>
+      <h2 class="section-title">Glossário de conceitos</h2>
+      <div class="glossary-list">
+        <div class="glossary-item">
+          <span class="glossary-term">agente de IA</span>
+          <span class="glossary-def">Ferramenta de IA que atua de forma autônoma em um repositório — escrevendo código, criando arquivos ou executando comandos. Ex: Claude Code, GitHub Copilot, Cursor.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">contrato</span>
+          <span class="glossary-def">Conjunto de regras explícitas que define o que um agente pode e não pode fazer em um projeto. Geralmente um arquivo Markdown (<code>AGENTS.md</code>) lido pelo agente no início de cada sessão.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">policy pack</span>
+          <span class="glossary-def">Coleção portátil de arquivos de contrato e configuração (o AI-Agents) que pode ser instalada em qualquer repositório para fornecer governança imediata.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">sessão</span>
+          <span class="glossary-def">Uma unidade de trabalho com escopo definido — normalmente mapeada para uma issue. Tem início, fim e um arquivo de handoff que registra o que foi feito.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">handoff</span>
+          <span class="glossary-def">Documento gerado ao final de uma sessão que resume decisões, mudanças e estado do trabalho. Permite que outro agente (ou humano) retome sem perder contexto.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">fluxo de issues</span>
+          <span class="glossary-def">Convenção estruturada de pastas e arquivos para rastrear tarefas. Cada issue tem um diretório próprio com brief, progresso e handoff — auditável e sem dependência de plataforma externa.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">doctor</span>
+          <span class="glossary-def">Comando <code>governancekit doctor</code> que valida se o scaffold de governança do repositório está correto — verifica arquivos obrigatórios, permissões e configurações.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">map</span>
+          <span class="glossary-def">Comando <code>governancekit map</code> que gera <code>docs/codemap.md</code>: um índice Markdown com a árvore de arquivos, pontos de entrada e símbolos Python do projeto. Agentes de IA releem arquivos-fonte a cada nova sessão para se orientar — consumindo tokens sem benefício persistente. O mapa substitui essa travessia repetida por uma única leitura barata, e permanece no repositório para estar disponível imediatamente em qualquer reinício de contexto.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">resume</span>
+          <span class="glossary-def">Comando <code>governancekit resume</code> que imprime a sessão de trabalho ativa de forma compacta: work ID, branch, status, próximo passo do RESUME.md e a entrada mais recente do handoff. Execute no início de cada sessão — orienta agentes e humanos em segundos sem precisar ler vários arquivos.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">limite de escopo</span>
+          <span class="glossary-def">Restrição explícita no contrato que impede o agente de tocar em arquivos, pastas ou sistemas fora do escopo da sessão atual.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /ptbr -->
+
+<!-- ═══════════════════════════════════════════════════════════
+     ES
+═══════════════════════════════════════════════════════════ -->
+<div data-lang="es" style="display:none">
+
+  <div class="hero">
+    <div class="hero-inner">
+      <h1>Gobernanza de IA — <em>conceptos esenciales</em></h1>
+      <p>Una introducción a qué significa gobernar agentes de IA, por qué importa, y cómo encajan las herramientas de este ecosistema.</p>
+    </div>
+  </div>
+
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Fundamentos</p>
+      <h2 class="section-title">¿Qué es la gobernanza de agentes de IA?</h2>
+      <p class="section-body">
+        Los agentes de IA como Claude, Copilot y Cursor escriben código, toman decisiones y ejecutan acciones en tu repositorio. Son herramientas poderosas — y sin reglas claras, cada agente interpreta el trabajo a su manera, sin registro, sin límites de alcance y sin previsibilidad.
+      </p>
+      <p class="section-body">
+        La gobernanza de IA es la capa de <strong style="color:var(--ink)">contratos, límites y registros</strong> que garantiza que los agentes (y las personas) sigan los mismos procesos. En lugar de confiar en que el agente "entienda" las reglas por contexto, las haces explícitas, ejecutables y auditables.
+      </p>
+      <p class="section-body">
+        El resultado: trabajo con IA tan predecible como un pipeline de CI — donde cualquier persona (o agente) que entre al proyecto sabe exactamente qué puede hacer, qué no, y cómo documentar lo que hizo.
+      </p>
+    </div>
+  </div>
+
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Audiencia</p>
+      <h2 class="section-title">¿Para quién es esto?</h2>
+      <p class="section-body">La gobernanza no es solo para equipos grandes. Resuelve problemas reales a cualquier escala.</p>
+      <div class="persona-grid">
+        <div class="persona-card">
+          <span class="icon">🧑‍💻</span>
+          <h3>Dev individual</h3>
+          <p>Usas varios agentes de IA en distintos proyectos y quieres que todos sigan las mismas convenciones — sin repetir instrucciones cada vez.</p>
+        </div>
+        <div class="persona-card">
+          <span class="icon">👥</span>
+          <h3>Equipo de desarrollo</h3>
+          <p>El equipo adoptó IA, pero cada miembro configuró su agente de forma distinta. La gobernanza crea un contrato compartido que todos los agentes respetan.</p>
+        </div>
+        <div class="persona-card">
+          <span class="icon">🏢</span>
+          <h3>Ingeniería corporativa</h3>
+          <p>Necesitas trazabilidad, límites de alcance y auditoría para cumplir con las políticas de seguridad y cumplimiento en el uso de IA.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Arquitectura</p>
+      <h2 class="section-title">Dos proyectos, una solución</h2>
+      <p class="section-body">El ecosistema se compone de dos piezas complementarias. Entender el rol de cada una evita confusiones.</p>
+      <div class="split-grid">
+        <div class="split-card">
+          <span class="pill">Política · El qué y el por qué</span>
+          <h3>AI-Agents</h3>
+          <p>Un paquete de archivos de configuración (<code>AGENTS.md</code>, <code>CLAUDE.md</code>, etc.) que copias en tu repositorio. Define contratos, roles, límites de alcance y el flujo de trabajo con issues. Es la <em>capa de reglas</em> — funciona incluso sin ninguna CLI instalada.</p>
+          <a href="https://github.com/[GITHUB_OWNER]/AI-Agents">Ver AI-Agents →</a>
+        </div>
+        <div class="split-card">
+          <span class="pill">Runtime · El cómo</span>
+          <h3>AI-GovernanceKit</h3>
+          <p>Una CLI de Python que valida el scaffold de políticas, ejecuta verificaciones, orquesta flujos de sesión y registra evidencias. Es la <em>capa de ejecución</em> — hace que las reglas de AI-Agents sean auditables y automatizables.</p>
+          <a href="https://github.com/[GITHUB_OWNER]/AI-GovernanceKit">Ver AI-GovernanceKit →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Referencia</p>
+      <h2 class="section-title">Glosario de conceptos</h2>
+      <div class="glossary-list">
+        <div class="glossary-item">
+          <span class="glossary-term">agente de IA</span>
+          <span class="glossary-def">Herramienta de IA que actúa de forma autónoma en un repositorio — escribiendo código, creando archivos o ejecutando comandos. Ej: Claude Code, GitHub Copilot, Cursor.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">contrato</span>
+          <span class="glossary-def">Conjunto de reglas explícitas que define lo que un agente puede y no puede hacer en un proyecto. Generalmente un archivo Markdown (<code>AGENTS.md</code>) leído por el agente al inicio de cada sesión.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">policy pack</span>
+          <span class="glossary-def">Colección portátil de archivos de contrato y configuración (el AI-Agents) que puede instalarse en cualquier repositorio para ofrecer gobernanza inmediata.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">sesión</span>
+          <span class="glossary-def">Unidad de trabajo con alcance definido — normalmente mapeada a una issue. Tiene inicio, fin y un archivo de handoff que registra lo realizado.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">handoff</span>
+          <span class="glossary-def">Documento generado al final de una sesión que resume decisiones, cambios y estado del trabajo. Permite que otro agente (o persona) retome sin perder contexto.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">flujo de issues</span>
+          <span class="glossary-def">Convención estructurada de carpetas y archivos para rastrear tareas. Cada issue tiene su propio directorio con brief, progreso y handoff — auditable y sin dependencia de plataforma externa.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">doctor</span>
+          <span class="glossary-def">Comando <code>governancekit doctor</code> que valida si el scaffold de gobernanza del repositorio es correcto — verifica archivos requeridos, permisos y configuraciones.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">map</span>
+          <span class="glossary-def">Comando <code>governancekit map</code> que genera <code>docs/codemap.md</code>: un índice Markdown con el árbol de archivos, puntos de entrada y símbolos Python del proyecto. Los agentes de IA releen archivos fuente en cada nueva sesión para orientarse — consumiendo tokens sin beneficio persistente. El mapa reemplaza ese recorrido repetido por una única lectura económica, y vive en el repositorio para estar disponible de inmediato tras cualquier reinicio de contexto.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">resume</span>
+          <span class="glossary-def">Comando <code>governancekit resume</code> que imprime la sesión de trabajo activa de forma compacta: work ID, branch, estado, próximo paso del RESUME.md y la entrada más reciente del handoff. Ejecútalo al inicio de cada sesión — orienta a agentes y personas en segundos sin necesidad de leer varios archivos.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">límite de alcance</span>
+          <span class="glossary-def">Restricción explícita en el contrato que impide al agente tocar archivos, carpetas o sistemas fuera del alcance de la sesión actual.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /es -->
+
+<!-- ═══════════════════════════════════════════════════════════
+     EN
+═══════════════════════════════════════════════════════════ -->
+<div data-lang="en" style="display:none">
+
+  <div class="hero">
+    <div class="hero-inner">
+      <h1>AI Governance — <em>core concepts</em></h1>
+      <p>An introduction to what governing AI agents means, why it matters, and how the tools in this ecosystem fit together.</p>
+    </div>
+  </div>
+
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Fundamentals</p>
+      <h2 class="section-title">What is AI agent governance?</h2>
+      <p class="section-body">
+        AI agents like Claude, Copilot, and Cursor write code, make decisions, and execute actions inside your repository. They're powerful tools — and without clear rules, each agent interprets its work differently, with no log, no scope limits, and no predictability.
+      </p>
+      <p class="section-body">
+        AI governance is the layer of <strong style="color:var(--ink)">contracts, limits, and records</strong> that ensures agents (and humans) follow the same processes. Instead of hoping the agent will "pick up" the rules from context, you make them explicit, enforceable, and auditable.
+      </p>
+      <p class="section-body">
+        The result: AI-assisted work as predictable as a CI pipeline — where anyone (or any agent) joining the project knows exactly what they can do, what they can't, and how to document what they did.
+      </p>
+    </div>
+  </div>
+
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Audience</p>
+      <h2 class="section-title">Who is this for?</h2>
+      <p class="section-body">Governance isn't only for large teams. It solves real problems at any scale.</p>
+      <div class="persona-grid">
+        <div class="persona-card">
+          <span class="icon">🧑‍💻</span>
+          <h3>Solo developer</h3>
+          <p>You use several AI agents across different projects and want them all to follow the same conventions — without repeating instructions every time.</p>
+        </div>
+        <div class="persona-card">
+          <span class="icon">👥</span>
+          <h3>Development team</h3>
+          <p>Your team adopted AI, but each member configured their agent differently. Governance creates a shared contract that every agent follows.</p>
+        </div>
+        <div class="persona-card">
+          <span class="icon">🏢</span>
+          <h3>Enterprise engineering</h3>
+          <p>You need traceability, scope limits, and an audit trail to satisfy security policies and compliance requirements around AI use.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Architecture</p>
+      <h2 class="section-title">Two projects, one solution</h2>
+      <p class="section-body">The ecosystem is made of two complementary pieces. Understanding each one's role prevents confusion.</p>
+      <div class="split-grid">
+        <div class="split-card">
+          <span class="pill">Policy · The what and why</span>
+          <h3>AI-Agents</h3>
+          <p>A portable set of configuration files (<code>AGENTS.md</code>, <code>CLAUDE.md</code>, etc.) you copy into your repository. Defines contracts, roles, scope limits, and the issue workflow. It's the <em>rules layer</em> — works even without any CLI installed.</p>
+          <a href="https://github.com/[GITHUB_OWNER]/AI-Agents">View AI-Agents →</a>
+        </div>
+        <div class="split-card">
+          <span class="pill">Runtime · The how</span>
+          <h3>AI-GovernanceKit</h3>
+          <p>A Python CLI that validates the policy scaffold, runs checks, orchestrates session workflows, and records evidence. It's the <em>execution layer</em> — it makes AI-Agents' rules auditable and automatable.</p>
+          <a href="https://github.com/[GITHUB_OWNER]/AI-GovernanceKit">View AI-GovernanceKit →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="intro-section">
+    <div class="section-inner">
+      <p class="section-label">Reference</p>
+      <h2 class="section-title">Concepts glossary</h2>
+      <div class="glossary-list">
+        <div class="glossary-item">
+          <span class="glossary-term">AI agent</span>
+          <span class="glossary-def">An AI tool that acts autonomously inside a repository — writing code, creating files, or running commands. E.g.: Claude Code, GitHub Copilot, Cursor.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">contract</span>
+          <span class="glossary-def">An explicit set of rules that defines what an agent can and cannot do in a project. Typically a Markdown file (<code>AGENTS.md</code>) read by the agent at the start of each session.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">policy pack</span>
+          <span class="glossary-def">A portable collection of contract and configuration files (the AI-Agents project) that can be installed into any repository to provide immediate governance.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">session</span>
+          <span class="glossary-def">A scoped unit of work — typically mapped to an issue. It has a start, an end, and a handoff file that records what was done.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">handoff</span>
+          <span class="glossary-def">A document generated at the end of a session that summarizes decisions, changes, and work state. Allows another agent (or human) to resume without losing context.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">issue workflow</span>
+          <span class="glossary-def">A structured folder and file convention for tracking tasks. Each issue has its own directory with a brief, progress log, and handoff — auditable and platform-independent.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">doctor</span>
+          <span class="glossary-def">The <code>governancekit doctor</code> command that validates whether a repository's governance scaffold is correct — checks required files, permissions, and configuration.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">map</span>
+          <span class="glossary-def">The <code>governancekit map</code> command that generates <code>docs/codemap.md</code>: a Markdown index of the project's file tree, entry points, and Python symbol index. AI agents re-read source files at the start of every session to orient themselves — burning tokens with no persistent benefit. The map replaces that repeated traversal with a single, cheap document read, and lives in the repository so it is available immediately after any context reset.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">resume</span>
+          <span class="glossary-def">The <code>governancekit resume</code> command that prints the active work session at a glance: work ID, branch, status, next step from RESUME.md, and the most recent handoff entry. Run it at the start of every session — it orients both agents and humans in seconds without reading multiple files.</span>
+        </div>
+        <div class="glossary-item">
+          <span class="glossary-term">scope limit</span>
+          <span class="glossary-def">An explicit restriction in the contract that prevents the agent from touching files, folders, or systems outside the current session's scope.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /en -->
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-left">
+      <strong>AI GovernanceKit</strong>
+      <span class="sep">·</span>
+      <span>Local-first runtime for agentic work</span>
+      <span class="sep">·</span>
+      <a href="https://github.com/[GITHUB_OWNER]/AI-GovernanceKit/blob/main/LICENSE">MIT License</a>
+    </div>
+    <ul class="footer-links">
+      <li><a href="index.html">GovernanceKit</a></li>
+      <li><a href="https://[GITHUB_OWNER].github.io/AI-Agents/">AI-Agents</a></li>
+      <li><a href="https://github.com/[GITHUB_OWNER]/AI-GovernanceKit">GitHub</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script>
+  const LANGS = ['ptbr', 'es', 'en'];
+
+  function setLang(lang) {
+    LANGS.forEach(l => {
+      document.querySelector('[data-lang="' + l + '"]').style.display = l === lang ? '' : 'none';
+      const tab = document.getElementById('tab-' + l);
+      tab.classList.toggle('active', l === lang);
+      tab.setAttribute('aria-selected', l === lang ? 'true' : 'false');
+    });
+    document.documentElement.lang = lang === 'ptbr' ? 'pt-BR' : lang === 'es' ? 'es' : 'en';
+    try { localStorage.setItem('gk-lang', lang); } catch(e) {}
+  }
+
+  (function init() {
+    let saved;
+    try { saved = localStorage.getItem('gk-lang'); } catch(e) {}
+    if (saved && LANGS.includes(saved)) { setLang(saved); return; }
+    const nav = (navigator.language || '').toLowerCase();
+    if (nav.indexOf('pt') === 0) { setLang('ptbr'); return; }
+    if (nav.indexOf('es') === 0) { setLang('es'); return; }
+    setLang('ptbr');
+  })();
+</script>
+
+</body>
+</html>
