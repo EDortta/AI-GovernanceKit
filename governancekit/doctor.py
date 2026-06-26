@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+
+_PLACEHOLDER_RE = re.compile(r"\[([A-Z][A-Z0-9_]{2,})\]")
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,7 @@ _CODEMAP_SOURCE_EXTENSIONS: frozenset[str] = frozenset({
 def run_doctor(root: Path) -> DoctorResult:
     repo_root = root.resolve()
     checks = [
+        _check_unfilled_placeholders(repo_root),
         _check_file(repo_root, "AGENTS.md"),
         _check_file(repo_root, "README.md"),
         _check_file(repo_root, "handoff.md"),
@@ -60,6 +64,44 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_codemap(repo_root),
     ]
     return DoctorResult(root=repo_root, checks=tuple(checks))
+
+
+_PLACEHOLDER_SCAN_PATHS = [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".cursorrules",
+    ".windsurfrules",
+    "GEMINI.md",
+    ".github/copilot-instructions.md",
+]
+
+
+def _check_unfilled_placeholders(root: Path) -> CheckResult:
+    """Fail if any [PLACEHOLDER] tokens remain in installed kit files."""
+    found: dict[str, list[str]] = {}
+    for rel in _PLACEHOLDER_SCAN_PATHS:
+        path = root / rel
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        tokens = _PLACEHOLDER_RE.findall(text)
+        if tokens:
+            found[rel] = sorted(set(tokens))
+
+    if found:
+        detail = "; ".join(
+            f"{rel}: {', '.join(f'[{t}]' for t in tokens)}"
+            for rel, tokens in found.items()
+        )
+        return CheckResult(
+            "unfilled placeholders",
+            False,
+            f"kit not configured — run 'governancekit install-agents' to fill: {detail}",
+        )
+    return CheckResult("unfilled placeholders", True, "all placeholders filled")
 
 
 def _check_file(root: Path, relative_path: str) -> CheckResult:

@@ -221,6 +221,7 @@ _PLACEHOLDER_RE = re.compile(r"\[([A-Z][A-Z0-9_]+)\]")
 _PLACEHOLDER_DESCRIPTIONS: dict[str, str] = {
     "OPERATOR_NAME": "operator / project owner name (used in agent greetings)",
     "GITHUB_OWNER": "GitHub username or organisation that owns the repo",
+    "PROJECT_SLUG": "short identifier for this project (used in work_ids and logs, e.g. my-app)",
     "SMTP_ACCOUNT": "SMTP email account (e.g. you@yourdomain.com)",
     "SMTP_DOMAIN": "email domain (e.g. yourdomain.com)",
     "ORG_NAME": "organisation or company name",
