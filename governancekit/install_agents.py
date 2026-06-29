@@ -27,6 +27,17 @@ _FRESH_PATHS: list[str] = [
     "scripts/install-agents-kit.sh",
 ]
 
+# Kit-owned documentation paths (a subset of _UPGRADE_PATHS). These are refreshed
+# by --docs-only without touching agent rule files (AGENTS.md, .cursorrules, ...).
+_DOCS_PATHS: list[str] = [
+    "docs/agents",
+    "docs/workflows",
+    "docs/articles",
+    "docs/icons",
+    "docs/issues/templates",
+    "docs/issues/README.md",
+]
+
 # Paths replaced during --upgrade (dirs wholesale, files individually)
 _UPGRADE_PATHS: list[str] = [
     "AGENTS.md",
@@ -37,13 +48,27 @@ _UPGRADE_PATHS: list[str] = [
     ".github/copilot-instructions.md",
     "new-tag.sh",
     "scripts/install-agents-kit.sh",
-    "docs/agents",
-    "docs/workflows",
-    "docs/articles",
-    "docs/icons",
-    "docs/issues/templates",
-    "docs/issues/README.md",
+    *_DOCS_PATHS,
 ]
+
+# Project-owned documentation directory. Created on fresh install, never
+# overwritten, and deliberately kept OUT of the kit's .gitignore section so the
+# host project can track its own documentation here.
+_PROJECT_DOCS_DIR = "docs/project"
+_PROJECT_DOCS_README = """# Project Documentation
+
+This folder is **yours**. The AI-Agents / GovernanceKit installer creates it once
+and never touches it again — put project-specific documentation here freely and
+track it in git.
+
+Kit-managed documentation (everything else under `docs/`, plus `AGENTS.md` and the
+per-tool rule files) is **owned by the kit** and is overwritten by
+`governancekit install-agents --upgrade` / `--docs-only`. Do not edit kit-managed
+files by hand; record project knowledge here instead.
+
+List the documents an agent must read before analysing or implementing an issue in
+`docs/required-reading.md`.
+"""
 
 _GITIGNORE_BEGIN = "# AI-Agents kit — managed by governancekit install-agents"
 _GITIGNORE_END = "# end AI-Agents kit"
@@ -65,23 +90,34 @@ def run_install_agents(
     repo: str = REPO,
     force: bool = False,
     upgrade: bool = False,
+    docs_only: bool = False,
     track: bool = False,
 ) -> InstallResult:
     """Download and install AI-Agents kit into *root*.
 
     By default the installed paths are added to .gitignore so the kit files
     stay out of the host repository.  Pass ``track=True`` to keep them tracked.
+
+    ``docs_only`` refreshes only kit-owned documentation (``_DOCS_PATHS``) without
+    touching ``AGENTS.md`` or the per-tool rule files — a narrower update than
+    ``upgrade``.
     """
     root = root.resolve()
 
     with tempfile.TemporaryDirectory() as tmp:
         src_root = _download(repo, ref, Path(tmp))
-        result = InstallResult(target=root, upgraded=upgrade)
+        result = InstallResult(target=root, upgraded=upgrade or docs_only)
 
-        if upgrade:
+        if docs_only:
+            result.paths_installed = _do_upgrade(src_root, root, paths=_DOCS_PATHS)
+        elif upgrade:
             result.paths_installed = _do_upgrade(src_root, root)
         else:
             result.paths_installed = _do_fresh(src_root, root, force=force)
+
+        # Idempotent: seeds docs/project/ on fresh install and lets existing
+        # installs adopt it on --upgrade / --docs-only without overwriting it.
+        _ensure_project_docs(root)
 
         if not track:
             gitignore_path = root / ".gitignore"
@@ -196,9 +232,9 @@ def _reset_readiness_flags(root: Path) -> None:
 
 # ── upgrade ────────────────────────────────────────────────────────────────────
 
-def _do_upgrade(src: Path, dst: Path) -> list[str]:
+def _do_upgrade(src: Path, dst: Path, *, paths: list[str] | None = None) -> list[str]:
     installed: list[str] = []
-    for rel in _UPGRADE_PATHS:
+    for rel in (paths if paths is not None else _UPGRADE_PATHS):
         src_path = src / rel
         dst_path = dst / rel
         if not src_path.exists():
@@ -212,6 +248,18 @@ def _do_upgrade(src: Path, dst: Path) -> list[str]:
             shutil.copy2(src_path, dst_path)
         installed.append(rel)
     return installed
+
+
+# ── project-owned docs ──────────────────────────────────────────────────────────
+
+def _ensure_project_docs(root: Path) -> None:
+    """Create the project-owned ``docs/project/`` folder once, never overwrite it."""
+    project_dir = root / _PROJECT_DOCS_DIR
+    readme = project_dir / "README.md"
+    if readme.exists():
+        return
+    project_dir.mkdir(parents=True, exist_ok=True)
+    readme.write_text(_PROJECT_DOCS_README, encoding="utf-8")
 
 
 # ── placeholder resolution ─────────────────────────────────────────────────────
@@ -314,10 +362,27 @@ def _fill_placeholders(root: Path, installed_paths: list[str]) -> None:
 
 # ── .gitignore management ──────────────────────────────────────────────────────
 
+def _gitignore_entries(paths: list[str]) -> list[str]:
+    """Build .gitignore entries, carving out the project-owned ``docs/project/``.
+
+    A bare ``docs`` entry would ignore the whole tree, and git cannot re-include a
+    child of an ignored directory. Emitting ``docs/*`` keeps the directory itself
+    non-opaque so ``!docs/project/`` can re-include the project-owned folder.
+    """
+    entries: list[str] = []
+    for rel in paths:
+        if rel == "docs":
+            entries.append("docs/*")
+            entries.append(f"!{_PROJECT_DOCS_DIR}/")
+        else:
+            entries.append(rel)
+    return entries
+
+
 def _update_gitignore(gitignore: Path, paths: list[str]) -> None:
     existing = gitignore.read_text(encoding="utf-8") if gitignore.is_file() else ""
     cleaned = _remove_section_text(existing)
-    entries = "\n".join(paths)
+    entries = "\n".join(_gitignore_entries(paths))
     section = f"\n{_GITIGNORE_BEGIN}\n{entries}\n{_GITIGNORE_END}\n"
     gitignore.write_text(cleaned.rstrip("\n") + section, encoding="utf-8")
 

@@ -58,6 +58,7 @@ def run_doctor(root: Path) -> DoctorResult:
             "docs/limits.md",
             "limits_ready: yes",
         ),
+        _check_required_reading(repo_root),
         _check_active_issue(repo_root),
         _check_resume_next_step(repo_root),
         _check_tracked_secret_files(repo_root),
@@ -120,6 +121,49 @@ def _check_ready_flag(root: Path, relative_path: str, flag: str) -> CheckResult:
     if flag in content:
         return CheckResult(relative_path, True, f"contains `{flag}`")
     return CheckResult(relative_path, False, f"does not contain `{flag}`")
+
+
+_REQUIRED_READING_REL = "docs/required-reading.md"
+
+# Template / unfilled lines that do not count as real reading entries.
+_REQUIRED_READING_STUBS: frozenset[str] = frozenset({
+    "[path]", "<doc>", "<path>", "...", "tbd", "todo",
+})
+
+
+def _check_required_reading(root: Path) -> CheckResult:
+    """Ensure the project lists the docs an agent must read before an issue.
+
+    Passes when ``docs/required-reading.md`` exists and either declares an explicit
+    ``- (none)`` sentinel or lists at least one concrete document.
+    """
+    path = root / _REQUIRED_READING_REL
+    if not path.is_file():
+        return CheckResult(
+            _REQUIRED_READING_REL,
+            False,
+            "missing — list project docs agents must read before an issue "
+            "(use '- (none)' if there are none)",
+        )
+
+    entries = []
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line.startswith(("- ", "* ")):
+            continue
+        item = line[2:].strip()
+        if item.lower() in {"(none)", "none"}:
+            return CheckResult(_REQUIRED_READING_REL, True, "explicitly declares no required reading")
+        if item and item.lower() not in _REQUIRED_READING_STUBS:
+            entries.append(item)
+
+    if entries:
+        return CheckResult(_REQUIRED_READING_REL, True, f"lists {len(entries)} required document(s)")
+    return CheckResult(
+        _REQUIRED_READING_REL,
+        False,
+        "no concrete entries — list the docs to read, or '- (none)'",
+    )
 
 
 def _check_active_issue(root: Path) -> CheckResult:

@@ -78,6 +78,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Update kit-owned files while preserving project-local state.",
     )
     install_parser.add_argument(
+        "--docs-only",
+        dest="docs_only",
+        action="store_true",
+        help=(
+            "Refresh only kit-owned documentation (docs/agents, docs/workflows, "
+            "templates, ...) without touching AGENTS.md or per-tool rule files."
+        ),
+    )
+    install_parser.add_argument(
         "--track",
         action="store_true",
         help=(
@@ -85,6 +94,19 @@ def build_parser() -> argparse.ArgumentParser:
             "By default all installed paths are added to .gitignore so they "
             "stay out of the host repository."
         ),
+    )
+
+    configure_parser = subparsers.add_parser(
+        "configure",
+        help="Fill kit placeholder variables (e.g. [OPERATOR_NAME]) across all docs.",
+    )
+    configure_parser.add_argument(
+        "--set",
+        dest="set_pairs",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Set a placeholder value non-interactively. Repeatable.",
     )
 
     return parser
@@ -188,8 +210,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if result.next_step else 1
 
     if args.command == "install-agents":
-        if args.force and args.upgrade:
-            parser.error("--force and --upgrade cannot be used together.")
+        modes = [args.force, args.upgrade, args.docs_only]
+        if sum(bool(m) for m in modes) > 1:
+            parser.error("--force, --upgrade, and --docs-only are mutually exclusive.")
         from .install_agents import run_install_agents
         try:
             result = run_install_agents(
@@ -198,6 +221,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 repo=args.repo,
                 force=args.force,
                 upgrade=args.upgrade,
+                docs_only=args.docs_only,
                 track=args.track,
             )
         except RuntimeError as exc:
@@ -215,6 +239,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             status = "tracked in git" if args.track else "no .gitignore changes needed"
             print(f".gitignore: {status}")
         return 0
+
+    if args.command == "configure":
+        from .configure import parse_set_pairs, run_configure
+        try:
+            preset = parse_set_pairs(args.set_pairs)
+        except ValueError as exc:
+            parser.error(str(exc))
+        result = run_configure(args.root, preset=preset)
+        print("AI GovernanceKit configure")
+        if not result.found_tokens:
+            print("No kit placeholders found — nothing to configure.")
+            return 0
+        if result.changed_files:
+            print(f"Filled {len(result.values)} variable(s) in {len(result.changed_files)} file(s):")
+            for p in result.changed_files:
+                print(f"  {p}")
+        else:
+            print("No values applied.")
+        if result.unfilled:
+            print("Still unfilled: " + ", ".join(f"[{t}]" for t in result.unfilled))
+        return 0 if not result.unfilled else 1
 
     parser.error(f"unknown command: {args.command}")
     return 2
