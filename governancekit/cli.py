@@ -238,6 +238,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             status = "tracked in git" if args.track else "no .gitignore changes needed"
             print(f".gitignore: {status}")
+        if result.awt_message:
+            label = "awt" if result.awt_installed else "awt (manual step needed)"
+            for line in result.awt_message.splitlines():
+                print(f"{label}: {line}")
         return 0
 
     if args.command == "configure":
