@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -25,6 +26,7 @@ _FRESH_PATHS: list[str] = [
     "handoff.md",
     "new-tag.sh",
     "scripts/install-agents-kit.sh",
+    "scripts/agent-worktree.sh",
 ]
 
 # Kit-owned documentation paths (a subset of _UPGRADE_PATHS). These are refreshed
@@ -48,6 +50,7 @@ _UPGRADE_PATHS: list[str] = [
     ".github/copilot-instructions.md",
     "new-tag.sh",
     "scripts/install-agents-kit.sh",
+    "scripts/agent-worktree.sh",
     *_DOCS_PATHS,
 ]
 
@@ -81,6 +84,8 @@ class InstallResult:
     paths_installed: list[str] = field(default_factory=list)
     gitignore_updated: bool = False
     gitignore_path: Path | None = None
+    awt_installed: bool = False
+    awt_message: str | None = None
 
 
 def run_install_agents(
@@ -134,7 +139,34 @@ def run_install_agents(
                     result.gitignore_path = gitignore_path
 
     _fill_placeholders(root, result.paths_installed)
+    if "scripts/agent-worktree.sh" in result.paths_installed:
+        result.awt_installed, result.awt_message = _install_awt(root)
     return result
+
+
+def _install_awt(root: Path) -> tuple[bool, str | None]:
+    """Symlink the worktree helper as ``awt`` on PATH (best-effort).
+
+    The helper *is* ``scripts/agent-worktree.sh``; its own ``install`` subcommand
+    creates the symlink (default ``~/.local/bin/awt``). Failure here never fails
+    the kit install — we just report what happened so the user can finish by hand.
+    """
+    script = root / "scripts" / "agent-worktree.sh"
+    if not script.is_file():
+        return False, None
+    try:
+        proc = subprocess.run(
+            ["bash", str(script), "install"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"could not run 'awt install': {exc}"
+    msg = (proc.stdout + proc.stderr).strip() or None
+    if proc.returncode != 0:
+        return False, msg or f"'awt install' exited {proc.returncode}"
+    return True, msg
 
 
 # ── download ───────────────────────────────────────────────────────────────────
