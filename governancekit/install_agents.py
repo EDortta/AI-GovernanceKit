@@ -10,7 +10,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-REPO = "[GITHUB_OWNER]/AI-Agents"
+REPO = "EDortta/AI-Agents"
 DEFAULT_REF = "main"
 
 # Paths copied in a fresh install (mirrors install-agents-kit.sh)

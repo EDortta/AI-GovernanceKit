@@ -63,9 +63,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     install_parser.add_argument(
         "--repo",
-        default="[GITHUB_OWNER]/AI-Agents",
+        default="EDortta/AI-Agents",
         metavar="OWNER/REPO",
-        help="GitHub repository in owner/repo format. Default: [GITHUB_OWNER]/AI-Agents.",
+        help="GitHub repository in owner/repo format. Default: EDortta/AI-Agents.",
     )
     install_parser.add_argument(
         "--force",
