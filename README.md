@@ -64,7 +64,20 @@ Run commands directly from the repository:
 python3 -m governancekit resume   # print active session context
 python3 -m governancekit doctor   # validate governance scaffold
 python3 -m governancekit map      # generate docs/codemap.md
+python3 -m governancekit configure --set OPERATOR_NAME=Ann  # fill kit variables across docs
 ```
+
+### Installing & updating the AI-Agents kit
+
+```bash
+governancekit install-agents                 # fresh install (creates docs/project/, prompts for variables)
+governancekit install-agents --upgrade       # update all kit-owned files, preserve project state
+governancekit install-agents --docs-only     # update only kit docs (not AGENTS.md / rule files)
+governancekit configure                       # re-fill [PLACEHOLDER] variables without reinstalling
+```
+
+`docs/project/` is yours to track; everything else under `docs/` is kit-owned and
+overwritten on upgrade. List mandatory pre-issue reading in `docs/required-reading.md`.
 
 Or install in editable mode:
 

@@ -41,6 +41,42 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("RESUME.md next step", failed_check_names(result))
 
 
+    def test_missing_required_reading_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "docs" / "required-reading.md").unlink()
+
+            result = run_doctor(root)
+
+            self.assertFalse(result.ok)
+            self.assertIn("docs/required-reading.md", failed_check_names(result))
+
+    def test_required_reading_none_sentinel_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "docs" / "required-reading.md").write_text(
+                "# Required Reading\n\n- (none)\n", encoding="utf-8"
+            )
+
+            result = run_doctor(root)
+
+            self.assertNotIn("docs/required-reading.md", failed_check_names(result))
+
+    def test_required_reading_only_stub_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "docs" / "required-reading.md").write_text(
+                "# Required Reading\n\n- [path]\n", encoding="utf-8"
+            )
+
+            result = run_doctor(root)
+
+            self.assertIn("docs/required-reading.md", failed_check_names(result))
+
+
 def write_valid_repo(root: Path) -> None:
     (root / "docs" / "issues" / "001-bootstrap-[started]" / "issues").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# AGENTS.md\n", encoding="utf-8")
@@ -51,6 +87,10 @@ def write_valid_repo(root: Path) -> None:
         encoding="utf-8",
     )
     (root / "docs" / "limits.md").write_text("limits_ready: yes\n", encoding="utf-8")
+    (root / "docs" / "required-reading.md").write_text(
+        "# Required Reading\n\n- `docs/software-overview.md` — context\n",
+        encoding="utf-8",
+    )
 
     epic = root / "docs" / "issues" / "001-bootstrap-[started]"
     (epic / "README.md").write_text("# Epic README\n", encoding="utf-8")
