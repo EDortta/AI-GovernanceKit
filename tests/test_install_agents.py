@@ -62,6 +62,24 @@ class InstallAgentsTests(unittest.TestCase):
         self.assertIn(".credentials", ia._FRESH_PATHS)
         self.assertIn("handoff.md", ia._FRESH_PATHS)
 
+    def test_fill_placeholders_ignores_doc_example_tokens(self) -> None:
+        # Regression: the [PLACEHOLDER]/[TOKEN] literals used in docs to *explain* the
+        # mechanism must not be prompted for — only tokens in _PLACEHOLDER_DESCRIPTIONS.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            doc = root / "AGENTS.md"
+            doc.write_text(
+                "Replace [PLACEHOLDER] and [TOKEN] examples. Owner: [OPERATOR_NAME].\n",
+                encoding="utf-8",
+            )
+            # Non-interactive: returns after warning; must leave the file untouched
+            # and never raise. The example tokens stay literal.
+            ia._fill_placeholders(root, ["AGENTS.md"])
+            text = doc.read_text(encoding="utf-8")
+            self.assertIn("[PLACEHOLDER]", text)
+            self.assertIn("[TOKEN]", text)
+            self.assertIn("[OPERATOR_NAME]", text)
+
     def test_required_reading_not_in_docs_paths(self) -> None:
         # required-reading.md is project-owned: must survive --upgrade / --docs-only.
         self.assertNotIn("docs/required-reading.md", ia._DOCS_PATHS)
