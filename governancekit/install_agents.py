@@ -322,7 +322,13 @@ _PLACEHOLDER_DESCRIPTIONS: dict[str, str] = {
 
 
 def _fill_placeholders(root: Path, installed_paths: list[str]) -> None:
-    """Scan installed files for [PLACEHOLDER] tokens and prompt the user for values."""
+    """Scan installed files for known [PLACEHOLDER] tokens and prompt for values.
+
+    Only tokens described in ``_PLACEHOLDER_DESCRIPTIONS`` are treated as fillable
+    variables. Arbitrary ``[WORD]`` tokens that merely appear as documentation
+    examples (e.g. the literal ``[PLACEHOLDER]`` / ``[TOKEN]`` used to *explain* the
+    mechanism) are skipped instead of being prompted for. Mirrors ``configure.py``.
+    """
     # Collect all unique placeholders across installed files
     placeholder_files: dict[str, list[Path]] = {}
     for rel in installed_paths:
@@ -334,7 +340,8 @@ def _fill_placeholders(root: Path, installed_paths: list[str]) -> None:
         except OSError:
             continue
         for token in _PLACEHOLDER_RE.findall(text):
-            placeholder_files.setdefault(token, []).append(path)
+            if token in _PLACEHOLDER_DESCRIPTIONS:
+                placeholder_files.setdefault(token, []).append(path)
 
     if not placeholder_files:
         return
