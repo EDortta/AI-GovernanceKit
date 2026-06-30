@@ -126,7 +126,13 @@ def run_install_agents(
 
         if not track:
             gitignore_path = root / ".gitignore"
-            _update_gitignore(gitignore_path, result.paths_installed)
+            # The managed .gitignore section must list every kit-owned path that
+            # should stay untracked (e.g. .credentials, handoff.md), NOT just the
+            # subset touched by this run. --upgrade / --docs-only install a narrower
+            # set of paths; driving the rewrite off result.paths_installed would drop
+            # .credentials and handoff.md from .gitignore and expose real token
+            # symlinks. Always derive the section from the full _FRESH_PATHS list.
+            _update_gitignore(gitignore_path, _FRESH_PATHS)
             result.gitignore_updated = True
             result.gitignore_path = gitignore_path
         else:
