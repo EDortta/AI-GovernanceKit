@@ -55,17 +55,19 @@ def build_parser() -> argparse.ArgumentParser:
         "install-agents",
         help="Install AI-Agents kit (github.com/[GITHUB_OWNER]/AI-Agents) into the project.",
     )
+    from .install_agents import DEFAULT_REF, REPO
+
     install_parser.add_argument(
         "--ref",
-        default="main",
+        default=DEFAULT_REF,
         metavar="REF",
-        help="Git ref (branch, tag, or commit) to download. Default: main.",
+        help=f"Git ref (branch, tag, or commit) to download. Default: {DEFAULT_REF} (checksum-verified).",
     )
     install_parser.add_argument(
         "--repo",
-        default="EDortta/AI-Agents",
+        default=REPO,
         metavar="OWNER/REPO",
-        help="GitHub repository in owner/repo format. Default: EDortta/AI-Agents.",
+        help=f"GitHub repository in owner/repo format. Default: {REPO}.",
     )
     install_parser.add_argument(
         "--force",
@@ -84,6 +86,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Refresh only kit-owned documentation (docs/agents, docs/workflows, "
             "templates, ...) without touching AGENTS.md or per-tool rule files."
+        ),
+    )
+    install_parser.add_argument(
+        "--install-awt",
+        dest="install_awt",
+        action="store_true",
+        help=(
+            "Run the downloaded scripts/agent-worktree.sh install (symlinks 'awt' "
+            "onto PATH). Off by default since it executes code from the kit."
         ),
     )
     install_parser.add_argument(
@@ -223,6 +234,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 upgrade=args.upgrade,
                 docs_only=args.docs_only,
                 track=args.track,
+                install_awt=args.install_awt,
             )
         except RuntimeError as exc:
             print(f"ERROR: {exc}", flush=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import subprocess
@@ -11,7 +12,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO = "EDortta/AI-Agents"
-DEFAULT_REF = "main"
+# Pinned to a tagged release (not the mutable "main" branch) so installs are
+# reproducible and can be checksum-verified. Bump alongside KNOWN_TARBALL_SHA256
+# when a new AI-Agents release is adopted.
+DEFAULT_REF = "v1.0.2"
+
+# codeload.github.com tarball SHA-256 for (repo, ref) pairs we can vouch for.
+# Only the upstream default repo/ref is pinned here; a custom --repo/--ref
+# (e.g. a fork, or "main" for early access) is downloaded without verification,
+# same as before this table existed.
+KNOWN_TARBALL_SHA256: dict[tuple[str, str], str] = {
+    (REPO, "v1.0.2"): "8746c817426deedef9384b8feeb6f4a3cae739f8599f9c71c0fec02722fea5ed",
+}
 
 # Paths copied in a fresh install (mirrors install-agents-kit.sh)
 _FRESH_PATHS: list[str] = [
@@ -97,6 +109,7 @@ def run_install_agents(
     upgrade: bool = False,
     docs_only: bool = False,
     track: bool = False,
+    install_awt: bool = False,
 ) -> InstallResult:
     """Download and install AI-Agents kit into *root*.
 
@@ -106,6 +119,11 @@ def run_install_agents(
     ``docs_only`` refreshes only kit-owned documentation (``_DOCS_PATHS``) without
     touching ``AGENTS.md`` or the per-tool rule files — a narrower update than
     ``upgrade``.
+
+    ``install_awt`` opts into automatically running the downloaded
+    ``agent-worktree.sh install`` (which symlinks ``awt`` onto PATH). Off by
+    default: it executes code from the downloaded kit, so it should be an
+    explicit choice rather than an automatic side effect of installing docs.
     """
     root = root.resolve()
 
@@ -145,8 +163,10 @@ def run_install_agents(
                     result.gitignore_path = gitignore_path
 
     _fill_placeholders(root, result.paths_installed)
-    if "scripts/agent-worktree.sh" in result.paths_installed:
+    if install_awt and "scripts/agent-worktree.sh" in result.paths_installed:
         result.awt_installed, result.awt_message = _install_awt(root)
+    elif "scripts/agent-worktree.sh" in result.paths_installed:
+        result.awt_message = "skipped (pass --install-awt to symlink 'awt' onto PATH)"
     return result
 
 
@@ -184,6 +204,22 @@ def _download(repo: str, ref: str, tmp: Path) -> Path:
         urllib.request.urlretrieve(url, archive)  # noqa: S310
     except Exception as exc:
         raise RuntimeError(f"Failed to download {url}: {exc}") from exc
+
+    known_sha256 = KNOWN_TARBALL_SHA256.get((repo, ref))
+    if known_sha256 is not None:
+        actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if actual != known_sha256:
+            raise RuntimeError(
+                f"Checksum mismatch for {url}: expected {known_sha256}, got {actual}. "
+                "Refusing to install — the tarball may have been tampered with or "
+                "the pinned checksum is stale."
+            )
+    else:
+        print(
+            f"Warning: no known checksum for {repo}@{ref} — installing unverified. "
+            f"Use the default repo/ref for a checksum-verified install.",
+            file=sys.stderr,
+        )
 
     with tarfile.open(archive, "r:gz") as tf:
         _safe_extractall(tf, tmp)
