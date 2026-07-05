@@ -46,15 +46,22 @@ case "$(printf '%s' "$MSG" | sed 's/^[[:space:]]*//')" in
   *) MSG="*GovernanceKit* — $MSG" ;;
 esac
 
-hdr=(-H "X-Api-Key: $WA_HUB_KEY" -H "Content-Type: application/json")
+# Headers file (mode 600, tmp): keeps WA_HUB_KEY out of argv/`ps` — curl reads
+# a header from "@file" instead of putting the secret on the command line.
+hdrfile="$(mktemp)"
+cleanup() {
+  curl -s -m 10 -H "@$hdrfile" -H "Content-Type: application/json" \
+    -X POST "$WA_HUB_URL/lock/release" >/dev/null 2>&1 || true
+  rm -f "$hdrfile"
+}
+trap cleanup EXIT
+printf 'X-Api-Key: %s\n' "$WA_HUB_KEY" > "$hdrfile"
+hdr=(-H "@$hdrfile" -H "Content-Type: application/json")
 
 # JSON-encode the message body safely.
 payload="$(MSG="$MSG" DEST="$WA_HUB_DEST" python3 -c '
 import json, os
 print(json.dumps({"to": os.environ["DEST"], "text": os.environ["MSG"]}))')"
-
-cleanup() { curl -s -m 10 "${hdr[@]}" -X POST "$WA_HUB_URL/lock/release" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
 
 # acquire → send → release
 curl -s -m 10 "${hdr[@]}" -X POST "$WA_HUB_URL/lock/acquire" >/dev/null 2>&1 || true
