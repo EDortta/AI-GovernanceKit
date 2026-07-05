@@ -235,7 +235,7 @@ def _check_tracked_secret_files(root: Path) -> CheckResult:
         return CheckResult("tracked secrets", False, f"could not inspect git index: {error}")
 
     forbidden_prefixes = (".credentials/",)
-    forbidden_names = (".env",)
+    forbidden_names = (".env", ".credentials")
     forbidden_suffixes = (".token",)
     tracked_files = completed.stdout.splitlines()
     offenders = [
@@ -243,6 +243,7 @@ def _check_tracked_secret_files(root: Path) -> CheckResult:
         for path in tracked_files
         if path.startswith(forbidden_prefixes)
         or Path(path).name in forbidden_names
+        or Path(path).name.startswith(".env")
         or path.endswith(forbidden_suffixes)
     ]
     if offenders:
