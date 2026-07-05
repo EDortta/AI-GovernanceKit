@@ -186,12 +186,39 @@ def _download(repo: str, ref: str, tmp: Path) -> Path:
         raise RuntimeError(f"Failed to download {url}: {exc}") from exc
 
     with tarfile.open(archive, "r:gz") as tf:
-        tf.extractall(tmp)
+        _safe_extractall(tf, tmp)
 
     extracted = [p for p in tmp.iterdir() if p.is_dir() and p.name != archive.name]
     if not extracted:
         raise RuntimeError("Unexpected archive structure — no top-level directory found.")
     return extracted[0]
+
+
+def _safe_extractall(tf: tarfile.TarFile, dest: Path) -> None:
+    """Extract *tf* into *dest*, rejecting members that would escape it (tar-slip).
+
+    Prefers the stdlib ``filter="data"`` (Python 3.10.12+/3.11.4+) which already
+    rejects absolute paths, ``..`` traversal, and unsafe links. Falls back to
+    manual member validation on older patch releases where the kwarg is absent.
+    """
+    try:
+        tf.extractall(dest, filter="data")
+        return
+    except TypeError:
+        pass
+
+    dest_resolved = dest.resolve()
+    safe_members = []
+    for member in tf.getmembers():
+        member_path = (dest / member.name).resolve()
+        if member_path != dest_resolved and dest_resolved not in member_path.parents:
+            raise RuntimeError(f"Refusing to extract unsafe tar member: {member.name!r}")
+        if member.issym() or member.islnk():
+            link_target = (member_path.parent / member.linkname).resolve()
+            if link_target != dest_resolved and dest_resolved not in link_target.parents:
+                raise RuntimeError(f"Refusing to extract unsafe tar link: {member.name!r}")
+        safe_members.append(member)
+    tf.extractall(dest, members=safe_members)
 
 
 # ── fresh install ──────────────────────────────────────────────────────────────
