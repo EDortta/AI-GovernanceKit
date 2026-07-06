@@ -62,6 +62,7 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_active_issue(repo_root),
         _check_resume_next_step(repo_root),
         _check_tracked_secret_files(repo_root),
+        _check_gitignore_secrets(repo_root),
         _check_codemap(repo_root),
     ]
     return DoctorResult(root=repo_root, checks=tuple(checks))
@@ -250,6 +251,49 @@ def _check_tracked_secret_files(root: Path) -> CheckResult:
         return CheckResult("tracked secrets", False, f"forbidden tracked files: {', '.join(offenders)}")
 
     return CheckResult("tracked secrets", True, "no forbidden tracked secret paths")
+
+
+# Representative secret paths that .gitignore MUST cover so credentials cannot be
+# tracked in the first place (preventive counterpart to _check_tracked_secret_files).
+# The kit's convention: secrets live only in .env or .credentials/ (security
+# standards §1). We probe one path per convention with `git check-ignore`.
+_SECRET_PROBE_PATHS = (".env", ".credentials/secret.token")
+
+
+def _check_gitignore_secrets(root: Path) -> CheckResult:
+    name = "gitignore secrets"
+    if not (root / ".git").exists():
+        return CheckResult(name, True, "not a git repository")
+
+    uncovered: list[str] = []
+    for probe in _SECRET_PROBE_PATHS:
+        try:
+            completed = subprocess.run(
+                ["git", "check-ignore", "-q", "--", probe],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as error:
+            return CheckResult(name, False, f"could not run git check-ignore: {error}")
+        # 0 = ignored (good), 1 = not ignored, anything else = git error.
+        if completed.returncode == 1:
+            uncovered.append(probe)
+        elif completed.returncode != 0:
+            return CheckResult(
+                name,
+                False,
+                f"git check-ignore failed on {probe}: {completed.stderr.strip()}",
+            )
+
+    if uncovered:
+        return CheckResult(
+            name,
+            False,
+            f".gitignore does not cover secret paths: {', '.join(uncovered)}",
+        )
+
+    return CheckResult(name, True, "secret paths (.env, .credentials/) are gitignored")
 
 
 def _count_newer_source_files(root: Path, since: float) -> int:
