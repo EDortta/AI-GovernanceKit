@@ -3,7 +3,7 @@
 ## Metadata
 - work_id: WK-20260701-dotdocs-kit-layout
 - date: 2026-07-01
-- owner: Esteban D.Dortta
+- owner: [OPERATOR_NAME]
 - related_commit: <planned>
 
 ## Objective

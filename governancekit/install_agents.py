@@ -119,6 +119,9 @@ List the documents an agent must read before analysing or implementing an issue 
 
 # Kit-owned doc paths that legacy projects keep in docs/ and must be migrated to
 # .docs/ (source/dest share the trailing name). Includes the seed templates.
+# NB: HTML landing pages (index.html/concepts.html) are intentionally EXCLUDED. The
+# legacy kit never shipped them under docs/, so a docs/index.html in a target project
+# is the project's own page — migrating it would hide their site under .docs/.
 _LEGACY_KIT_DOC_NAMES: list[str] = [
     "agents",
     "workflows",
@@ -126,8 +129,6 @@ _LEGACY_KIT_DOC_NAMES: list[str] = [
     "icons",
     "software-overview.md",
     "limits.md",
-    "concepts.html",
-    "index.html",
 ]
 
 _MIGRATION_BACKUP_DIR = ".docs-migration-bak"
@@ -451,14 +452,26 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
     """
     docs = root / "docs"
     dotdocs = root / ".docs"
-    if dotdocs.exists():
-        return False, []
-    # Legacy markers: kit-owned files still sitting directly in docs/.
-    markers = [docs / "software-overview.md", docs / "workflows" / "session-close.md"]
+    # Legacy markers must be KIT-SPECIFIC. A generic name like docs/software-overview.md
+    # is a common project filename; triggering on it would relocate a non-kit project's
+    # whole docs/ (e.g. a GitHub Pages site) into the hidden .docs/. Require a marker a
+    # random project is extremely unlikely to own: the kit's agents/ rule dir or its
+    # workflows/session-close.md.
+    markers = [docs / "agents", docs / "workflows" / "session-close.md"]
     if not docs.is_dir() or not any(m.exists() for m in markers):
         return False, []
 
     notes: list[str] = []
+    # A pre-existing .docs/ usually means migration already completed → the marker
+    # check above would have found nothing to do. Reaching here WITH .docs/ present
+    # means a prior run was interrupted (or .docs/ is stray) while kit files are still
+    # in docs/: complete the migration below, never overwriting what .docs/ already has,
+    # instead of silently stranding the kit files in docs/ forever.
+    if dotdocs.exists():
+        notes.append(
+            "note: .docs/ already existed — completing an interrupted migration "
+            "without overwriting existing .docs/ entries"
+        )
 
     # 1. Backup the whole docs/ tree before touching anything.
     backup = root / _MIGRATION_BACKUP_DIR
@@ -470,9 +483,16 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
     dotdocs.mkdir(parents=True, exist_ok=True)
     for name in _LEGACY_KIT_DOC_NAMES:
         legacy = docs / name
-        if legacy.exists():
-            shutil.move(str(legacy), str(dotdocs / name))
-            notes.append(f"kit: docs/{name} → .docs/{name}")
+        if not legacy.exists():
+            continue
+        if (dotdocs / name).exists():
+            notes.append(
+                f"skip: .docs/{name} already present — docs/{name} left in place "
+                f"(also preserved in {_MIGRATION_BACKUP_DIR}/)"
+            )
+            continue
+        shutil.move(str(legacy), str(dotdocs / name))
+        notes.append(f"kit: docs/{name} → .docs/{name}")
     # issues/templates and issues/README.md are kit-owned; the rest of docs/issues/
     # (active issues) belongs to the project and stays.
     legacy_issues = docs / "issues"
@@ -480,9 +500,13 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
         (dotdocs / "issues").mkdir(exist_ok=True)
         for name in ("templates", "README.md"):
             legacy = legacy_issues / name
-            if legacy.exists():
-                shutil.move(str(legacy), str(dotdocs / "issues" / name))
-                notes.append(f"kit: docs/issues/{name} → .docs/issues/{name}")
+            if not legacy.exists():
+                continue
+            if (dotdocs / "issues" / name).exists():
+                notes.append(f"skip: .docs/issues/{name} already present — left docs/issues/{name} in place")
+                continue
+            shutil.move(str(legacy), str(dotdocs / "issues" / name))
+            notes.append(f"kit: docs/issues/{name} → .docs/issues/{name}")
 
     # 3. Promote docs/project/* into docs/ (project territory), reporting collisions.
     project = docs / "project"
@@ -693,6 +717,9 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
             continue
         else:
             entries.append(dest)
+    # The legacy-migration backup is a full copy of the pre-migration docs/ tree and
+    # must never be committed. Always ignore it, independent of track-kit-docs.
+    entries.append(f"{_MIGRATION_BACKUP_DIR}/")
     return entries
 
 

@@ -315,13 +315,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         if id_result.saved:
             print(f"Host identity saved: {id_result.path} (gitignored)")
         elif id_result.missing_required:
+            missing = ", ".join(id_result.missing_required)
+            if identity_flags_given:
+                # The user explicitly tried to set identity but left fields out → error.
+                print(
+                    "ERROR: host identity incomplete — missing required field(s): "
+                    + missing
+                    + "\n  provide via --operator-name/--host-id/--instance-path "
+                    "(or run interactively)."
+                )
+                return 1
+            # No identity flags were given — this invocation is about kit placeholders
+            # (e.g. `configure --set OPERATOR_NAME=...`). Don't fail the command just
+            # because host identity isn't configured yet; advise and fall through so the
+            # exit code reflects whether the placeholder fill succeeded.
             print(
-                "ERROR: host identity incomplete — missing required field(s): "
-                + ", ".join(id_result.missing_required)
-                + "\n  provide via --operator-name/--host-id/--instance-path "
-                "(or run interactively)."
+                "Note: host identity not configured yet (missing: "
+                + missing
+                + "). Run `configure` interactively or pass "
+                "--operator-name/--host-id/--instance-path to set it."
             )
-            return 1
 
         placeholders_ok = not result.unfilled
         return 0 if placeholders_ok else 1

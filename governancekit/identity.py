@@ -117,6 +117,12 @@ def save_identity(root: Path, identity: Identity) -> Path:
         json.dumps(identity.to_dict(), indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    # Host metadata (operator name, instance path with OS username, ports) — not a
+    # secret, but no reason to expose it to other local users. Owner read/write only.
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
     ensure_gitignored(root)
     return path
 

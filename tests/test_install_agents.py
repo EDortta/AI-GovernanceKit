@@ -163,6 +163,54 @@ class InstallAgentsTests(unittest.TestCase):
             migrated2, _ = ia._migrate_legacy_layout(root)
             self.assertFalse(migrated2)
 
+    def test_migrate_ignores_non_kit_project_with_generic_docs(self) -> None:
+        # Regression: a project that merely has a generic docs/ (its own
+        # software-overview.md + a GitHub Pages site) but NO kit markers must never be
+        # migrated — otherwise --upgrade would hide its site under gitignored .docs/.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            docs = root / "docs"
+            docs.mkdir()
+            (docs / "software-overview.md").write_text("my own overview\n", encoding="utf-8")
+            (docs / "index.html").write_text("<html>my site</html>", encoding="utf-8")
+            (docs / "articles").mkdir()
+            (docs / "articles" / "post.md").write_text("post\n", encoding="utf-8")
+
+            migrated, _ = ia._migrate_legacy_layout(root)
+
+            self.assertFalse(migrated)
+            self.assertFalse((root / ".docs").exists())
+            self.assertFalse((root / ia._MIGRATION_BACKUP_DIR).exists())
+            # The project's own docs/ is untouched.
+            self.assertTrue((docs / "index.html").is_file())
+            self.assertTrue((docs / "articles" / "post.md").is_file())
+
+    def test_migrate_completes_interrupted_run_without_overwriting(self) -> None:
+        # Regression: a pre-existing .docs/ (from an interrupted prior run) must NOT
+        # strand the remaining kit files in docs/ — migration completes, never
+        # overwriting what .docs/ already holds.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            docs = root / "docs"
+            (docs / "agents").mkdir(parents=True)
+            (docs / "agents" / "programmer.md").write_text("kit rules\n", encoding="utf-8")
+            (docs / "workflows").mkdir()
+            (docs / "workflows" / "session-close.md").write_text("wf\n", encoding="utf-8")
+            # Simulate an interrupted migration: .docs/agents already moved.
+            (root / ".docs" / "agents").mkdir(parents=True)
+            (root / ".docs" / "agents" / "programmer.md").write_text("ALREADY MOVED\n", encoding="utf-8")
+
+            migrated, _ = ia._migrate_legacy_layout(root)
+
+            self.assertTrue(migrated)
+            # Remaining kit file completed into .docs/.
+            self.assertTrue((root / ".docs" / "workflows" / "session-close.md").is_file())
+            # Existing .docs/ entry preserved, not clobbered.
+            self.assertEqual(
+                (root / ".docs" / "agents" / "programmer.md").read_text(encoding="utf-8"),
+                "ALREADY MOVED\n",
+            )
+
     def test_required_reading_stays_project_owned(self) -> None:
         # required-reading.md is project-owned: never overwritten by kit paths.
         self.assertNotIn("docs/required-reading.md", ia._KIT_DOC_PATHS)

@@ -102,6 +102,39 @@ class ConfigureIdentityTests(unittest.TestCase):
             gitignore = (root / ".gitignore").read_text(encoding="utf-8")
             self.assertEqual(gitignore.count(".governancekit-identity.json"), 1)
 
+    def test_cli_configure_set_ok_when_identity_unconfigured(self) -> None:
+        # Regression: `configure --set KEY=VALUE` with NO identity flags must exit 0
+        # when the placeholder fill succeeds, even though host identity is not yet
+        # configured (non-interactive). Previously it returned 1 and broke CI/piped use.
+        from governancekit import cli
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "AGENTS.md").write_text("owner: [OPERATOR_NAME]\n", encoding="utf-8")
+
+            code = cli.main(["--root", str(root), "configure", "--set", "OPERATOR_NAME=Ann"])
+
+            self.assertEqual(code, 0)
+            self.assertIn("Ann", (root / "AGENTS.md").read_text(encoding="utf-8"))
+            # And identity was genuinely not saved (so we exercised the missing-required path).
+            self.assertFalse((root / ".governancekit-identity.json").is_file())
+
+    def test_cli_configure_errors_when_identity_flags_incomplete(self) -> None:
+        # Complement: if the user DID pass an identity flag but left required fields
+        # out, that is a real error and must still exit 1.
+        from governancekit import cli
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "AGENTS.md").write_text("owner: [OPERATOR_NAME]\n", encoding="utf-8")
+
+            code = cli.main(
+                ["--root", str(root), "configure", "--set", "OPERATOR_NAME=Ann",
+                 "--operator-name", "Ann"]
+            )
+
+            self.assertEqual(code, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
