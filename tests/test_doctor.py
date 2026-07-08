@@ -111,6 +111,54 @@ class DoctorTests(unittest.TestCase):
             self.assertNotIn("host identity", failed_check_names(result))
 
 
+    def test_security_advisories_flag_antipatterns_without_failing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "app.py").write_text(
+                "import requests, subprocess\n"
+                "requests.get(url, verify=False)\n"
+                "subprocess.run(cmd, shell=True)\n",
+                encoding="utf-8",
+            )
+
+            result = run_doctor(root)
+
+            adv = next(c for c in result.checks if c.name == "security advisories")
+            self.assertTrue(adv.advisory)
+            self.assertFalse(adv.passed)
+            self.assertIn("disabled TLS verification", adv.message)
+            self.assertIn("shell injection risk", adv.message)
+            # Advisory findings never break the overall result.
+            self.assertTrue(result.ok, result.checks)
+
+    def test_security_advisories_clean_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "app.py").write_text("x = 1\n", encoding="utf-8")
+
+            result = run_doctor(root)
+
+            adv = next(c for c in result.checks if c.name == "security advisories")
+            self.assertTrue(adv.passed)
+
+    def test_tracked_private_key_material_fails(self) -> None:
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            (root / "id_rsa").write_text("PRIVATE KEY MATERIAL\n", encoding="utf-8")
+            subprocess.run(["git", "add", "id_rsa"], cwd=root, check=True)
+
+            result = run_doctor(root)
+
+            self.assertFalse(result.ok)
+            self.assertIn("tracked secrets", failed_check_names(result))
+
+
 def write_valid_repo(root: Path) -> None:
     (root / "docs" / "issues" / "001-bootstrap-[started]" / "issues").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# AGENTS.md\n", encoding="utf-8")

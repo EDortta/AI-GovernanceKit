@@ -65,9 +65,91 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_gitignore_secrets(repo_root),
         _check_host_identity(repo_root),
         _check_sibling_branch(repo_root),
+        _check_security_advisories(repo_root),
         _check_codemap(repo_root),
     ]
     return DoctorResult(root=repo_root, checks=tuple(checks))
+
+
+# ── security advisories (security-standards §1–§4, §7–§11) ────────────────────────
+#
+# Heuristic, line-based scans for the automatable rules. These are ADVISORY: they
+# WARN and never fail, so a consumer project's `doctor` stays PASS while the risk
+# is surfaced. Each hit is a prompt to review, not a verdict — false positives are
+# expected (e.g. a legitimate 0.0.0.0 bind behind a firewall).
+_SECURITY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("disabled TLS verification", re.compile(
+        r"verify\s*=\s*False|rejectUnauthorized\s*:\s*false|CURLOPT_SSL_VERIFYPEER"
+        r"|sslmode=disable|StrictHostKeyChecking[=\s]+no")),
+    ("secret in URL/query", re.compile(
+        r"[?&](token|key|secret|senha|password|access_token|api_key)=")),
+    ("shell injection risk", re.compile(r"shell\s*=\s*True|os\.system\(")),
+    ("non-CSPRNG for secrets/ids", re.compile(r"Math\.random\(")),
+    ("weak password hash", re.compile(
+        r"hashlib\.(md5|sha1)\b|createHash\(\s*['\"](md5|sha1)['\"]")),
+    ("bind on 0.0.0.0", re.compile(r"0\.0\.0\.0")),
+    ("curl|bash installer", re.compile(r"curl\s+[^|]*\|\s*(sudo\s+)?(ba)?sh\b")),
+    ("unfiltered archive extract", re.compile(r"\.extractall\(")),
+)
+
+# This module *defines* the patterns above as string literals, so scanning it would
+# self-match. Skip it (a consumer project never has GovKit's own source in-tree).
+_SECURITY_SCAN_SKIP_FILES: frozenset[str] = frozenset({"doctor.py"})
+
+_SECURITY_MAX_EXAMPLES = 8
+
+
+def _iter_source_files(root: Path):
+    """Yield source files under *root*, skipping vendor/build dirs."""
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        try:
+            items = list(current.iterdir())
+        except (PermissionError, OSError):
+            continue
+        for item in items:
+            if item.is_dir():
+                if item.name not in _CODEMAP_SKIP and not item.name.endswith((".egg-info", ".dist-info")):
+                    stack.append(item)
+            elif item.is_file() and item.suffix in _CODEMAP_SOURCE_EXTENSIONS:
+                yield item
+
+
+def _check_security_advisories(root: Path) -> CheckResult:
+    """Advisory scan for the automatable security-standards anti-patterns."""
+    name = "security advisories"
+    hits: dict[str, int] = {}
+    examples: list[str] = []
+    for path in _iter_source_files(root):
+        if path.name in _SECURITY_SCAN_SKIP_FILES:
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for lineno, line in enumerate(lines, 1):
+            for label, pattern in _SECURITY_PATTERNS:
+                if not pattern.search(line):
+                    continue
+                # extractall is fine when it passes a member filter.
+                if label == "unfiltered archive extract" and "filter=" in line:
+                    continue
+                hits[label] = hits.get(label, 0) + 1
+                if len(examples) < _SECURITY_MAX_EXAMPLES:
+                    examples.append(f"{path.relative_to(root)}:{lineno} [{label}]")
+
+    if hits:
+        total = sum(hits.values())
+        summary = ", ".join(f"{label} ×{count}" for label, count in sorted(hits.items()))
+        detail = "; ".join(examples)
+        return CheckResult(
+            name,
+            False,
+            f"review {total} advisory hit(s): {summary} — e.g. {detail}",
+            advisory=True,
+        )
+    return CheckResult(name, True, "no security anti-patterns detected", advisory=True)
 
 
 def _check_host_identity(root: Path) -> CheckResult:
@@ -282,9 +364,12 @@ def _check_tracked_secret_files(root: Path) -> CheckResult:
     except (OSError, subprocess.CalledProcessError) as error:
         return CheckResult("tracked secrets", False, f"could not inspect git index: {error}")
 
+    # security-standards §1: private key material is never tracked. Only
+    # unambiguously-private artifacts are hard failures here; ambiguous ones
+    # (.pem/.key can be public certs) are surfaced by the advisory scan instead.
     forbidden_prefixes = (".credentials/",)
-    forbidden_names = (".env", ".credentials")
-    forbidden_suffixes = (".token",)
+    forbidden_names = (".env", ".credentials", "id_rsa", "id_ed25519")
+    forbidden_suffixes = (".token", ".ppk", ".pfx", ".ovpn")
     tracked_files = completed.stdout.splitlines()
     offenders = [
         path
