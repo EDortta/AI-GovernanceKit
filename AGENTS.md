@@ -21,23 +21,24 @@ Instruction precedence:
 
 Before implementation starts, agents must read:
 
-- `docs/software-overview.md`
-- `docs/limits.md`
+- `.docs/software-overview.md`
+- `.docs/limits.md`
 - `docs/required-reading.md` — and every project-specific document it lists
 
 Implementation may start only when:
 
-- `docs/software-overview.md` contains `project_context_ready: yes`
-- `docs/limits.md` contains `limits_ready: yes`
+- `.docs/software-overview.md` contains `project_context_ready: yes`
+- `.docs/limits.md` contains `limits_ready: yes`
 - `docs/required-reading.md` lists the project docs to read (or `- (none)`)
 
 ## Documentation Ownership
 
-- `docs/project/` is **project-owned** — record project-specific documentation here.
-- All other `docs/` files plus `AGENTS.md` and the per-tool rule files are
-  **kit-owned**: they are overwritten by `governancekit install-agents --upgrade`
-  / `--docs-only`. Do not edit kit-owned files by hand; put project knowledge in
-  `docs/project/` and list mandatory reading in `docs/required-reading.md`.
+- `docs/` is **project-owned** — record project-specific documentation here (plus
+  the project-filled `docs/required-reading.md` and `docs/napkin-lessons.md`).
+- `.docs/` plus `AGENTS.md` and the per-tool rule files are **kit-owned**: they are
+  overwritten by `governancekit install-agents --upgrade` / `--docs-only`. Do not
+  edit kit-owned files by hand; put project knowledge in `docs/` and list mandatory
+  reading in `docs/required-reading.md`.
 
 ## Project Purpose
 

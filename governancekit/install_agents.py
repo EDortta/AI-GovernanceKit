@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -25,25 +26,19 @@ KNOWN_TARBALL_SHA256: dict[tuple[str, str], str] = {
     (REPO, "v1.0.2"): "8746c817426deedef9384b8feeb6f4a3cae739f8599f9c71c0fec02722fea5ed",
 }
 
-# Paths copied in a fresh install (mirrors install-agents-kit.sh)
-_FRESH_PATHS: list[str] = [
-    "AGENTS.md",
-    ".cursorrules",
-    "CLAUDE.md",
-    ".windsurfrules",
-    "GEMINI.md",
-    ".github/copilot-instructions.md",
-    ".credentials",
-    "docs",
-    "handoff.md",
-    "new-tag.sh",
-    "scripts/install-agents-kit.sh",
-    "scripts/agent-worktree.sh",
-]
+# ── layout: kit lives in .docs/, project owns docs/ ──────────────────────────────
+#
+# Kit paths are written canonically as ``docs/…``. In the DESTINATION they map to
+# ``.docs/…`` via ``_dest_rel`` so the host project's own ``docs/`` is never touched.
+# In the SOURCE tree they are resolved via ``_resolve_src``, which reads from
+# ``.docs/…`` when the source repo has been restructured and falls back to ``docs/…``
+# for a legacy source — so both source layouts install correctly.
+_SRC_DOC_PREFIX = "docs/"
+_DST_DOC_PREFIX = ".docs/"
 
-# Kit-owned documentation paths (a subset of _UPGRADE_PATHS). These are refreshed
-# by --docs-only without touching agent rule files (AGENTS.md, .cursorrules, ...).
-_DOCS_PATHS: list[str] = [
+# Kit-owned documentation refreshed by --docs-only / --upgrade (source-relative).
+# Overwritten wholesale on every upgrade — never put project-filled content here.
+_KIT_DOC_PATHS: list[str] = [
     "docs/agents",
     "docs/workflows",
     "docs/articles",
@@ -52,7 +47,43 @@ _DOCS_PATHS: list[str] = [
     "docs/issues/README.md",
 ]
 
-# Paths replaced during --upgrade (dirs wholesale, files individually)
+# Kit-provided templates that the PROJECT fills in (readiness flags, overview text).
+# Seeded on a fresh install (with flags reset) but NEVER overwritten on --upgrade,
+# so the project's answers survive. They live under .docs/ (kit location).
+_KIT_SEED_PATHS: list[str] = [
+    "docs/software-overview.md",
+    "docs/limits.md",
+]
+
+# Project-owned starter files: seeded once into docs/ (the project's territory) and
+# never overwritten. They stay in docs/, not .docs/.
+_PROJECT_SEED_PATHS: list[str] = [
+    "docs/required-reading.md",
+    "docs/napkin-lessons.md",
+]
+
+# Paths copied in a fresh install (source-relative). Replaces the old wholesale
+# ``docs`` copy with explicit doc paths so the source repo's own active issues /
+# project docs are never seeded into a brand-new project.
+_FRESH_PATHS: list[str] = [
+    "AGENTS.md",
+    ".cursorrules",
+    "CLAUDE.md",
+    ".windsurfrules",
+    "GEMINI.md",
+    ".github/copilot-instructions.md",
+    ".credentials",
+    *_KIT_DOC_PATHS,
+    *_KIT_SEED_PATHS,
+    *_PROJECT_SEED_PATHS,
+    "handoff.md",
+    "new-tag.sh",
+    "scripts/install-agents-kit.sh",
+    "scripts/agent-worktree.sh",
+]
+
+# Paths replaced during --upgrade (dirs wholesale, files individually). Excludes the
+# seed paths so project-filled overview/limits/required-reading/napkin survive.
 _UPGRADE_PATHS: list[str] = [
     "AGENTS.md",
     ".cursorrules",
@@ -63,27 +94,45 @@ _UPGRADE_PATHS: list[str] = [
     "new-tag.sh",
     "scripts/install-agents-kit.sh",
     "scripts/agent-worktree.sh",
-    *_DOCS_PATHS,
+    *_KIT_DOC_PATHS,
 ]
 
-# Project-owned documentation directory. Created on fresh install, never
-# overwritten, and deliberately kept OUT of the kit's .gitignore section so the
-# host project can track its own documentation here.
-_PROJECT_DOCS_DIR = "docs/project"
+# Alias kept for --docs-only callers and tests.
+_DOCS_PATHS = _KIT_DOC_PATHS
+
+# The project's documentation territory. Created on fresh install, never overwritten.
+_PROJECT_DOCS_DIR = "docs"
 _PROJECT_DOCS_README = """# Project Documentation
 
 This folder is **yours**. The AI-Agents / GovernanceKit installer creates it once
 and never touches it again — put project-specific documentation here freely and
 track it in git.
 
-Kit-managed documentation (everything else under `docs/`, plus `AGENTS.md` and the
-per-tool rule files) is **owned by the kit** and is overwritten by
-`governancekit install-agents --upgrade` / `--docs-only`. Do not edit kit-managed
-files by hand; record project knowledge here instead.
+Kit-managed documentation lives under `.docs/` (plus `AGENTS.md` and the per-tool
+rule files) and is overwritten by `governancekit install-agents --upgrade` /
+`--docs-only`. Do not edit kit-managed files by hand; record project knowledge here
+instead.
 
 List the documents an agent must read before analysing or implementing an issue in
 `docs/required-reading.md`.
 """
+
+# Kit-owned doc paths that legacy projects keep in docs/ and must be migrated to
+# .docs/ (source/dest share the trailing name). Includes the seed templates.
+# NB: HTML landing pages (index.html/concepts.html) are intentionally EXCLUDED. The
+# legacy kit never shipped them under docs/, so a docs/index.html in a target project
+# is the project's own page — migrating it would hide their site under .docs/.
+_LEGACY_KIT_DOC_NAMES: list[str] = [
+    "agents",
+    "workflows",
+    "articles",
+    "icons",
+    "software-overview.md",
+    "limits.md",
+]
+
+_MIGRATION_BACKUP_DIR = ".docs-migration-bak"
+_CONFIG_FILE = ".governancekit"
 
 _GITIGNORE_BEGIN = "# AI-Agents kit — managed by governancekit install-agents"
 _GITIGNORE_END = "# end AI-Agents kit"
@@ -98,6 +147,40 @@ class InstallResult:
     gitignore_path: Path | None = None
     awt_installed: bool = False
     awt_message: str | None = None
+    migrated: bool = False
+    migration_notes: list[str] = field(default_factory=list)
+    track_kit_docs: bool = False
+
+
+def _dest_rel(src_rel: str) -> str:
+    """Map a canonical path to its destination-relative path.
+
+    Kit-owned docs move from ``docs/`` to ``.docs/``. Project-owned seed files keep
+    living in ``docs/``. Everything else is unchanged.
+    """
+    if src_rel in _PROJECT_SEED_PATHS:
+        return src_rel
+    if src_rel == "docs":
+        return ".docs"
+    if src_rel.startswith(_SRC_DOC_PREFIX):
+        return _DST_DOC_PREFIX + src_rel[len(_SRC_DOC_PREFIX):]
+    return src_rel
+
+
+def _resolve_src(src_root: Path, rel: str) -> Path:
+    """Resolve where a kit path actually lives in the downloaded source tree.
+
+    Paths are canonical (``docs/…``). A restructured source repo stores kit-owned
+    docs under ``.docs/…`` while project-owned seeds (``required-reading.md``,
+    ``napkin-lessons.md``) stay in ``docs/…``. This prefers the ``.docs/`` location
+    when present and falls back to ``docs/`` — so the installer reads correctly from
+    both a restructured source and a legacy one.
+    """
+    if rel not in _PROJECT_SEED_PATHS and rel.startswith(_SRC_DOC_PREFIX):
+        dotted = src_root / (_DST_DOC_PREFIX + rel[len(_SRC_DOC_PREFIX):])
+        if dotted.exists():
+            return dotted
+    return src_root / rel
 
 
 def run_install_agents(
@@ -108,15 +191,17 @@ def run_install_agents(
     force: bool = False,
     upgrade: bool = False,
     docs_only: bool = False,
-    track: bool = False,
+    track: bool | None = None,
     install_awt: bool = False,
 ) -> InstallResult:
     """Download and install AI-Agents kit into *root*.
 
-    By default the installed paths are added to .gitignore so the kit files
-    stay out of the host repository.  Pass ``track=True`` to keep them tracked.
+    Kit-owned documentation is installed under ``.docs/``; the host project keeps
+    ``docs/`` for its own documentation. Whether ``.docs/`` is tracked in git is
+    resolved via ``track`` (CLI), a persisted ``.governancekit`` config, or an
+    interactive prompt — see ``_resolve_track_kit_docs``.
 
-    ``docs_only`` refreshes only kit-owned documentation (``_DOCS_PATHS``) without
+    ``docs_only`` refreshes only kit-owned documentation (``_KIT_DOC_PATHS``) without
     touching ``AGENTS.md`` or the per-tool rule files — a narrower update than
     ``upgrade``.
 
@@ -127,45 +212,46 @@ def run_install_agents(
     """
     root = root.resolve()
 
+    result = InstallResult(target=root, upgraded=upgrade or docs_only)
+
+    # Migrate a legacy layout (kit in docs/, project in docs/project/) BEFORE any
+    # upgrade write, so kit content lands in .docs/ and project docs are preserved.
+    if upgrade or docs_only:
+        migrated, notes = _migrate_legacy_layout(root)
+        result.migrated = migrated
+        result.migration_notes = notes
+
     with tempfile.TemporaryDirectory() as tmp:
         src_root = _download(repo, ref, Path(tmp))
-        result = InstallResult(target=root, upgraded=upgrade or docs_only)
 
         if docs_only:
-            result.paths_installed = _do_upgrade(src_root, root, paths=_DOCS_PATHS)
+            result.paths_installed = _do_upgrade(src_root, root, paths=_KIT_DOC_PATHS)
         elif upgrade:
             result.paths_installed = _do_upgrade(src_root, root)
         else:
             result.paths_installed = _do_fresh(src_root, root, force=force)
 
-        # Idempotent: seeds docs/project/ on fresh install and lets existing
-        # installs adopt it on --upgrade / --docs-only without overwriting it.
+        # Idempotent: seeds docs/ on fresh install and lets existing installs adopt
+        # it on --upgrade / --docs-only without overwriting it.
         _ensure_project_docs(root)
 
-        if not track:
-            gitignore_path = root / ".gitignore"
-            # The managed .gitignore section must list every kit-owned path that
-            # should stay untracked (e.g. .credentials, handoff.md), NOT just the
-            # subset touched by this run. --upgrade / --docs-only install a narrower
-            # set of paths; driving the rewrite off result.paths_installed would drop
-            # .credentials and handoff.md from .gitignore and expose real token
-            # symlinks. Always derive the section from the full _FRESH_PATHS list.
-            _update_gitignore(gitignore_path, _FRESH_PATHS)
-            result.gitignore_updated = True
-            result.gitignore_path = gitignore_path
-        else:
-            # Remove any existing kit section if the user wants to track files
-            gitignore_path = root / ".gitignore"
-            if gitignore_path.is_file():
-                removed = _remove_gitignore_section(gitignore_path)
-                if removed:
-                    result.gitignore_updated = True
-                    result.gitignore_path = gitignore_path
+        track_kit_docs = _resolve_track_kit_docs(root, track)
+        result.track_kit_docs = track_kit_docs
+
+        gitignore_path = root / ".gitignore"
+        # The managed section always lists the secrets (.credentials, handoff.md)
+        # and rule files so they stay untracked regardless of run mode. Whether
+        # .docs/ is listed depends on the track-kit-docs choice. Always derive the
+        # section from the full _FRESH_PATHS list (not the narrower upgrade scope) so
+        # secrets are never dropped.
+        _update_gitignore(gitignore_path, _FRESH_PATHS, track_kit_docs=track_kit_docs)
+        result.gitignore_updated = True
+        result.gitignore_path = gitignore_path
 
     _fill_placeholders(root, result.paths_installed)
-    if install_awt and "scripts/agent-worktree.sh" in result.paths_installed:
+    if install_awt and _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
         result.awt_installed, result.awt_message = _install_awt(root)
-    elif "scripts/agent-worktree.sh" in result.paths_installed:
+    elif _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
         result.awt_message = "skipped (pass --install-awt to symlink 'awt' onto PATH)"
     return result
 
@@ -263,8 +349,9 @@ _CONFLICT_FORCE_THRESHOLD = 0.10  # suggest --force when conflicts exceed this r
 
 
 def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
-    available = [rel for rel in _FRESH_PATHS if (src / rel).exists()]
-    conflicts = [rel for rel in available if (dst / rel).exists()]
+    available = [rel for rel in _FRESH_PATHS if _resolve_src(src, rel).exists()]
+    # Conflicts are checked against the DESTINATION path (docs/ → .docs/).
+    conflicts = [rel for rel in available if (dst / _dest_rel(rel)).exists()]
 
     skip: set[str] = set()
 
@@ -278,24 +365,25 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
 
         interactive = sys.stdin.isatty()
         for rel in conflicts:
+            dest_rel = _dest_rel(rel)
             if interactive:
                 try:
-                    answer = input(f"  '{rel}' already exists — overwrite? [y/N] ").strip().lower()
+                    answer = input(f"  '{dest_rel}' already exists — overwrite? [y/N] ").strip().lower()
                 except EOFError:
                     answer = ""
                 if answer != "y":
-                    print(f"  skipped: {rel}")
+                    print(f"  skipped: {dest_rel}")
                     skip.add(rel)
             else:
-                print(f"Warning: '{rel}' already exists, skipping.")
+                print(f"Warning: '{dest_rel}' already exists, skipping.")
                 skip.add(rel)
 
     installed: list[str] = []
     for rel in available:
         if rel in skip:
             continue
-        src_path = src / rel
-        dst_path = dst / rel
+        src_path = _resolve_src(src, rel)
+        dst_path = dst / _dest_rel(rel)
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         if dst_path.exists():
             if dst_path.is_dir():
@@ -306,7 +394,7 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
             shutil.copytree(src_path, dst_path)
         else:
             shutil.copy2(src_path, dst_path)
-        installed.append(rel)
+        installed.append(_dest_rel(rel))
 
     _reset_readiness_flags(dst)
     return installed
@@ -315,12 +403,12 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
 def _reset_readiness_flags(root: Path) -> None:
     for rel, pattern, replacement in [
         (
-            "docs/software-overview.md",
+            ".docs/software-overview.md",
             "- project_context_ready: yes",
             "- project_context_ready: no",
         ),
         (
-            "docs/limits.md",
+            ".docs/limits.md",
             "- limits_ready: yes",
             "- limits_ready: no",
         ),
@@ -336,8 +424,8 @@ def _reset_readiness_flags(root: Path) -> None:
 def _do_upgrade(src: Path, dst: Path, *, paths: list[str] | None = None) -> list[str]:
     installed: list[str] = []
     for rel in (paths if paths is not None else _UPGRADE_PATHS):
-        src_path = src / rel
-        dst_path = dst / rel
+        src_path = _resolve_src(src, rel)
+        dst_path = dst / _dest_rel(rel)
         if not src_path.exists():
             continue
         dst_path.parent.mkdir(parents=True, exist_ok=True)
@@ -347,20 +435,156 @@ def _do_upgrade(src: Path, dst: Path, *, paths: list[str] | None = None) -> list
             shutil.copytree(src_path, dst_path)
         else:
             shutil.copy2(src_path, dst_path)
-        installed.append(rel)
+        installed.append(_dest_rel(rel))
     return installed
+
+
+# ── legacy layout migration ──────────────────────────────────────────────────────
+
+def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
+    """Migrate a legacy install (kit in ``docs/``, project in ``docs/project/``).
+
+    Moves kit-owned docs from ``docs/`` to ``.docs/`` and promotes ``docs/project/*``
+    up into ``docs/`` (the new project territory). Backs ``docs/`` up first. A no-op
+    if ``.docs/`` already exists (already migrated) or no legacy markers are present.
+
+    Returns ``(migrated, notes)`` where *notes* is a human-readable report.
+    """
+    docs = root / "docs"
+    dotdocs = root / ".docs"
+    # Legacy markers must be KIT-SPECIFIC. A generic name like docs/software-overview.md
+    # is a common project filename; triggering on it would relocate a non-kit project's
+    # whole docs/ (e.g. a GitHub Pages site) into the hidden .docs/. Require a marker a
+    # random project is extremely unlikely to own: the kit's agents/ rule dir or its
+    # workflows/session-close.md.
+    markers = [docs / "agents", docs / "workflows" / "session-close.md"]
+    if not docs.is_dir() or not any(m.exists() for m in markers):
+        return False, []
+
+    notes: list[str] = []
+    # A pre-existing .docs/ usually means migration already completed → the marker
+    # check above would have found nothing to do. Reaching here WITH .docs/ present
+    # means a prior run was interrupted (or .docs/ is stray) while kit files are still
+    # in docs/: complete the migration below, never overwriting what .docs/ already has,
+    # instead of silently stranding the kit files in docs/ forever.
+    if dotdocs.exists():
+        notes.append(
+            "note: .docs/ already existed — completing an interrupted migration "
+            "without overwriting existing .docs/ entries"
+        )
+
+    # 1. Backup the whole docs/ tree before touching anything.
+    backup = root / _MIGRATION_BACKUP_DIR
+    if not backup.exists():
+        shutil.copytree(docs, backup)
+        notes.append(f"backup: docs/ → {_MIGRATION_BACKUP_DIR}/")
+
+    # 2. Move kit-owned docs from docs/ to .docs/.
+    dotdocs.mkdir(parents=True, exist_ok=True)
+    for name in _LEGACY_KIT_DOC_NAMES:
+        legacy = docs / name
+        if not legacy.exists():
+            continue
+        if (dotdocs / name).exists():
+            notes.append(
+                f"skip: .docs/{name} already present — docs/{name} left in place "
+                f"(also preserved in {_MIGRATION_BACKUP_DIR}/)"
+            )
+            continue
+        shutil.move(str(legacy), str(dotdocs / name))
+        notes.append(f"kit: docs/{name} → .docs/{name}")
+    # issues/templates and issues/README.md are kit-owned; the rest of docs/issues/
+    # (active issues) belongs to the project and stays.
+    legacy_issues = docs / "issues"
+    if legacy_issues.is_dir():
+        (dotdocs / "issues").mkdir(exist_ok=True)
+        for name in ("templates", "README.md"):
+            legacy = legacy_issues / name
+            if not legacy.exists():
+                continue
+            if (dotdocs / "issues" / name).exists():
+                notes.append(f"skip: .docs/issues/{name} already present — left docs/issues/{name} in place")
+                continue
+            shutil.move(str(legacy), str(dotdocs / "issues" / name))
+            notes.append(f"kit: docs/issues/{name} → .docs/issues/{name}")
+
+    # 3. Promote docs/project/* into docs/ (project territory), reporting collisions.
+    project = docs / "project"
+    if project.is_dir():
+        for child in sorted(project.iterdir()):
+            target = docs / child.name
+            if target.exists():
+                notes.append(
+                    f"SKIP (collision): docs/project/{child.name} kept in "
+                    f"{_MIGRATION_BACKUP_DIR}/project/ — resolve manually"
+                )
+                continue
+            shutil.move(str(child), str(target))
+            notes.append(f"project: docs/project/{child.name} → docs/{child.name}")
+        # Remove docs/project/ if now empty.
+        remaining = list(project.iterdir())
+        if not remaining:
+            project.rmdir()
+            notes.append("removed empty docs/project/")
+
+    return True, notes
 
 
 # ── project-owned docs ──────────────────────────────────────────────────────────
 
 def _ensure_project_docs(root: Path) -> None:
-    """Create the project-owned ``docs/project/`` folder once, never overwrite it."""
+    """Create the project-owned ``docs/`` folder once, never overwrite it."""
     project_dir = root / _PROJECT_DOCS_DIR
     readme = project_dir / "README.md"
     if readme.exists():
         return
     project_dir.mkdir(parents=True, exist_ok=True)
     readme.write_text(_PROJECT_DOCS_README, encoding="utf-8")
+
+
+# ── track-kit-docs config ─────────────────────────────────────────────────────────
+
+def _read_kit_config(root: Path) -> dict:
+    path = root / _CONFIG_FILE
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_kit_config(root: Path, config: dict) -> None:
+    path = root / _CONFIG_FILE
+    path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _resolve_track_kit_docs(root: Path, cli_value: bool | None) -> bool:
+    """Decide whether kit docs (``.docs/``) are tracked in git.
+
+    Priority: explicit CLI flag → persisted ``.governancekit`` config → interactive
+    prompt (persisted) → default False (kit docs stay gitignored).
+    """
+    if cli_value is not None:
+        _write_kit_config(root, {**_read_kit_config(root), "track_kit_docs": cli_value})
+        return cli_value
+
+    config = _read_kit_config(root)
+    if "track_kit_docs" in config:
+        return bool(config["track_kit_docs"])
+
+    if sys.stdin.isatty():
+        try:
+            answer = input(
+                "Track the kit documentation (.docs/) in git? [y/N] "
+            ).strip().lower()
+        except EOFError:
+            answer = ""
+        choice = answer == "y"
+        _write_kit_config(root, {**config, "track_kit_docs": choice})
+        return choice
+
+    return False
 
 
 # ── placeholder resolution ─────────────────────────────────────────────────────
@@ -470,27 +694,39 @@ def _fill_placeholders(root: Path, installed_paths: list[str]) -> None:
 
 # ── .gitignore management ──────────────────────────────────────────────────────
 
-def _gitignore_entries(paths: list[str]) -> list[str]:
-    """Build .gitignore entries, carving out the project-owned ``docs/project/``.
+def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> list[str]:
+    """Build .gitignore entries for the managed section.
 
-    A bare ``docs`` entry would ignore the whole tree, and git cannot re-include a
-    child of an ignored directory. Emitting ``docs/*`` keeps the directory itself
-    non-opaque so ``!docs/project/`` can re-include the project-owned folder.
+    Kit docs live under ``.docs/`` — a single ``.docs/`` entry ignores them unless
+    the user chose to track them (``track_kit_docs``). Project-owned files under
+    ``docs/`` are never listed (they stay tracked). Secrets and rule files are always
+    listed so they stay untracked regardless of the track-kit-docs choice.
     """
     entries: list[str] = []
+    dotdocs_added = False
     for rel in paths:
-        if rel == "docs":
-            entries.append("docs/*")
-            entries.append(f"!{_PROJECT_DOCS_DIR}/")
+        dest = _dest_rel(rel)
+        if dest == ".docs" or dest.startswith(_DST_DOC_PREFIX):
+            if track_kit_docs:
+                continue
+            if not dotdocs_added:
+                entries.append(".docs/")
+                dotdocs_added = True
+        elif dest.startswith(_SRC_DOC_PREFIX):
+            # Project-owned docs/ files: keep tracked.
+            continue
         else:
-            entries.append(rel)
+            entries.append(dest)
+    # The legacy-migration backup is a full copy of the pre-migration docs/ tree and
+    # must never be committed. Always ignore it, independent of track-kit-docs.
+    entries.append(f"{_MIGRATION_BACKUP_DIR}/")
     return entries
 
 
-def _update_gitignore(gitignore: Path, paths: list[str]) -> None:
+def _update_gitignore(gitignore: Path, paths: list[str], *, track_kit_docs: bool = False) -> None:
     existing = gitignore.read_text(encoding="utf-8") if gitignore.is_file() else ""
     cleaned = _remove_section_text(existing)
-    entries = "\n".join(_gitignore_entries(paths))
+    entries = "\n".join(_gitignore_entries(paths, track_kit_docs=track_kit_docs))
     section = f"\n{_GITIGNORE_BEGIN}\n{entries}\n{_GITIGNORE_END}\n"
     gitignore.write_text(cleaned.rstrip("\n") + section, encoding="utf-8")
 

@@ -898,6 +898,7 @@
       AI GovernanceKit
     </span>
     <ul class="nav-links">
+      <li><a href="#whatsnew" data-i18n="nav.whatsnew">Novidades</a></li>
       <li><a href="#problem">Problem</a></li>
       <li><a href="#solution">How it works</a></li>
       <li><a href="#quickstart">Quick start</a></li>
@@ -987,6 +988,40 @@
 
 <!-- flag stripe divider -->
 <div class="stripe" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+<!-- ── WHAT'S NEW ── -->
+<section id="whatsnew" class="alt">
+  <div class="section-inner">
+    <p class="section-label" data-i18n="wn.label">Novidades</p>
+    <h2 class="section-title" data-i18n="wn.title">Sua documentação, do seu jeito</h2>
+    <p class="section-sub" data-i18n="wn.sub">
+      A última atualização separou o que é do kit do que é seu. Menos confusão, nenhum susto.
+    </p>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <span class="problem-icon">📁</span>
+        <h3 data-i18n="wn1.h">A pasta docs/ é sua</h3>
+        <p data-i18n="wn1.p">O kit agora mora numa pasta separada (<code>.docs/</code>). A sua <code>docs/</code>
+        fica livre para você escrever o que quiser, sem se misturar com os arquivos do kit.</p>
+      </div>
+      <div class="problem-card">
+        <span class="problem-icon">🛡️</span>
+        <h3 data-i18n="wn2.h">Atualizar sem medo</h3>
+        <p data-i18n="wn2.p">Ao atualizar o kit, seus documentos não são tocados. Projetos antigos são
+        reorganizados automaticamente — e com backup, caso você queira conferir depois.</p>
+      </div>
+      <div class="problem-card">
+        <span class="problem-icon">🔐</span>
+        <h3 data-i18n="wn3.h">Você decide o que vai pro GitHub</h3>
+        <p data-i18n="wn3.p">Na instalação a gente pergunta se a documentação do kit entra no Git.
+        Suas senhas e segredos nunca entram, escolha o que escolher.</p>
+      </div>
+    </div>
+    <p style="margin-top:1.75rem;">
+      <a href="melhorias.html" class="btn-primary" data-i18n="wn.cta">Como isso funciona por dentro →</a>
+    </p>
+  </div>
+</section>
 
 <!-- ── PROBLEM ── -->
 <section id="problem">
@@ -1312,6 +1347,17 @@
       'hero.p':     'AI GovernanceKit é um toolkit de orquestração local que transforma regras de governança de repositório em fluxos de trabalho executáveis — utilizável por CLIs, agentes de IDE, servidores MCP e jobs de CI.',
       'hero.cta1':  'Começar →',
       'hero.cta2':  'Ver no GitHub',
+      'nav.whatsnew': 'Novidades',
+      'wn.label': 'Novidades',
+      'wn.title': 'Sua documentação, do seu jeito',
+      'wn.sub':   'A última atualização separou o que é do kit do que é seu. Menos confusão, nenhum susto.',
+      'wn1.h': 'A pasta docs/ é sua',
+      'wn1.p': 'O kit agora mora numa pasta separada (<code>.docs/</code>). A sua <code>docs/</code> fica livre para você escrever o que quiser, sem se misturar com os arquivos do kit.',
+      'wn2.h': 'Atualizar sem medo',
+      'wn2.p': 'Ao atualizar o kit, seus documentos não são tocados. Projetos antigos são reorganizados automaticamente — e com backup, caso você queira conferir depois.',
+      'wn3.h': 'Você decide o que vai pro GitHub',
+      'wn3.p': 'Na instalação a gente pergunta se a documentação do kit entra no Git. Suas senhas e segredos nunca entram, escolha o que escolher.',
+      'wn.cta': 'Como isso funciona por dentro →',
       'prob.label': 'O problema',
       'prob.title': 'Regras de governança existem.<br />Elas simplesmente não são aplicadas.',
       'prob.sub':   'Times escrevem arquivos AGENTS.md, docs de fluxo de trabalho e contratos de código — depois assistem agentes ignorá-los porque não existe runtime para validá-los e aplicá-los.',
@@ -1386,6 +1432,17 @@
       'hero.p':     'AI GovernanceKit es un toolkit de orquestación local que transforma las reglas de gobernanza del repositorio en flujos de trabajo ejecutables — usable por CLIs, agentes de IDE, servidores MCP y jobs de CI.',
       'hero.cta1':  'Comenzar →',
       'hero.cta2':  'Ver en GitHub',
+      'nav.whatsnew': 'Novedades',
+      'wn.label': 'Novedades',
+      'wn.title': 'Tu documentación, a tu manera',
+      'wn.sub':   'La última actualización separó lo que es del kit de lo que es tuyo. Menos confusión, ningún susto.',
+      'wn1.h': 'La carpeta docs/ es tuya',
+      'wn1.p': 'El kit ahora vive en una carpeta aparte (<code>.docs/</code>). Tu <code>docs/</code> queda libre para que escribas lo que quieras, sin mezclarse con los archivos del kit.',
+      'wn2.h': 'Actualizar sin miedo',
+      'wn2.p': 'Al actualizar el kit, tus documentos no se tocan. Los proyectos antiguos se reorganizan automáticamente — y con copia de seguridad, por si quieres revisarla después.',
+      'wn3.h': 'Tú decides qué va a GitHub',
+      'wn3.p': 'En la instalación te preguntamos si la documentación del kit entra en Git. Tus contraseñas y secretos nunca entran, elijas lo que elijas.',
+      'wn.cta': 'Cómo funciona por dentro →',
       'prob.label': 'El problema',
       'prob.title': 'Las reglas de gobernanza existen.<br />Simplemente no se aplican.',
       'prob.sub':   'Los equipos escriben archivos AGENTS.md, docs de flujo de trabajo y contratos de código — luego observan cómo los agentes los ignoran porque no hay un runtime que los valide y aplique.',
@@ -1460,6 +1517,17 @@
       'hero.p':     'AI GovernanceKit is a local-first runtime orchestration toolkit that turns repository governance rules into executable workflows — usable by CLI tools, IDE agents, MCP servers, and CI jobs.',
       'hero.cta1':  'Get started →',
       'hero.cta2':  'View on GitHub',
+      'nav.whatsnew': "What's new",
+      'wn.label': "What's new",
+      'wn.title': 'Your docs, your way',
+      'wn.sub':   'The latest update separated what belongs to the kit from what belongs to you. Less clutter, no surprises.',
+      'wn1.h': 'The docs/ folder is yours',
+      'wn1.p': 'The kit now lives in its own folder (<code>.docs/</code>). Your <code>docs/</code> is free for whatever you want to write, never mixed with kit files.',
+      'wn2.h': 'Upgrade without fear',
+      'wn2.p': 'Upgrading the kit never touches your documents. Legacy projects are reorganized automatically — with a backup, in case you want to check later.',
+      'wn3.h': 'You choose what goes to GitHub',
+      'wn3.p': 'On install we ask whether the kit documentation goes into Git. Your passwords and secrets never do, whatever you choose.',
+      'wn.cta': 'See how it works under the hood →',
       'prob.label': 'The problem',
       'prob.title': 'Governance rules exist.<br />They just aren\'t enforced.',
       'prob.sub':   'Teams write AGENTS.md files, workflow docs, and coding contracts — then watch agents ignore them because there is no runtime to validate and enforce them.',

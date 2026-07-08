@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="docs_only",
         action="store_true",
         help=(
-            "Refresh only kit-owned documentation (docs/agents, docs/workflows, "
+            "Refresh only kit-owned documentation (.docs/agents, .docs/workflows, "
             "templates, ...) without touching AGENTS.md or per-tool rule files."
         ),
     )
@@ -97,14 +97,24 @@ def build_parser() -> argparse.ArgumentParser:
             "onto PATH). Off by default since it executes code from the kit."
         ),
     )
-    install_parser.add_argument(
+    track_group = install_parser.add_mutually_exclusive_group()
+    track_group.add_argument(
         "--track",
+        dest="track",
         action="store_true",
+        default=None,
         help=(
-            "Track installed files in git (do NOT add them to .gitignore). "
-            "By default all installed paths are added to .gitignore so they "
-            "stay out of the host repository."
+            "Track the kit documentation (.docs/) in git (do NOT add it to "
+            ".gitignore). The choice is saved to .governancekit. Secrets "
+            "(.credentials, handoff.md) and rule files stay gitignored regardless."
         ),
+    )
+    track_group.add_argument(
+        "--no-track",
+        dest="track",
+        action="store_false",
+        default=None,
+        help="Keep the kit documentation (.docs/) out of git. Saved to .governancekit.",
     )
 
     configure_parser = subparsers.add_parser(
@@ -119,6 +129,15 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="KEY=VALUE",
         help="Set a placeholder value non-interactively. Repeatable.",
     )
+    identity_group = configure_parser.add_argument_group(
+        "host identity", "Per-instance, gitignored identity (non-interactive flags)."
+    )
+    identity_group.add_argument("--operator-name", dest="operator_name", metavar="NAME")
+    identity_group.add_argument("--host-id", dest="host_id", metavar="ID")
+    identity_group.add_argument("--instance-path", dest="instance_path", metavar="PATH")
+    identity_group.add_argument("--sibling-path", dest="sibling_path", metavar="PATH")
+    identity_group.add_argument("--assigned-ports", dest="assigned_ports", metavar="PORTS")
+    identity_group.add_argument("--branch-ownership", dest="branch_ownership", metavar="BRANCH")
 
     return parser
 
@@ -155,6 +174,15 @@ def format_doctor_json(result: DoctorResult) -> str:
 def format_resume(result) -> str:
     from .resume import ResumeResult
     lines = ["AI GovernanceKit resume"]
+
+    # ── Active identity (session start) ─────────────────────────────────────
+    operator = result.operator_name or "(no identity)"
+    host = result.host_id or "(unknown host)"
+    lines.append(f"operator: {operator} @ host: {host}")
+    if result.active_branch:
+        lines.append(f"active branch: {result.active_branch}")
+    if result.identity_warning:
+        lines.append(f"WARNING: {result.identity_warning}")
 
     if not result.next_step and not result.work_id:
         lines.append(f"Error: {result.warning}")
@@ -244,12 +272,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{action} {len(result.paths_installed)} path(s) into: {result.target}")
         for p in result.paths_installed:
             print(f"  {p}")
+        if result.migrated:
+            print("Migrated legacy docs/ layout to .docs/:")
+            for note in result.migration_notes:
+                print(f"  {note}")
         if result.gitignore_updated:
-            mode = "removed from" if args.track else "added to"
-            print(f".gitignore {mode}: {result.gitignore_path}")
-        else:
-            status = "tracked in git" if args.track else "no .gitignore changes needed"
-            print(f".gitignore: {status}")
+            docs_state = "tracked in git" if result.track_kit_docs else "gitignored"
+            print(f".gitignore updated: {result.gitignore_path} (.docs/ {docs_state})")
         if result.awt_message:
             label = "awt" if result.awt_installed else "awt (manual step needed)"
             for line in result.awt_message.splitlines():
@@ -257,7 +286,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "configure":
-        from .configure import parse_set_pairs, run_configure
+        from .configure import parse_set_pairs, run_configure, run_configure_identity
+        from .identity import ALL_FIELDS
         try:
             preset = parse_set_pairs(args.set_pairs)
         except ValueError as exc:
@@ -266,8 +296,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("AI GovernanceKit configure")
         if not result.found_tokens:
             print("No kit placeholders found — nothing to configure.")
-            return 0
-        if result.changed_files:
+        elif result.changed_files:
             print(f"Filled {len(result.values)} variable(s) in {len(result.changed_files)} file(s):")
             for p in result.changed_files:
                 print(f"  {p}")
@@ -275,7 +304,40 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("No values applied.")
         if result.unfilled:
             print("Still unfilled: " + ", ".join(f"[{t}]" for t in result.unfilled))
-        return 0 if not result.unfilled else 1
+
+        # ── host identity ──────────────────────────────────────────────────
+        identity_preset = {f: getattr(args, f) for f in ALL_FIELDS}
+        identity_flags_given = any(v is not None for v in identity_preset.values())
+        interactive = None if identity_flags_given is False else False
+        id_result = run_configure_identity(
+            args.root, preset=identity_preset, interactive=interactive
+        )
+        if id_result.saved:
+            print(f"Host identity saved: {id_result.path} (gitignored)")
+        elif id_result.missing_required:
+            missing = ", ".join(id_result.missing_required)
+            if identity_flags_given:
+                # The user explicitly tried to set identity but left fields out → error.
+                print(
+                    "ERROR: host identity incomplete — missing required field(s): "
+                    + missing
+                    + "\n  provide via --operator-name/--host-id/--instance-path "
+                    "(or run interactively)."
+                )
+                return 1
+            # No identity flags were given — this invocation is about kit placeholders
+            # (e.g. `configure --set OPERATOR_NAME=...`). Don't fail the command just
+            # because host identity isn't configured yet; advise and fall through so the
+            # exit code reflects whether the placeholder fill succeeded.
+            print(
+                "Note: host identity not configured yet (missing: "
+                + missing
+                + "). Run `configure` interactively or pass "
+                "--operator-name/--host-id/--instance-path to set it."
+            )
+
+        placeholders_ok = not result.unfilled
+        return 0 if placeholders_ok else 1
 
     parser.error(f"unknown command: {args.command}")
     return 2

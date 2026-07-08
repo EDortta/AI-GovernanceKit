@@ -5,6 +5,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .codemap import SKIP_DIRS
+from .identity import (
+    ALL_FIELDS,
+    REQUIRED_FIELDS,
+    _FIELD_DESCRIPTIONS,
+    Identity,
+    identity_from_values,
+    load_identity,
+    save_identity,
+)
 from .install_agents import _PLACEHOLDER_DESCRIPTIONS, _PLACEHOLDER_RE
 
 # Text file extensions worth scanning for placeholders. Kept deliberately small —
@@ -45,6 +54,78 @@ def parse_set_pairs(pairs: list[str]) -> dict[str, str]:
             raise ValueError(f"invalid --set value (empty key): {raw!r}")
         values[key] = val
     return values
+
+
+@dataclass
+class IdentityResult:
+    root: Path
+    saved: bool = False
+    path: str = ""
+    identity: Identity | None = None
+    missing_required: list[str] = field(default_factory=list)
+    gitignored: bool = False
+
+
+def run_configure_identity(
+    root: Path,
+    *,
+    preset: dict[str, str] | None = None,
+    interactive: bool | None = None,
+) -> IdentityResult:
+    """Collect, validate and persist per-host identity fields.
+
+    ``preset`` supplies non-interactive field values (from CLI flags). Any
+    unfilled field is prompted for when a TTY is available, seeded from the
+    existing identity file when present. Refuses to save while a REQUIRED field
+    is missing, reporting the gap for a clear error.
+    """
+    root = root.resolve()
+    preset = {k: v for k, v in (preset or {}).items() if v is not None and v != ""}
+
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+
+    existing = load_identity(root)
+    values: dict[str, str] = {}
+    for f in ALL_FIELDS:
+        if f in preset:
+            values[f] = str(preset[f]).strip()
+        elif existing is not None:
+            cur = getattr(existing, f)
+            values[f] = ",".join(cur) if isinstance(cur, list) else str(cur)
+        else:
+            values[f] = ""
+
+    if interactive:
+        print("\n── Configure host identity ──────────────────────────────────────")
+        print("Press Enter to keep the current/blank value.\n")
+        for f in ALL_FIELDS:
+            if f in preset:
+                continue
+            desc = _FIELD_DESCRIPTIONS.get(f, "")
+            required = " *required*" if f in REQUIRED_FIELDS else ""
+            current = values.get(f, "")
+            shown = f" [{current}]" if current else ""
+            prompt = f"  {f}{required} ({desc}){shown}: "
+            try:
+                answer = input(prompt).strip()
+            except EOFError:
+                answer = ""
+            if answer:
+                values[f] = answer
+
+    identity = identity_from_values(values)
+    result = IdentityResult(root=root, identity=identity)
+    result.missing_required = identity.missing_required()
+
+    if result.missing_required:
+        return result
+
+    path = save_identity(root, identity)
+    result.saved = True
+    result.path = str(path.relative_to(root))
+    result.gitignored = True
+    return result
 
 
 def _is_text_file(path: Path) -> bool:

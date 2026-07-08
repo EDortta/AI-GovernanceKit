@@ -31,13 +31,34 @@ class ResumeResult:
     next_step: str
     handoff: HandoffEntry | None
     warning: str  # non-fatal issue (e.g. handoff.md missing); empty if none
+    operator_name: str = ''
+    host_id: str = ''
+    active_branch: str = ''       # git branch of this checkout
+    identity_warning: str = ''    # same-branch / sibling collision warning
 
 
 # ── public API ─────────────────────────────────────────────────────────────────
 
+def _load_identity_context(root: Path) -> tuple[str, str, str, str]:
+    """Return (operator_name, host_id, active_branch, identity_warning)."""
+    from .identity import current_branch, load_identity, sibling_branch_conflict
+
+    identity = load_identity(root)
+    active_branch = current_branch(root)
+    if identity is None:
+        return '', '', active_branch, (
+            'No host identity found — run governancekit configure to declare '
+            'operator_name/host_id/instance_path.'
+        )
+    warning = sibling_branch_conflict(identity, active_branch)
+    return identity.operator_name, identity.host_id, active_branch, warning
+
+
 def run_resume(root: Path) -> ResumeResult:
     """Assemble session-start context from RESUME.md and handoff.md."""
     root = root.resolve()
+
+    operator_name, host_id, active_branch, identity_warning = _load_identity_context(root)
 
     resume_path = _find_resume(root)
     if resume_path is None:
@@ -47,6 +68,10 @@ def run_resume(root: Path) -> ResumeResult:
             next_step='',
             handoff=None,
             warning='No RESUME.md found under docs/issues/ — run governancekit doctor for details.',
+            operator_name=operator_name,
+            host_id=host_id,
+            active_branch=active_branch,
+            identity_warning=identity_warning,
         )
 
     meta, next_step = _parse_resume_md(resume_path)
@@ -69,6 +94,10 @@ def run_resume(root: Path) -> ResumeResult:
         next_step=next_step,
         handoff=handoff,
         warning=warning,
+        operator_name=operator_name,
+        host_id=host_id,
+        active_branch=active_branch,
+        identity_warning=identity_warning,
     )
 
 

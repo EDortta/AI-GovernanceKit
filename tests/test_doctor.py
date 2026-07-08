@@ -21,12 +21,12 @@ class DoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             write_valid_repo(root)
-            (root / "docs" / "limits.md").write_text("limits_ready: no\n", encoding="utf-8")
+            (root / ".docs" / "limits.md").write_text("limits_ready: no\n", encoding="utf-8")
 
             result = run_doctor(root)
 
             self.assertFalse(result.ok)
-            self.assertIn("docs/limits.md", failed_check_names(result))
+            self.assertIn(".docs/limits.md", failed_check_names(result))
 
     def test_empty_resume_next_step_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -77,18 +77,53 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("docs/required-reading.md", failed_check_names(result))
 
 
+    def test_missing_identity_file_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / ".governancekit-identity.json").unlink()
+
+            result = run_doctor(root)
+
+            self.assertFalse(result.ok)
+            self.assertIn("host identity", failed_check_names(result))
+
+    def test_incomplete_identity_file_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / ".governancekit-identity.json").write_text(
+                '{"operator_name": "Ann"}\n', encoding="utf-8"
+            )
+
+            result = run_doctor(root)
+
+            self.assertFalse(result.ok)
+            self.assertIn("host identity", failed_check_names(result))
+
+    def test_complete_identity_file_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+
+            result = run_doctor(root)
+
+            self.assertNotIn("host identity", failed_check_names(result))
+
+
 def write_valid_repo(root: Path) -> None:
     (root / "docs" / "issues" / "001-bootstrap-[started]" / "issues").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# AGENTS.md\n", encoding="utf-8")
     (root / "README.md").write_text("# Test Repo\n", encoding="utf-8")
     (root / "handoff.md").write_text("# Handoff\n", encoding="utf-8")
-    (root / "docs" / "software-overview.md").write_text(
+    (root / ".docs").mkdir(parents=True, exist_ok=True)
+    (root / ".docs" / "software-overview.md").write_text(
         "project_context_ready: yes\n",
         encoding="utf-8",
     )
-    (root / "docs" / "limits.md").write_text("limits_ready: yes\n", encoding="utf-8")
+    (root / ".docs" / "limits.md").write_text("limits_ready: yes\n", encoding="utf-8")
     (root / "docs" / "required-reading.md").write_text(
-        "# Required Reading\n\n- `docs/software-overview.md` — context\n",
+        "# Required Reading\n\n- `.docs/software-overview.md` — context\n",
         encoding="utf-8",
     )
 
@@ -100,6 +135,11 @@ def write_valid_repo(root: Path) -> None:
         encoding="utf-8",
     )
     (epic / "issues" / "001-task-[started].md").write_text("# Task\n", encoding="utf-8")
+    (root / ".governancekit-identity.json").write_text(
+        '{"operator_name": "Ann", "host_id": "host-a", '
+        '"instance_path": "/home/ann/proj"}\n',
+        encoding="utf-8",
+    )
 
 
 def failed_check_names(result) -> set[str]:
