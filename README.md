@@ -70,14 +70,17 @@ python3 -m governancekit configure --set OPERATOR_NAME=Ann  # fill kit variables
 ### Installing & updating the AI-Agents kit
 
 ```bash
-governancekit install-agents                 # fresh install (creates docs/project/, prompts for variables)
+governancekit install-agents                 # fresh install (kit → .docs/, project owns docs/, prompts for variables)
 governancekit install-agents --upgrade       # update all kit-owned files, preserve project state
 governancekit install-agents --docs-only     # update only kit docs (not AGENTS.md / rule files)
 governancekit configure                       # re-fill [PLACEHOLDER] variables without reinstalling
 ```
 
-`docs/project/` is yours to track; everything else under `docs/` is kit-owned and
-overwritten on upgrade. List mandatory pre-issue reading in `docs/required-reading.md`.
+`docs/` is yours to track; the kit lives under `.docs/` and is overwritten on
+upgrade. `install-agents` asks whether to track `.docs/` in git (saved to
+`.governancekit`); secrets stay gitignored regardless. Legacy installs (kit in
+`docs/`) are migrated to `.docs/` automatically on `--upgrade`, with a backup in
+`.docs-migration-bak/`. List mandatory pre-issue reading in `docs/required-reading.md`.
 
 Or install in editable mode:
 

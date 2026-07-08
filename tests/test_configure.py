@@ -4,7 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from governancekit.configure import parse_set_pairs, run_configure
+from governancekit.configure import (
+    parse_set_pairs,
+    run_configure,
+    run_configure_identity,
+)
+from governancekit.identity import load_identity
 
 
 class ConfigureTests(unittest.TestCase):
@@ -48,6 +53,54 @@ class ConfigureTests(unittest.TestCase):
             result = run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
 
             self.assertEqual(result.unfilled, ["GITHUB_OWNER"])
+
+
+class ConfigureIdentityTests(unittest.TestCase):
+    def test_non_interactive_missing_required_does_not_save(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            result = run_configure_identity(
+                root, preset={"operator_name": "Ann"}, interactive=False
+            )
+            self.assertFalse(result.saved)
+            self.assertIn("host_id", result.missing_required)
+            self.assertIn("instance_path", result.missing_required)
+            self.assertIsNone(load_identity(root))
+
+    def test_non_interactive_complete_saves_and_gitignores(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            result = run_configure_identity(
+                root,
+                preset={
+                    "operator_name": "Ann",
+                    "host_id": "host-a",
+                    "instance_path": "/home/ann/proj",
+                    "assigned_ports": "8630,6062",
+                },
+                interactive=False,
+            )
+            self.assertTrue(result.saved)
+            saved = load_identity(root)
+            self.assertIsNotNone(saved)
+            self.assertEqual(saved.operator_name, "Ann")
+            self.assertEqual(saved.assigned_ports, ["8630", "6062"])
+            self.assertTrue((root / ".governancekit-identity.json").is_file())
+            gitignore = (root / ".gitignore").read_text(encoding="utf-8")
+            self.assertIn(".governancekit-identity.json", gitignore)
+
+    def test_gitignore_entry_not_duplicated(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            preset = {
+                "operator_name": "Ann",
+                "host_id": "host-a",
+                "instance_path": "/home/ann/proj",
+            }
+            run_configure_identity(root, preset=preset, interactive=False)
+            run_configure_identity(root, preset=preset, interactive=False)
+            gitignore = (root / ".gitignore").read_text(encoding="utf-8")
+            self.assertEqual(gitignore.count(".governancekit-identity.json"), 1)
 
 
 if __name__ == "__main__":

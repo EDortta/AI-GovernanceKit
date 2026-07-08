@@ -3,6 +3,9 @@
 .env.*
 .credentials/
 
+# Per-instance host identity (never tracked)
+.governancekit-identity.json
+
 # Runtime and generated local data
 .cache/
 .tmp/
@@ -29,3 +32,9 @@ coverage/
 .DS_Store
 Thumbs.db
 
+
+# Python build artifacts
+*.egg-info/
+
+# Local backups
+*.backup

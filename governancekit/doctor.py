@@ -50,12 +50,12 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_file(repo_root, "handoff.md"),
         _check_ready_flag(
             repo_root,
-            "docs/software-overview.md",
+            ".docs/software-overview.md",
             "project_context_ready: yes",
         ),
         _check_ready_flag(
             repo_root,
-            "docs/limits.md",
+            ".docs/limits.md",
             "limits_ready: yes",
         ),
         _check_required_reading(repo_root),
@@ -63,9 +63,56 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_resume_next_step(repo_root),
         _check_tracked_secret_files(repo_root),
         _check_gitignore_secrets(repo_root),
+        _check_host_identity(repo_root),
+        _check_sibling_branch(repo_root),
         _check_codemap(repo_root),
     ]
     return DoctorResult(root=repo_root, checks=tuple(checks))
+
+
+def _check_host_identity(root: Path) -> CheckResult:
+    """Fail when per-host identity is missing or incomplete.
+
+    Enforces the per-host identity contract: no host should operate a governed
+    project without verifiable operator/host/instance identity.
+    """
+    from .identity import IDENTITY_FILENAME, load_identity
+
+    identity = load_identity(root)
+    if identity is None:
+        return CheckResult(
+            "host identity",
+            False,
+            f"{IDENTITY_FILENAME} missing — run 'governancekit configure' to "
+            "collect operator_name, host_id and instance_path",
+        )
+    missing = identity.missing_required()
+    if missing:
+        return CheckResult(
+            "host identity",
+            False,
+            f"{IDENTITY_FILENAME} incomplete — missing: {', '.join(missing)}; "
+            "run 'governancekit configure' to complete it",
+        )
+    return CheckResult(
+        "host identity",
+        True,
+        f"{identity.operator_name}@{identity.host_id} ({identity.instance_path})",
+    )
+
+
+def _check_sibling_branch(root: Path) -> CheckResult:
+    """Advisory: warn when the current branch may collide with a sibling instance."""
+    from .identity import current_branch, load_identity, sibling_branch_conflict
+
+    identity = load_identity(root)
+    if identity is None or not identity.sibling_path.strip():
+        return CheckResult("sibling branch", True, "no sibling instance declared", advisory=True)
+    branch = current_branch(root)
+    conflict = sibling_branch_conflict(identity, branch)
+    if conflict:
+        return CheckResult("sibling branch", False, conflict, advisory=True)
+    return CheckResult("sibling branch", True, f"branch '{branch}' clear of sibling ownership", advisory=True)
 
 
 _PLACEHOLDER_SCAN_PATHS = [

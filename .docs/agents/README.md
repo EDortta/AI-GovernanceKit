@@ -9,5 +9,5 @@ Initial expected roles:
 - security
 - issue automation
 
-Role files should stay aligned with `AGENTS.md`, `docs/software-overview.md`, and `docs/limits.md`.
+Role files should stay aligned with `AGENTS.md`, `.docs/software-overview.md`, and `.docs/limits.md`.
 

@@ -164,5 +164,41 @@ class RunResumeTests(unittest.TestCase):
             self.assertEqual(result.next_step, "Correct step.")
 
 
+class ResumeIdentityTests(unittest.TestCase):
+    def _write_identity(self, root: Path, **fields: str) -> None:
+        import json
+
+        (root / ".governancekit-identity.json").write_text(
+            json.dumps(fields), encoding="utf-8"
+        )
+
+    def test_displays_operator_and_host(self) -> None:
+        from governancekit.cli import format_resume
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_valid_repo(root)
+            self._write_identity(
+                root,
+                operator_name="Ann",
+                host_id="host-a",
+                instance_path="/home/ann/proj",
+            )
+            result = run_resume(root)
+            self.assertEqual(result.operator_name, "Ann")
+            self.assertEqual(result.host_id, "host-a")
+            rendered = format_resume(result)
+            self.assertIn("Ann", rendered)
+            self.assertIn("host-a", rendered)
+
+    def test_warns_when_identity_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_valid_repo(root)
+            result = run_resume(root)
+            self.assertEqual(result.operator_name, "")
+            self.assertIn("identity", result.identity_warning.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
