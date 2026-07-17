@@ -349,6 +349,31 @@ def _prefer_started_resume(resume_files: list[Path]) -> Path:
     return resume_files[0]
 
 
+_TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")
+
+
+def _is_secret_template(path: str) -> bool:
+    """True when *path* is a template shipped on purpose, not a real secret.
+
+    The kit itself seeds `.credentials/` with `*.example` + README files (incl.
+    translated `README-ptbr.md`), and projects ship `.env.example`; failing
+    those trains the reader to ignore the FAIL line, which is worse than not
+    checking. The twin gate in AI-Agents (`scripts/run-checks.sh` §4) already
+    excludes exactly these.
+
+    Deliberately narrow: the exclusion is a proven-template suffix, never a
+    prefix. `.env.local` and `.env.production` are real secrets and must not
+    match here (SEC-0221).
+    """
+    name = Path(path).name
+    if name.endswith(_TEMPLATE_SUFFIXES):
+        return True
+    if not path.startswith(".credentials/"):
+        return False
+    # Doc/scaffolding files the kit seeds into .credentials/ — never secrets.
+    return name == ".gitignore" or name.startswith("README")
+
+
 def _check_tracked_secret_files(root: Path) -> CheckResult:
     if not (root / ".git").exists():
         return CheckResult("tracked secrets", True, "not a git repository")
@@ -374,10 +399,13 @@ def _check_tracked_secret_files(root: Path) -> CheckResult:
     offenders = [
         path
         for path in tracked_files
-        if path.startswith(forbidden_prefixes)
-        or Path(path).name in forbidden_names
-        or Path(path).name.startswith(".env")
-        or path.endswith(forbidden_suffixes)
+        if not _is_secret_template(path)
+        and (
+            path.startswith(forbidden_prefixes)
+            or Path(path).name in forbidden_names
+            or Path(path).name.startswith(".env")
+            or path.endswith(forbidden_suffixes)
+        )
     ]
     if offenders:
         return CheckResult("tracked secrets", False, f"forbidden tracked files: {', '.join(offenders)}")
