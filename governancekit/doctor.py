@@ -100,7 +100,14 @@ _SECURITY_MAX_EXAMPLES = 8
 
 
 def _iter_source_files(root: Path):
-    """Yield source files under *root*, skipping vendor/build dirs."""
+    """Yield source files under *root*, skipping vendor/build dirs and nested
+    git repositories.
+
+    A subdirectory carrying its own ``.git`` (a submodule or vendored checkout)
+    belongs to another project — its files are not this project's source and are
+    skipped. Gitignored files are filtered separately by the caller, which needs
+    *root* to consult git; see ``_git_ignored_paths``.
+    """
     stack = [root]
     while stack:
         current = stack.pop()
@@ -110,10 +117,50 @@ def _iter_source_files(root: Path):
             continue
         for item in items:
             if item.is_dir():
-                if item.name not in _CODEMAP_SKIP and not item.name.endswith((".egg-info", ".dist-info")):
-                    stack.append(item)
+                if item.name in _CODEMAP_SKIP or item.name.endswith((".egg-info", ".dist-info")):
+                    continue
+                if (item / ".git").exists():  # nested repo / submodule
+                    continue
+                stack.append(item)
             elif item.is_file() and item.suffix in _CODEMAP_SOURCE_EXTENSIONS:
                 yield item
+
+
+def _git_ignored_paths(root: Path, paths: list[Path]) -> set[Path]:
+    """Return the subset of *paths* that git ignores under *root*.
+
+    Empty when *root* is not a git repo or git is unavailable — a deliberate
+    fail-open (``design-standards.md`` §6): a scan that loses git degrades to
+    checking *more* files, never fewer. The dangerous direction for a security
+    scan is to silently skip; that never happens here.
+
+    Uses ``git check-ignore -z --stdin`` in one batch call; ``-z`` sidesteps the
+    quoting git otherwise applies to paths with unusual characters.
+    """
+    if not paths or not (root / ".git").exists():
+        return set()
+    rel_to_path: dict[str, Path] = {}
+    for path in paths:
+        try:
+            rel_to_path[path.relative_to(root).as_posix()] = path
+        except ValueError:
+            continue
+    if not rel_to_path:
+        return set()
+    try:
+        completed = subprocess.run(
+            ["git", "check-ignore", "-z", "--stdin"],
+            cwd=root,
+            input="\0".join(rel_to_path),
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return set()
+    # check-ignore exits 0 (some ignored), 1 (none), 128 (error). Only trust 0/1.
+    if completed.returncode not in (0, 1):
+        return set()
+    return {rel_to_path[token] for token in completed.stdout.split("\0") if token in rel_to_path}
 
 
 def _check_security_advisories(root: Path) -> CheckResult:
@@ -121,7 +168,11 @@ def _check_security_advisories(root: Path) -> CheckResult:
     name = "security advisories"
     hits: dict[str, int] = {}
     examples: list[str] = []
-    for path in _iter_source_files(root):
+    source_files = list(_iter_source_files(root))
+    ignored = _git_ignored_paths(root, source_files)
+    for path in source_files:
+        if path in ignored:
+            continue
         if path.name in _SECURITY_SCAN_SKIP_FILES:
             continue
         try:
