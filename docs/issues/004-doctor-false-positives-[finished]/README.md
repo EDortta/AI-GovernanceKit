@@ -28,6 +28,19 @@ operador que roda isso duas vezes e vê ruído para de ler a saída; aí o FAIL 
 (`gitignore secrets: .gitignore does not cover .env`, que era verdade e foi
 corrigido) some junto no meio.
 
+## Resultado
+
+Ambas as tasks `[finished]`. No AcheiVc, o doctor foi de **15 findings para 7**
+sem perder nenhum sinal real: o FAIL falso do `.env.example` virou PASS (task 001)
+e os 4 HINTs de `.dart_tool`/submódulo sumiram (task 002), enquanto os `shell
+injection` reais e um `weak password hash` antes afogado passaram a aparecer.
+`python3 -m pytest tests/` → 100 passed.
+
+Fica para o épico `WK-20260717-harness-generation`: unificar os 4 walkers do
+pacote num `walk.py` com seam `Ignorer`, convertendo e **deletando**
+`_iter_source_files` + `_git_ignored_paths` (`design-standards.md` §7, na direção
+de conversão — não de coexistência).
+
 ## Task Index
-- 001-example-files-are-not-secrets-[draft].md
-- 002-advisory-scan-respects-gitignore-[draft].md
+- 001-example-files-are-not-secrets-[finished].md
+- 002-advisory-scan-respects-gitignore-[finished].md
