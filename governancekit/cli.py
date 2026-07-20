@@ -272,6 +272,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{action} {len(result.paths_installed)} path(s) into: {result.target}")
         for p in result.paths_installed:
             print(f"  {p}")
+        if result.preserved_paths:
+            print(
+                f"Preserved {len(result.preserved_paths)} project-authored file(s) "
+                "inside kit directories (not shipped by this kit version):"
+            )
+            for p in result.preserved_paths:
+                print(f"  kept: {p}")
+        if result.overwritten_edits:
+            print(
+                f"Replaced {len(result.overwritten_edits)} kit file(s) you had edited "
+                "by hand — your version was stashed under .gk/overwritten/:"
+            )
+            for p in result.overwritten_edits:
+                print(f"  stashed: {p}")
+            print(
+                "  Kit files are kit-owned. Move lasting project rules into your own "
+                "files so they are preserved instead of stashed."
+            )
+        if result.upgraded and not result.had_state:
+            print(
+                "Note: no kit state existed before this run, so nothing was deleted. "
+                "This run wrote one; later upgrades can retire files the kit drops."
+            )
         if result.migrated:
             print("Migrated legacy docs/ layout to .docs/:")
             for note in result.migration_notes:

@@ -37,7 +37,8 @@ _SRC_DOC_PREFIX = "docs/"
 _DST_DOC_PREFIX = ".docs/"
 
 # Kit-owned documentation refreshed by --docs-only / --upgrade (source-relative).
-# Overwritten wholesale on every upgrade — never put project-filled content here.
+# Kit-authored files here are replaced on upgrade; files the PROJECT added into these
+# directories are preserved (see ``_sync_dir`` and the manifest below).
 _KIT_DOC_PATHS: list[str] = [
     "docs/agents",
     "docs/workflows",
@@ -134,6 +135,51 @@ _LEGACY_KIT_DOC_NAMES: list[str] = [
 _MIGRATION_BACKUP_DIR = ".docs-migration-bak"
 _CONFIG_FILE = ".governancekit"
 
+# Durable install state, in one hidden JSON. Two jobs:
+#
+# "files" — hash of each kit file AS IT ENDED UP ON DISK, recorded *after* placeholder
+#   substitution. Hashing the pristine template instead would never match a file whose
+#   [OPERATOR_NAME]/[SMTP_ACCOUNT] were filled in, so every configured file would look
+#   locally edited and ownership would be undecidable exactly where the kit needs it.
+#
+# "metadata" — the operator's answers. Kept out of the files themselves so an upgrade,
+#   which overwrites those files with fresh templates, can re-apply what it already
+#   knows and only ask about variables it has never seen.
+#
+# Absent state (every install made before this existed) is deliberately read as
+# "nothing is known to be kit-owned": the upgrade then refreshes what the new kit
+# ships and deletes NOTHING. Safe by default — the cost is that a file genuinely
+# retired upstream lingers until the first state-backed upgrade records it.
+_STATE_DIR = ".gk"
+# Split by who may read it, because the two halves have opposite requirements.
+#
+# manifest.json is COMMITTED: file hashes are not secret, and a team sharing a
+# checkout must share them — that is what makes every programmer's upgrade decide
+# ownership the same way. Non-sensitive answers (operator, org, repo owner) ride
+# along so a teammate's first run is not re-interrogated.
+#
+# secrets.json is GITIGNORED: SMTP account, PIX keys, wallet address. Per-machine.
+# If a team genuinely needs to share these, encrypt this file to the RECIPIENTS'
+# public keys (sops/age) — never "encrypt with the origin machine's private key",
+# which only signs and leaves the content readable to anyone holding the public key.
+_STATE_FILE = f"{_STATE_DIR}/manifest.json"
+_SECRETS_FILE = f"{_STATE_DIR}/secrets.json"
+_STATE_VERSION = 1
+
+# Answers that must never be committed. Everything else is shareable project context.
+_SENSITIVE_PLACEHOLDERS: frozenset[str] = frozenset({
+    "SMTP_ACCOUNT",
+    "PIX_KEY_UUID",
+    "PIX_HOLDER_NAME",
+    "PIX_PAYLOAD",
+    "PIX_QR_BASE64",
+    "ETH_WALLET_ADDRESS",
+    "KOFI_HANDLE",
+    # Not a secret, but an absolute path on one machine — sharing it would point a
+    # teammate's agents at a directory that does not exist for them.
+    "PROJECT_ROOT",
+})
+
 _GITIGNORE_BEGIN = "# AI-Agents kit — managed by governancekit install-agents"
 _GITIGNORE_END = "# end AI-Agents kit"
 
@@ -150,6 +196,14 @@ class InstallResult:
     migrated: bool = False
     migration_notes: list[str] = field(default_factory=list)
     track_kit_docs: bool = False
+    # Files inside kit-owned directories that the upgrade refused to delete because
+    # they are project-authored, or kit files the project has since edited.
+    preserved_paths: list[str] = field(default_factory=list)
+    had_state: bool = False
+    # Kit files the project had edited by hand; the new kit version replaced them and
+    # a copy of the edit was stashed under .gk/overwritten/.
+    overwritten_edits: list[str] = field(default_factory=list)
+    metadata_known: list[str] = field(default_factory=list)
 
 
 def _dest_rel(src_rel: str) -> str:
@@ -213,6 +267,9 @@ def run_install_agents(
     root = root.resolve()
 
     result = InstallResult(target=root, upgraded=upgrade or docs_only)
+    # Read before any write: the upgrade needs the PREVIOUS hashes to judge ownership,
+    # and the previous answers to avoid re-interrogating the operator.
+    state = _read_state(root)
 
     # Migrate a legacy layout (kit in docs/, project in docs/project/) BEFORE any
     # upgrade write, so kit content lands in .docs/ and project docs are preserved.
@@ -224,10 +281,17 @@ def run_install_agents(
     with tempfile.TemporaryDirectory() as tmp:
         src_root = _download(repo, ref, Path(tmp))
 
-        if docs_only:
-            result.paths_installed = _do_upgrade(src_root, root, paths=_KIT_DOC_PATHS)
-        elif upgrade:
-            result.paths_installed = _do_upgrade(src_root, root)
+        if docs_only or upgrade:
+            result.had_state = bool(state)
+            scope = _KIT_DOC_PATHS if docs_only else None
+            result.paths_installed = _do_upgrade(
+                src_root,
+                root,
+                paths=scope,
+                manifest=_state_files(state),
+                preserved=result.preserved_paths,
+                overwritten=result.overwritten_edits,
+            )
         else:
             result.paths_installed = _do_fresh(src_root, root, force=force)
 
@@ -248,7 +312,14 @@ def run_install_agents(
         result.gitignore_updated = True
         result.gitignore_path = gitignore_path
 
-    _fill_placeholders(root, result.paths_installed)
+    metadata = _fill_placeholders(
+        root, result.paths_installed, known=_state_metadata(state)
+    )
+    result.metadata_known = sorted(metadata)
+    # Written last: hashes must describe the files as they stand AFTER substitution,
+    # so a configured file still matches its own record on the next upgrade.
+    _write_state(root, result.paths_installed, repo=repo, ref=ref, metadata=metadata)
+
     if install_awt and _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
         result.awt_installed, result.awt_message = _install_awt(root)
     elif _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
@@ -421,8 +492,17 @@ def _reset_readiness_flags(root: Path) -> None:
 
 # ── upgrade ────────────────────────────────────────────────────────────────────
 
-def _do_upgrade(src: Path, dst: Path, *, paths: list[str] | None = None) -> list[str]:
+def _do_upgrade(
+    src: Path,
+    dst: Path,
+    *,
+    paths: list[str] | None = None,
+    manifest: dict[str, str] | None = None,
+    preserved: list[str] | None = None,
+    overwritten: list[str] | None = None,
+) -> list[str]:
     installed: list[str] = []
+    known = manifest if manifest is not None else {}
     for rel in (paths if paths is not None else _UPGRADE_PATHS):
         src_path = _resolve_src(src, rel)
         dst_path = dst / _dest_rel(rel)
@@ -430,13 +510,194 @@ def _do_upgrade(src: Path, dst: Path, *, paths: list[str] | None = None) -> list
             continue
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         if src_path.is_dir():
-            if dst_path.exists():
-                shutil.rmtree(dst_path)
-            shutil.copytree(src_path, dst_path)
+            _sync_dir(src_path, dst_path, dst, known, preserved, overwritten)
         else:
             shutil.copy2(src_path, dst_path)
         installed.append(_dest_rel(rel))
     return installed
+
+
+def _sync_dir(
+    src_dir: Path,
+    dst_dir: Path,
+    root: Path,
+    known: dict[str, str],
+    preserved: list[str] | None,
+    overwritten: list[str] | None = None,
+) -> None:
+    """Refresh a kit-owned directory without discarding project-authored files.
+
+    Replaces every file the new kit ships. A destination file the kit does NOT ship
+    is removed only when the manifest proves the kit itself wrote it AND its content
+    is still byte-identical to what was written — i.e. it was retired upstream and
+    the project never touched it. Anything else (project-authored, or kit-authored
+    but locally edited) is kept and reported through *preserved*.
+
+    This replaces an earlier ``rmtree`` + ``copytree``, which deleted project rules
+    that lived inside kit directories.
+    """
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    shipped: set[Path] = set()
+    for src_file in sorted(p for p in src_dir.rglob("*") if p.is_file()):
+        rel = src_file.relative_to(src_dir)
+        target = dst_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # A kit file the project edited by hand is still kit-owned, so the new version
+        # wins — but the edit is real intent and must not vanish silently. Stash it and
+        # report it. Only detectable because the state records the hash as written.
+        if target.is_file() and overwritten is not None:
+            rel_to_root = target.relative_to(root).as_posix()
+            recorded = known.get(rel_to_root)
+            if recorded is not None and recorded != _file_sha256(target):
+                backup = root / _STATE_DIR / "overwritten" / rel_to_root
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(target, backup)
+                overwritten.append(rel_to_root)
+        shutil.copy2(src_file, target)
+        shipped.add(target)
+
+    for existing in sorted(p for p in dst_dir.rglob("*") if p.is_file()):
+        if existing in shipped:
+            continue
+        rel_to_root = existing.relative_to(root).as_posix()
+        recorded = known.get(rel_to_root)
+        if recorded is not None and recorded == _file_sha256(existing):
+            existing.unlink()
+            continue
+        if preserved is not None:
+            preserved.append(rel_to_root)
+
+    # Directories emptied by the retirement pass above carry no information; leave
+    # any directory that still holds preserved files untouched.
+    for d in sorted((p for p in dst_dir.rglob("*") if p.is_dir()), reverse=True):
+        if not any(d.iterdir()):
+            d.rmdir()
+
+
+# ── install state (.gk/state.json) ─────────────────────────────────────────────
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _read_json(path: Path) -> dict:
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read_state(root: Path) -> dict:
+    """Load ``.gk/state.json``; an absent or corrupt file yields an empty state.
+
+    Empty means "nothing is provably kit-owned and nothing is known about the
+    operator" — which makes the upgrade preserve files and ask questions, never
+    delete or assume.
+    """
+    state = _read_json(root / _STATE_FILE)
+    secrets = _read_json(root / _SECRETS_FILE)
+    if not secrets:
+        return state
+    # Present the two files to callers as one logical state; only _write_state knows
+    # they are stored apart.
+    merged = dict(state)
+    merged["metadata"] = {
+        **_state_metadata(state),
+        **_state_metadata(secrets),
+    }
+    return merged
+
+
+def _state_files(state: dict) -> dict[str, str]:
+    files = state.get("files")
+    return files if isinstance(files, dict) else {}
+
+
+def _state_metadata(state: dict) -> dict[str, str]:
+    meta = state.get("metadata")
+    return {k: v for k, v in meta.items() if isinstance(v, str)} if isinstance(meta, dict) else {}
+
+
+def _write_state(
+    root: Path,
+    installed: list[str],
+    *,
+    repo: str,
+    ref: str,
+    metadata: dict[str, str],
+) -> None:
+    """Persist file hashes and operator answers.
+
+    Call this AFTER placeholder substitution: the recorded hash must describe the file
+    as it actually sits on disk, otherwise a configured file never matches its own
+    record and looks hand-edited forever.
+
+    Merges over the previous state rather than replacing it — ``--docs-only`` touches a
+    narrow scope, and dropping what it did not touch would make the next full upgrade
+    forget that e.g. ``AGENTS.md`` is kit-owned, or forget an answer already given.
+    """
+    previous = _read_state(root)
+    files: dict[str, str] = dict(_state_files(previous))
+    for rel in installed:
+        target = root / rel
+        if target.is_file():
+            files[rel] = _file_sha256(target)
+        elif target.is_dir():
+            for f in sorted(p for p in target.rglob("*") if p.is_file()):
+                files[f.relative_to(root).as_posix()] = _file_sha256(f)
+
+    merged_meta = {**_state_metadata(previous), **metadata}
+    shareable = {k: v for k, v in merged_meta.items() if k not in _SENSITIVE_PLACEHOLDERS}
+    sensitive = {k: v for k, v in merged_meta.items() if k in _SENSITIVE_PLACEHOLDERS}
+
+    state_dir = root / _STATE_DIR
+    state_dir.mkdir(parents=True, exist_ok=True)
+    # Self-contained ignore rules, matching the bash installer: manifest.json stays
+    # tracked (the team shares it), the credential half and the stash never do. Kept
+    # here so the guarantee holds even in a project whose root .gitignore we did not
+    # write — the secrets file must never depend on that having gone well.
+    (state_dir / ".gitignore").write_text(
+        "# Managed by governancekit.\n"
+        "# manifest.json is intentionally NOT ignored — the team must share it.\n"
+        "secrets.json\n"
+        "overwritten/\n",
+        encoding="utf-8",
+    )
+
+    (root / _STATE_FILE).write_text(
+        json.dumps(
+            {
+                "state_version": _STATE_VERSION,
+                "repo": repo,
+                "ref": ref,
+                "metadata": shareable,
+                "files": files,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Written only when there is something to write, so a project with no secrets
+    # never grows a confusing empty file.
+    if sensitive:
+        secrets_path = root / _SECRETS_FILE
+        secrets_path.write_text(
+            json.dumps(
+                {"state_version": _STATE_VERSION, "metadata": sensitive},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        secrets_path.chmod(0o600)
 
 
 # ── legacy layout migration ──────────────────────────────────────────────────────
@@ -608,13 +869,25 @@ _PLACEHOLDER_DESCRIPTIONS: dict[str, str] = {
 }
 
 
-def _fill_placeholders(root: Path, installed_paths: list[str]) -> None:
-    """Scan installed files for known [PLACEHOLDER] tokens and prompt for values.
+def _fill_placeholders(
+    root: Path,
+    installed_paths: list[str],
+    *,
+    known: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Scan installed files for known [PLACEHOLDER] tokens and fill them in.
 
     Only tokens described in ``_PLACEHOLDER_DESCRIPTIONS`` are treated as fillable
     variables. Arbitrary ``[WORD]`` tokens that merely appear as documentation
     examples (e.g. the literal ``[PLACEHOLDER]`` / ``[TOKEN]`` used to *explain* the
     mechanism) are skipped instead of being prompted for. Mirrors ``configure.py``.
+
+    *known* carries answers from previous runs (``.gk/state.json``). They are offered
+    as the default so the operator confirms with Enter instead of retyping, and they
+    are applied without any prompt when there is no terminal — which is what gives an
+    unattended ``--upgrade`` continuity across the template overwrite.
+
+    Returns every value in force after this run, for the caller to persist.
     """
     # Collect all unique placeholders across installed files
     placeholder_files: dict[str, list[Path]] = {}
@@ -630,37 +903,55 @@ def _fill_placeholders(root: Path, installed_paths: list[str]) -> None:
             if token in _PLACEHOLDER_DESCRIPTIONS:
                 placeholder_files.setdefault(token, []).append(path)
 
+    known = known or {}
+
     if not placeholder_files:
-        return
+        return dict(known)
+
+    remembered = {t: known[t] for t in placeholder_files if known.get(t)}
+    unknown = [t for t in sorted(placeholder_files) if t not in remembered]
 
     if not sys.stdin.isatty():
-        print(
-            "\nWarning: the following placeholders were not filled "
-            "(no interactive terminal):\n  "
-            + ", ".join(f"[{p}]" for p in sorted(placeholder_files))
-        )
-        return
+        # Unattended: re-apply what we already know rather than leaving raw templates
+        # behind, and report only what genuinely has no answer yet.
+        values = dict(remembered)
+        if unknown:
+            print(
+                "\nWarning: the following placeholders were not filled "
+                "(no interactive terminal, no stored value):\n  "
+                + ", ".join(f"[{p}]" for p in unknown)
+            )
+        if not values:
+            return dict(known)
+    else:
+        print("\n── Configure installed kit ────────────────────────────────────────")
+        if remembered:
+            print(
+                f"{len(remembered)} value(s) recalled from a previous install — "
+                "press Enter to keep them."
+            )
+        print("Press Enter to skip an item with no stored value.\n")
 
-    print("\n── Configure installed kit ────────────────────────────────────────")
-    print("The following values are required. Press Enter to skip any item.\n")
+        values = {}
+        for token in sorted(placeholder_files):
+            desc = _PLACEHOLDER_DESCRIPTIONS.get(token, "")
+            current = remembered.get(token)
+            prompt = f"  [{token}]"
+            if desc:
+                prompt += f"  ({desc})"
+            prompt += f" [{current}]: " if current else ": "
+            try:
+                answer = input(prompt).strip()
+            except EOFError:
+                answer = ""
+            if answer:
+                values[token] = answer
+            elif current:
+                values[token] = current
 
-    values: dict[str, str] = {}
-    for token in sorted(placeholder_files):
-        desc = _PLACEHOLDER_DESCRIPTIONS.get(token, "")
-        prompt = f"  [{token}]"
-        if desc:
-            prompt += f"  ({desc})"
-        prompt += ": "
-        try:
-            answer = input(prompt).strip()
-        except EOFError:
-            answer = ""
-        if answer:
-            values[token] = answer
-
-    if not values:
-        print("\nNo values provided — placeholders left as-is.")
-        return
+        if not values:
+            print("\nNo values provided — placeholders left as-is.")
+            return dict(known)
 
     # Apply substitutions
     changed: list[str] = []
@@ -691,6 +982,8 @@ def _fill_placeholders(root: Path, installed_paths: list[str]) -> None:
             + ", ".join(f"[{t}]" for t in sorted(unfilled))
         )
 
+    return {**known, **values}
+
 
 # ── .gitignore management ──────────────────────────────────────────────────────
 
@@ -720,6 +1013,12 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     # The legacy-migration backup is a full copy of the pre-migration docs/ tree and
     # must never be committed. Always ignore it, independent of track-kit-docs.
     entries.append(f"{_MIGRATION_BACKUP_DIR}/")
+    # .gk/manifest.json is deliberately NOT ignored: a team sharing a checkout must
+    # share the file hashes, or each programmer's upgrade would judge ownership from a
+    # different baseline. Only the credential half and the stash are ignored, and
+    # unconditionally — unlike .docs/, this is not subject to the track-kit-docs choice.
+    entries.append(_SECRETS_FILE)
+    entries.append(f"{_STATE_DIR}/overwritten/")
     return entries
 
 

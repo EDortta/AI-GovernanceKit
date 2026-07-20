@@ -84,6 +84,206 @@ class InstallAgentsTests(unittest.TestCase):
             self.assertEqual((dst / "AGENTS.md").read_text(), "PROJECT EDITED\n")
             self.assertEqual((dst / ".docs" / "agents" / "programmer.md").read_text(), "v2\n")
 
+    def test_upgrade_preserves_project_authored_agent(self) -> None:
+        # The real-world case: jk-structure keeps its own agents (build-deploy.md etc.)
+        # inside .docs/agents/. An upgrade must refresh kit files and keep those.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            agents = dst / ".docs" / "agents"
+            agents.mkdir(parents=True)
+            (agents / "programmer.md").write_text("v1\n", encoding="utf-8")
+            (agents / "build-deploy.md").write_text("PROJECT RULE\n", encoding="utf-8")
+
+            preserved: list[str] = []
+            ia._do_upgrade(src, dst, paths=ia._KIT_DOC_PATHS, manifest={}, preserved=preserved)
+
+            self.assertEqual((agents / "programmer.md").read_text(), "v2\n")
+            self.assertEqual((agents / "build-deploy.md").read_text(), "PROJECT RULE\n")
+            self.assertIn(".docs/agents/build-deploy.md", preserved)
+
+    def test_upgrade_retires_untouched_kit_file(self) -> None:
+        # A file the kit shipped and later dropped IS removed — but only because the
+        # manifest proves the kit wrote it and the project never edited it.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            agents = dst / ".docs" / "agents"
+            agents.mkdir(parents=True)
+            retired = agents / "old-agent.md"
+            retired.write_text("kit v1 content\n", encoding="utf-8")
+            manifest = {".docs/agents/old-agent.md": ia._file_sha256(retired)}
+
+            preserved: list[str] = []
+            ia._do_upgrade(
+                src, dst, paths=ia._KIT_DOC_PATHS, manifest=manifest, preserved=preserved
+            )
+
+            self.assertFalse(retired.exists())
+            self.assertEqual(preserved, [])
+
+    def test_upgrade_keeps_locally_edited_kit_file(self) -> None:
+        # Kit-authored but edited by the project: the hash no longer matches, so the
+        # edit is treated as project intent and survives.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            agents = dst / ".docs" / "agents"
+            agents.mkdir(parents=True)
+            edited = agents / "old-agent.md"
+            edited.write_text("EDITED BY PROJECT\n", encoding="utf-8")
+            manifest = {".docs/agents/old-agent.md": ia._file_sha256(Path(__file__))}
+
+            preserved: list[str] = []
+            ia._do_upgrade(
+                src, dst, paths=ia._KIT_DOC_PATHS, manifest=manifest, preserved=preserved
+            )
+
+            self.assertEqual(edited.read_text(), "EDITED BY PROJECT\n")
+            self.assertIn(".docs/agents/old-agent.md", preserved)
+
+    def test_state_roundtrip_and_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self.assertEqual(ia._state_files(ia._read_state(root)), {})
+
+            (root / ".docs" / "agents").mkdir(parents=True)
+            (root / ".docs" / "agents" / "programmer.md").write_text("v2\n", encoding="utf-8")
+            ia._write_state(root, [".docs/agents"], repo="r", ref="v1", metadata={"OPERATOR_NAME": "Esteban"})
+            first = ia._state_files(ia._read_state(root))
+            self.assertIn(".docs/agents/programmer.md", first)
+
+            # A narrower later run must not erase what it did not touch.
+            (root / "AGENTS.md").write_text("# kit\n", encoding="utf-8")
+            ia._write_state(root, ["AGENTS.md"], repo="r", ref="v2", metadata={})
+            merged = ia._state_files(ia._read_state(root))
+            self.assertIn("AGENTS.md", merged)
+            self.assertIn(".docs/agents/programmer.md", merged)
+
+    def test_metadata_reapplied_without_a_terminal(self) -> None:
+        # The continuity case: an upgrade overwrote the file with a fresh template, so
+        # [OPERATOR_NAME] is raw again. A stored answer must be re-applied silently
+        # instead of leaving the placeholder exposed.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "AGENTS.md").write_text("# kit [OPERATOR_NAME]\n", encoding="utf-8")
+
+            values = ia._fill_placeholders(
+                root, ["AGENTS.md"], known={"OPERATOR_NAME": "Esteban"}
+            )
+
+            self.assertEqual((root / "AGENTS.md").read_text(), "# kit Esteban\n")
+            self.assertEqual(values["OPERATOR_NAME"], "Esteban")
+
+    def test_unknown_metadata_survives_as_unfilled(self) -> None:
+        # A variable the kit newly introduced has no stored answer; it must stay raw
+        # (to be asked later) rather than being invented.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "AGENTS.md").write_text(
+                "[OPERATOR_NAME] / [SMTP_ACCOUNT]\n", encoding="utf-8"
+            )
+
+            values = ia._fill_placeholders(
+                root, ["AGENTS.md"], known={"OPERATOR_NAME": "Esteban"}
+            )
+
+            self.assertEqual((root / "AGENTS.md").read_text(), "Esteban / [SMTP_ACCOUNT]\n")
+            self.assertNotIn("SMTP_ACCOUNT", values)
+
+    def test_state_hash_matches_file_after_placeholder_fill(self) -> None:
+        # Regression: hashing the pristine template would never match the configured
+        # file, making every filled file look hand-edited on the next upgrade.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            agents = root / "AGENTS.md"
+            agents.write_text("# kit [OPERATOR_NAME]\n", encoding="utf-8")
+
+            metadata = ia._fill_placeholders(
+                root, ["AGENTS.md"], known={"OPERATOR_NAME": "Esteban"}
+            )
+            ia._write_state(root, ["AGENTS.md"], repo="r", ref="v1", metadata=metadata)
+
+            recorded = ia._state_files(ia._read_state(root))["AGENTS.md"]
+            self.assertEqual(recorded, ia._file_sha256(agents))
+            self.assertEqual(
+                ia._state_metadata(ia._read_state(root))["OPERATOR_NAME"], "Esteban"
+            )
+
+    def test_edited_kit_file_is_stashed_before_being_replaced(self) -> None:
+        # A kit file the project edited is still kit-owned, so the new version wins —
+        # but the edit must be recoverable, not silently destroyed.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            agents = dst / ".docs" / "agents"
+            agents.mkdir(parents=True)
+            (agents / "programmer.md").write_text("EDITED BY PROJECT\n", encoding="utf-8")
+            manifest = {".docs/agents/programmer.md": ia._file_sha256(Path(__file__))}
+
+            overwritten: list[str] = []
+            ia._do_upgrade(
+                src, dst, paths=ia._KIT_DOC_PATHS, manifest=manifest,
+                preserved=[], overwritten=overwritten,
+            )
+
+            self.assertEqual((agents / "programmer.md").read_text(), "v2\n")
+            self.assertIn(".docs/agents/programmer.md", overwritten)
+            stash = dst / ia._STATE_DIR / "overwritten" / ".docs/agents/programmer.md"
+            self.assertEqual(stash.read_text(), "EDITED BY PROJECT\n")
+
+    def test_unedited_kit_file_is_replaced_without_stashing(self) -> None:
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            agents = dst / ".docs" / "agents"
+            agents.mkdir(parents=True)
+            pristine = agents / "programmer.md"
+            pristine.write_text("v1\n", encoding="utf-8")
+            manifest = {".docs/agents/programmer.md": ia._file_sha256(pristine)}
+
+            overwritten: list[str] = []
+            ia._do_upgrade(
+                src, dst, paths=ia._KIT_DOC_PATHS, manifest=manifest,
+                preserved=[], overwritten=overwritten,
+            )
+
+            self.assertEqual(pristine.read_text(), "v2\n")
+            self.assertEqual(overwritten, [])
+
+    def test_secrets_ignored_but_manifest_shared(self) -> None:
+        # The team must share the hashes; only the credential half stays out of git.
+        for track in (True, False):
+            entries = ia._gitignore_entries(["AGENTS.md", "docs/agents"], track_kit_docs=track)
+            self.assertIn(ia._SECRETS_FILE, entries)
+            self.assertNotIn(f"{ia._STATE_DIR}/", entries)
+            self.assertNotIn(ia._STATE_FILE, entries)
+
+    def test_secrets_split_from_shareable_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ia._write_state(
+                root, [], repo="r", ref="v1",
+                metadata={"OPERATOR_NAME": "Esteban", "SMTP_ACCOUNT": "a@b.c"},
+            )
+            manifest = ia._read_json(root / ia._STATE_FILE)
+            secrets = ia._read_json(root / ia._SECRETS_FILE)
+
+            self.assertEqual(manifest["metadata"], {"OPERATOR_NAME": "Esteban"})
+            self.assertEqual(secrets["metadata"], {"SMTP_ACCOUNT": "a@b.c"})
+            self.assertEqual((root / ia._SECRETS_FILE).stat().st_mode & 0o777, 0o600)
+            # Callers still see one logical state.
+            self.assertEqual(
+                ia._state_metadata(ia._read_state(root)),
+                {"OPERATOR_NAME": "Esteban", "SMTP_ACCOUNT": "a@b.c"},
+            )
+
+    def test_no_secrets_file_when_nothing_sensitive(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ia._write_state(root, [], repo="r", ref="v1", metadata={"ORG_NAME": "YouBR"})
+            self.assertFalse((root / ia._SECRETS_FILE).exists())
+
     def test_gitignore_uses_dotdocs_and_leaves_docs_tracked(self) -> None:
         entries = ia._gitignore_entries(
             ["AGENTS.md", "docs/agents", "docs/required-reading.md", "handoff.md"]
