@@ -2,6 +2,50 @@
 
 ## Current Status
 
+- work_id: WK-20260717-doctor-false-positives
+- date: 2026-07-20
+- branch: `main` (mergeada e pushada — `origin/main` = `06ee872`)
+- status: Épico `004-doctor-false-positives-[finished]` fechado. Duas tasks, ambas
+  `[finished]`, na `main` e no GitHub.
+
+### O que foi feito
+
+Descoberto em uso real (`governancekit doctor` sobre `Lucedata/AcheiVc`, 2026-07-17):
+o doctor produzia FAILs/HINTs falsos que treinam o operador a ignorar a saída, e aí
+o sinal real se perde no ruído.
+
+- **Task 001** — `.example` não é segredo. `_check_tracked_secret_files` reprovava
+  `.env.example` e os `.credentials/*.example`/`README*` que o próprio AI-Agents
+  distribui — o doctor reprovava o kit-fonte. Fix: `_is_secret_template()`, exclusão
+  por sufixo de template, espelhando `run-checks.sh` §4 do gêmeo. `.env.local`/
+  `.env.production` (SEC-0221) continuam reprovando.
+- **Task 002** — advisory scan varria gitignored e descia em submódulo (4 dos 15
+  hits do AcheiVc eram `main.dart.js` do Flutter). Fix pontual, **sem walker novo**:
+  `_iter_source_files` pula subdir com `.git`; `_git_ignored_paths` filtra via
+  `git check-ignore -z --stdin` (fail-open, §6). No AcheiVc: **15 → 7 hits**, os
+  `shell injection` reais e um `weak password hash` antes afogado passaram a aparecer.
+
+### Validação
+
+`python3 -m pytest tests/` → **100 passed** (87 originais + 13 novos). Gêmeo
+AI-Agents intocado (`run-checks.sh` verde).
+
+### Aberto / próximo
+
+- **`walk.py` do épico do arnês** (`WK-20260717-harness-generation`, ainda não
+  aberto) deve **converter e deletar** `_iter_source_files` + `_git_ignored_paths`
+  para o seam `Ignorer` compartilhado — os 4 walkers do pacote (`codemap.py:190`,
+  `doctor.py` ×2, `configure.py:138`) continuam duplicados, com `SKIP_DIRS`/
+  `_CODEMAP_SKIP` **já divergentes**. Este fix é conversão futura (§7), não
+  coexistência.
+- **AcheiVc** não recebeu o kit ainda — o operador vai testar `install-agents
+  --upgrade` lá por conta própria (repo em layout legado `docs/`, 27 arquivos
+  pendentes → limpar antes; a migração move `docs/` → `.docs/` com backup).
+
+---
+
+## Current Status (histórico)
+
 - work_id: WK-20260702-per-host-identity-runtime
 - date: 2026-07-02
 - branch: (working tree — not committed)
