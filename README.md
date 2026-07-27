@@ -53,7 +53,7 @@ Three CLI commands are available:
 
 ## Companion: AI-Agents Policy Pack
 
-AI-GovernanceKit is designed to work alongside [AI-Agents](https://github.com/[GITHUB_OWNER]/AI-Agents), the reusable governance policy pack.
+AI-GovernanceKit is designed to work alongside [AI-Agents](https://github.com/EDortta/AI-Agents), the reusable governance policy pack.
 
 - **AI-Agents** = policy pack — the "what and why" (AGENTS.md, role contracts, issue templates)
 - **AI-GovernanceKit** = runtime CLI — the "how" (doctor, future: session automation, CI hooks)
@@ -85,6 +85,9 @@ git commit -m "refresh codemap"
 ```
 
 ## Local Usage
+
+For a complete explanation of every command, parameter, identity field, and CI
+workflow, see [Advanced usage details](https://edortta.github.io/AI-GovernanceKit/advanced-usage.html).
 
 Run commands directly from the repository:
 

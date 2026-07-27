@@ -81,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     install_parser = subparsers.add_parser(
         "install-agents",
-        help="Install AI-Agents kit (github.com/[GITHUB_OWNER]/AI-Agents) into the project.",
+        help="Install AI-Agents kit (github.com/EDortta/AI-Agents) into the project.",
     )
     from .install_agents import DEFAULT_REF, REPO
 

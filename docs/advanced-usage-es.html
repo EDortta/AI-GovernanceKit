@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI GovernanceKit — Detalles avanzados de uso</title>
+  <meta name="description" content="Referencia completa de comandos, parámetros, identidad y CI de AI GovernanceKit." />
+  <style>
+    :root{--bg:#0c1117;--panel:#151d26;--text:#f1f5f9;--muted:#a8b3c2;--line:#2a3949;--accent:#f5c518;--code:#080c10}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 system-ui,sans-serif}
+    main,nav{width:min(1080px,calc(100% - 32px));margin:auto} nav{display:flex;justify-content:space-between;gap:18px;padding:22px 0;flex-wrap:wrap}
+    a{color:var(--accent)} nav a{text-decoration:none}.hero{padding:54px 0 32px}.eyebrow{color:var(--accent);font-weight:700}
+    h1{font-size:clamp(2.2rem,6vw,4.5rem);line-height:1.03;margin:.25em 0} h2{margin-top:2.2em} h3{margin-top:1.6em}
+    p,li{color:var(--muted)} strong,th{color:var(--text)} code,pre{font-family:ui-monospace,SFMono-Regular,monospace}
+    code{color:#ffe88d} pre{background:var(--code);border:1px solid var(--line);padding:18px;overflow:auto;border-radius:10px;color:#f5f0d4}
+    table{width:100%;border-collapse:collapse;margin:18px 0 28px} th,td{padding:12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+    .note{background:var(--panel);border-left:4px solid var(--accent);padding:14px 18px;border-radius:6px}
+    footer{border-top:1px solid var(--line);margin-top:64px;padding:28px 0;color:var(--muted)}
+  </style>
+</head>
+<body>
+<nav>
+  <a href="./index.html">← AI GovernanceKit</a>
+  <span><a href="./advanced-usage.html" onclick="localStorage.setItem('gk-lang','en')">EN</a> · <a href="./advanced-usage-ptbr.html" onclick="localStorage.setItem('gk-lang','ptbr')">PT-BR</a> · <strong>ES</strong></span>
+  <a href="https://github.com/EDortta/AI-GovernanceKit">GitHub</a>
+</nav>
+<main>
+  <header class="hero"><div class="eyebrow">Referencia del CLI</div><h1>Detalles avanzados de uso</h1><p>Todos los comandos y parámetros de GovernanceKit, incluida la instalación de AI-Agents, identidad por instancia, diagnóstico, reanudación y presupuestos de contexto.</p></header>
+
+  <section>
+    <h2>Sintaxis global</h2>
+    <pre><code>governancekit [--root PATH] [--version] COMANDO [OPCIONES]</code></pre>
+    <table><tbody>
+      <tr><td><code>--root PATH</code></td><td>Selecciona el repositorio. Es global, debe aparecer antes del comando y usa el directorio actual por defecto.</td></tr>
+      <tr><td><code>--version</code></td><td>Muestra las versiones de GovernanceKit, AI-Agents predeterminada y AI-Agents del proyecto, incluido el estado de actualización.</td></tr>
+      <tr><td><code>-h</code>, <code>--help</code></td><td>Muestra la ayuda global o del comando seleccionado.</td></tr>
+    </tbody></table>
+  </section>
+
+  <section>
+    <h2><code>install-agents</code></h2>
+    <pre><code># Instalación nueva
+governancekit --root /proyecto install-agents
+
+# Actualización de una instalación existente
+governancekit --root /proyecto install-agents --upgrade</code></pre>
+    <table><tbody>
+      <tr><td><code>--ref REF</code></td><td>Tag, branch o commit de AI-Agents. Por defecto: <code>v1.1.6</code> con checksum.</td></tr>
+      <tr><td><code>--repo OWNER/REPO</code></td><td>Repositorio alternativo. Por defecto: <code>EDortta/AI-Agents</code>.</td></tr>
+      <tr><td><code>--force</code></td><td>Sobrescribe archivos existentes del kit.</td></tr>
+      <tr><td><code>--upgrade</code></td><td>Actualiza archivos del kit preservando el estado propio del proyecto.</td></tr>
+      <tr><td><code>--docs-only</code></td><td>Actualiza documentación gestionada sin tocar <code>AGENTS.md</code> ni adaptadores.</td></tr>
+      <tr><td><code>--install-awt</code></td><td>Instala el helper descargado <code>agent-worktree.sh</code> en PATH.</td></tr>
+      <tr><td><code>--track</code></td><td>Mantiene la documentación del kit rastreada por Git y guarda la elección.</td></tr>
+      <tr><td><code>--no-track</code></td><td>Mantiene esa documentación fuera de Git; incompatible con <code>--track</code>.</td></tr>
+    </tbody></table>
+  </section>
+
+  <section>
+    <h2><code>configure</code> e identidad</h2>
+    <p class="note"><strong>El archivo canónico es <code>.governancekit-identity.json</code>.</strong> Es local, ignorado por Git y usa modo <code>0600</code>. <code>WORKSPACE.md</code> no es obligatorio ni satisface el gate de identidad.</p>
+    <pre><code>governancekit --root /proyecto configure \
+  --operator-name "Nombre" --host-id "host-01" \
+  --instance-path "/proyecto" --sibling-path "/otro-checkout" \
+  --assigned-ports "3000,8000" --branch-ownership "feature/mi-branch"</code></pre>
+    <table><thead><tr><th>Parámetro</th><th>Obligatorio</th><th>Descripción</th></tr></thead><tbody>
+      <tr><td><code>--set KEY=VALUE</code></td><td>No</td><td>Completa un placeholder heredado; repetible.</td></tr>
+      <tr><td><code>--operator-name NAME</code></td><td>Sí</td><td>Nombre del operador humano.</td></tr>
+      <tr><td><code>--host-id ID</code></td><td>Sí</td><td>Identificador estable de máquina o instancia.</td></tr>
+      <tr><td><code>--instance-path PATH</code></td><td>Sí</td><td>Ruta absoluta de este checkout.</td></tr>
+      <tr><td><code>--sibling-path PATH</code></td><td>No</td><td>Otro checkout que puede disputar branches o recursos.</td></tr>
+      <tr><td><code>--assigned-ports PORTS</code></td><td>No</td><td>Puertos reservados separados por coma.</td></tr>
+      <tr><td><code>--branch-ownership BRANCH</code></td><td>No</td><td>Branches operadas por esta instancia.</td></tr>
+    </tbody></table>
+  </section>
+
+  <section>
+    <h2>Validación y orientación</h2>
+    <table><tbody>
+      <tr><td><code>doctor</code></td><td>Valida archivos, readiness, identidad, secretos, estado y posibles colisiones de branch.</td></tr>
+      <tr><td><code>doctor --json</code></td><td>Produce resultados estructurados para CI.</td></tr>
+      <tr><td><code>map --output PATH</code></td><td>Escribe el mapa en otra ruta; por defecto <code>docs/codemap.md</code>.</td></tr>
+      <tr><td><code>map --all</code></td><td>Incluye símbolos Python privados con guion bajo.</td></tr>
+      <tr><td><code>resume</code></td><td>Muestra trabajo activo, próximo paso, handoff, identidad, branch y alertas.</td></tr>
+    </tbody></table>
+  </section>
+
+  <section>
+    <h2>Contexto determinista</h2>
+    <pre><code>governancekit context inspect --task implementation --risk runtime --issue PATH --json
+governancekit context build --task review --risk security --telemetry
+governancekit context telemetry prune --manifest PATH</code></pre>
+    <table><tbody>
+      <tr><td><code>--task TYPE</code></td><td>Selecciona contratos de tarea; por defecto <code>implementation</code>.</td></tr>
+      <tr><td><code>--risk RISK</code></td><td>Añade una categoría de riesgo; repetible.</td></tr>
+      <tr><td><code>--issue PATH</code></td><td>Incluye la issue activa.</td></tr>
+      <tr><td><code>--manifest PATH</code></td><td>Usa otro manifiesto de contexto.</td></tr>
+      <tr><td><code>--json</code></td><td>Emite decisiones y conteos en JSON.</td></tr>
+      <tr><td><code>--telemetry</code></td><td>En <code>build</code>, registra solo metadatos, sin contenido.</td></tr>
+      <tr><td><code>telemetry prune</code></td><td>Elimina telemetría anterior a la retención configurada.</td></tr>
+    </tbody></table>
+  </section>
+
+  <section>
+    <h2>Secuencias comunes</h2>
+    <pre><code># Primera configuración
+governancekit --root /proyecto install-agents
+governancekit --root /proyecto configure
+governancekit --root /proyecto doctor
+
+# Actualización segura
+governancekit --root /proyecto --version
+governancekit --root /proyecto install-agents --upgrade
+governancekit --root /proyecto doctor</code></pre>
+    <p>Para opciones del instalador Bash y migración heredada, consulta la <a href="https://edortta.github.io/AI-Agents/advanced-usage-es.html">guía avanzada de AI-Agents</a>.</p>
+  </section>
+</main>
+<footer><main>AI GovernanceKit · documentación avanzada · <a href="./index.html">volver a la landing page</a></main></footer>
+</body>
+</html>

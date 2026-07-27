@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-27
+
+### Added
+
+- Advanced usage documentation in English, Brazilian Portuguese, and Spanish.
+- Separate, copy-ready commands for fresh AI-Agents installs and upgrades.
+
+### Changed
+
+- Default AI-Agents release updated to checksum-pinned `v1.1.6`.
+- Landing-page navigation and installation guidance corrected and completed.
+
 ## [0.1.0] - 2026-05-21
 
 ### Added
@@ -26,5 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Install instructions corrected — package is not yet published to PyPI.
 
-[Unreleased]: https://github.com/[GITHUB_OWNER]/AI-GovernanceKit/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/[GITHUB_OWNER]/AI-GovernanceKit/releases/tag/v0.1.0
+[Unreleased]: https://github.com/EDortta/AI-GovernanceKit/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/EDortta/AI-GovernanceKit/compare/v0.2.1...v0.2.2
+[0.1.0]: https://github.com/EDortta/AI-GovernanceKit/releases/tag/v0.1.0
