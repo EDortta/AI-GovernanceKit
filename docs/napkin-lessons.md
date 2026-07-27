@@ -1,5 +1,9 @@
 # Napkin Lessons
 
+- 2026-07-27: Optional sources must be selected after every mandatory source.
+  Otherwise an optional file can consume budget and make a later mandatory contract
+  fail even though omitting the optional source would produce a valid context.
+
 - 2026-05-04: Keep the policy kit and runtime orchestrator conceptually separate; this project owns the runtime/tooling layer.
 - 2026-05-04: Bootstrap the runtime project with ready context and limits before choosing CLI, MCP, or IDE implementation details.
 - 2026-05-04: Start runtime work with a narrow `doctor` command so governance rules become executable before orchestration grows.

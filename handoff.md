@@ -2,6 +2,21 @@
 
 ## Current Status
 
+- work_id: WK-20260727-context-optimization
+- date: 2026-07-27
+- branch: `feature/uc-006/context-optimization`
+- status: finished
+- summary: Added schema validation, deterministic task/risk selection,
+  `full`/`sections`/lexical `retrieve`, token-counter injection, hard budgets,
+  provenance, duplicate reporting, stable JSON, and metadata-only JSONL.
+- validation: `python3 -m pytest -q` -> 125 passed; real AI-Agents manifest inspected
+  at 19,692 / 22,000 exact tokens for implementation + runtime; JSON build parsed.
+- not validated: installation from a published AI-Agents ref; third-party agents.
+- next: no implementation action remains; merge/push authorized. Release and deploy
+  remain separate gated actions.
+
+## Prior Status
+
 - work_id: WK-20260717-doctor-false-positives
 - date: 2026-07-20
 - branch: `main` (mergeada e pushada — `origin/main` = `06ee872`)

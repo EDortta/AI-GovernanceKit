@@ -46,5 +46,8 @@ The current scope is repository bootstrap plus two executable CLI commands:
 - `governancekit resume` — print the active work session at a glance (work_id, branch, status, next step from RESUME.md, recent handoff entry); run at session start by both agents and humans
 - `governancekit install-agents` — install/update the AI-Agents kit; `--upgrade` refreshes all kit-owned files, `--docs-only` refreshes just kit docs, fresh install installs kit docs to `.docs/` and seeds the project-owned `docs/` folder
 - `governancekit configure` — fill `[PLACEHOLDER]` kit variables across all docs without reinstalling (interactive or `--set KEY=VALUE`)
+- `governancekit context inspect/build` — validate a context manifest, select
+  task/risk contracts, enforce budgets, preserve provenance, report duplication,
+  and optionally write metadata-only local telemetry
 
 No long-running orchestration service, MCP server, IDE extension, or external issue/PR automation exists yet.

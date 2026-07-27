@@ -45,6 +45,9 @@ _KIT_DOC_PATHS: list[str] = [
     "docs/workflows",
     "docs/articles",
     "docs/icons",
+    "docs/context-manifest.yaml",
+    "docs/context-optimization.md",
+    "docs/schemas",
     "docs/issues/templates",
     "docs/issues/README.md",
 ]
@@ -665,6 +668,7 @@ def _write_state(
         "# Managed by governancekit.\n"
         "# manifest.json is intentionally NOT ignored — the team must share it.\n"
         "secrets.json\n"
+        "context-telemetry.jsonl\n"
         "overwritten/\n",
         encoding="utf-8",
     )
@@ -1019,6 +1023,7 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     # different baseline. Only the credential half and the stash are ignored, and
     # unconditionally — unlike .docs/, this is not subject to the track-kit-docs choice.
     entries.append(_SECRETS_FILE)
+    entries.append(f"{_STATE_DIR}/context-telemetry.jsonl")
     entries.append(f"{_STATE_DIR}/overwritten/")
     return entries
 
