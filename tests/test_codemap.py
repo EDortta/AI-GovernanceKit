@@ -155,6 +155,14 @@ class DetectEntryPointsTests(unittest.TestCase):
 
 
 class RunMapTests(unittest.TestCase):
+    def test_generated_map_has_no_trailing_whitespace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "sample.py").write_text("def public():\n    pass\n", encoding="utf-8")
+            result = run_map(root, output=root / "docs/codemap.md", include_private=False)
+            lines = result.output_path.read_text(encoding="utf-8").splitlines()
+            self.assertFalse(any(line != line.rstrip() for line in lines))
+
     def _make_project(self, root: Path) -> None:
         (root / "pyproject.toml").write_text(
             "[project]\nname = \"testproject\"\n", encoding="utf-8"

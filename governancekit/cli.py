@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .doctor import DoctorResult, run_doctor
+from .context import ContextError, build_context, format_context
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +50,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser(
         "resume", help="Print session-start context from RESUME.md and handoff.md."
+    )
+
+    context_parser = subparsers.add_parser(
+        "context", help="Inspect or build a deterministic task context."
+    )
+    context_commands = context_parser.add_subparsers(dest="context_command", required=True)
+    for command in ("inspect", "build"):
+        command_parser = context_commands.add_parser(command)
+        command_parser.add_argument("--task", default="implementation")
+        command_parser.add_argument("--risk", action="append", default=[], dest="risks")
+        command_parser.add_argument("--issue", type=Path)
+        command_parser.add_argument("--manifest", type=Path)
+        command_parser.add_argument("--json", action="store_true", dest="as_json")
+    context_commands.choices["build"].add_argument(
+        "--telemetry", action="store_true", help="Append metadata-only JSONL telemetry."
     )
 
     install_parser = subparsers.add_parser(
@@ -226,6 +242,31 @@ def format_resume(result) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "context":
+        try:
+            result = build_context(
+                args.root,
+                args.task,
+                risks=args.risks,
+                issue=args.issue,
+                manifest_path=args.manifest,
+                write_telemetry=getattr(args, "telemetry", False),
+            )
+        except ContextError as exc:
+            if args.as_json:
+                print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+            else:
+                print(f"Context error: {exc}")
+            return 2
+        if args.as_json:
+            print(json.dumps(result.as_dict(include_content=args.context_command == "build"),
+                             sort_keys=True, ensure_ascii=False))
+        elif args.context_command == "build":
+            print(result.content)
+        else:
+            print(format_context(result))
+        return 1 if result.exceeded or result.hard_violations else 0
 
     if args.command == "doctor":
         result = run_doctor(args.root)

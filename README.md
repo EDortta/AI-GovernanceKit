@@ -11,6 +11,25 @@ The project turns repository governance rules into executable workflows that can
 - Runtime core: orchestration logic that loads policy, evaluates gates, and records audit evidence.
 - Integrations: optional MCP server, IDE extension, GitHub/Jira helpers, and CI hooks.
 
+## Context budgets
+
+- **`governancekit context inspect`** selects task/risk sources from
+  `.docs/context-manifest.yaml` and reports category budgets, largest contributors,
+  duplicates, and exact versus estimated counting.
+- **`governancekit context build`** emits selected content with provenance. Required
+  contracts are atomic: if one does not fit, the command fails instead of truncating.
+
+```bash
+governancekit context inspect
+governancekit context inspect --json
+governancekit context build --task implementation
+governancekit context build --task implementation --risk runtime \
+  --issue docs/issues/006-context-optimization-[finished]/epic.md
+```
+
+`context build --telemetry` appends local metadata-only JSONL under `.gk/`. It
+requires a `work_id` and captures paths/counts, never prompt or source content.
+
 ## Initial Status
 
 Three CLI commands are available:

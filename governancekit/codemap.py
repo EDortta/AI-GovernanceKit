@@ -396,7 +396,7 @@ def _render_markdown(result: MapResult) -> str:
     lines += [
         f'# Code Map · {result.project_name}',
         '',
-        f'> Generated: {result.generated_at} · Root: `{result.root}`  ',
+        f'> Generated: {result.generated_at} · Root: `{result.root}`',
         f'> Refresh: `governancekit map`',
         '',
         f'{result.file_count} file(s) · {result.symbol_count} symbol(s) indexed',

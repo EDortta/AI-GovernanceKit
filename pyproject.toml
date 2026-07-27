@@ -12,11 +12,13 @@ license = { text = "MIT" }
 authors = [
   { name = "AI GovernanceKit maintainers" }
 ]
-dependencies = []
+dependencies = [
+  "jsonschema>=4.18",
+  "PyYAML>=6.0",
+]
 
 [project.scripts]
 governancekit = "governancekit.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["governancekit*"]
-
