@@ -108,7 +108,7 @@
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 1.5rem;
+      gap: 0.9rem;
       list-style: none;
     }
 
@@ -663,7 +663,7 @@
     }
 
     .companion-pill {
-      display: inline-block;
+      display: block;
       background: var(--paper-warm);
       border: 1px solid var(--sol);
       color: var(--ink);
@@ -675,11 +675,12 @@
       max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
 
     .companion-card .arrow-link {
-      display: inline-block;
+      display: block;
       margin-top: 1.1rem;
       font-weight: 600;
       font-size: 0.95rem;
@@ -899,13 +900,14 @@
     </span>
     <ul class="nav-links">
       <li><a href="#whatsnew" data-i18n="nav.whatsnew">Novidades</a></li>
-      <li><a href="#problem">Problem</a></li>
-      <li><a href="#solution">How it works</a></li>
-      <li><a href="#quickstart">Quick start</a></li>
-      <li><a href="#codemap">Code Map</a></li>
-      <li><a href="#resume">Resume</a></li>
-      <li><a href="#companion">Companion</a></li>
-      <li><a href="intro.html">Concepts</a></li>
+      <li><a href="#problem" data-i18n="nav.problem">Problema</a></li>
+      <li><a href="#solution" data-i18n="nav.workflow">Funcionamento</a></li>
+      <li><a href="#quickstart" data-i18n="nav.start">Início</a></li>
+      <li><a href="./advanced-usage-ptbr.html" data-advanced-link data-i18n="nav.advanced">Avançado</a></li>
+      <li><a href="#codemap" data-i18n="nav.map">Mapa</a></li>
+      <li><a href="#resume" data-i18n="nav.resume">Retomada</a></li>
+      <li><a href="#companion" data-i18n="nav.companion">Parceiro</a></li>
+      <li><a href="intro.html" data-i18n="nav.concepts">Conceitos</a></li>
     
       <li><a href="#support" data-i18n="nav.support">Support</a></li>
     </ul>
@@ -922,7 +924,7 @@
 <section class="hero">
   <div class="hero-inner">
     <div class="hero-text">
-      <div class="badge" data-i18n="hero.badge">Bootstrap phase · v0.1.0</div>
+      <div class="badge" data-i18n="hero.badge">Bootstrap phase · v0.2.2</div>
       <h1 data-i18n="hero.h1">Torne o trabalho com IA<br /><em>previsível</em></h1>
       <p class="lede" data-i18n="hero.p">
         AI GovernanceKit é um toolkit de orquestração local que transforma regras de governança
@@ -1113,6 +1115,9 @@
           <li data-i18n="qs.li3">Confirma estrutura de issue ativa e próximo passo do RESUME</li>
           <li data-i18n="qs.li4">Detecta caminhos de arquivos secretos rastreados antes que vazem</li>
         </ul>
+        <p style="margin-top:1.5rem">
+          <a href="./advanced-usage-ptbr.html" data-advanced-link class="btn-secondary" data-i18n="qs.advanced">Detalhes avançados de uso →</a>
+        </p>
       </div>
       <div>
         <div class="code-block">
@@ -1271,7 +1276,7 @@
         <p data-i18n="c1.p">O "o quê e por quê" — templates AGENTS.md, contratos de papel, templates de issue
         e docs de fluxo de trabalho que você copia para qualquer repositório para definir regras de governança
         para agentes e programadores.</p>
-        <span class="companion-pill">installs by copying files</span>
+        <code class="companion-pill">bash &lt;(curl -fsSL https://raw.githubusercontent.com/EDortta/AI-Agents/v1.1.6/scripts/install-agents-kit.sh) --target .</code>
         <a class="arrow-link" href="https://github.com/EDortta/AI-Agents" data-i18n="c1.link">Ver AI-Agents →</a>
       </div>
       <div class="companion-card">
@@ -1342,12 +1347,20 @@
 
   var T = {
     ptbr: {
-      'hero.badge': 'Fase bootstrap · v0.1.0',
+      'hero.badge': 'Fase bootstrap · v0.2.2',
       'hero.h1':    'Torne o trabalho com IA<br /><em>previsível</em>',
       'hero.p':     'AI GovernanceKit é um toolkit de orquestração local que transforma regras de governança de repositório em fluxos de trabalho executáveis — utilizável por CLIs, agentes de IDE, servidores MCP e jobs de CI.',
       'hero.cta1':  'Começar →',
       'hero.cta2':  'Ver no GitHub',
       'nav.whatsnew': 'Novidades',
+      'nav.problem': 'Problema',
+      'nav.workflow': 'Funcionamento',
+      'nav.start': 'Início',
+      'nav.advanced': 'Avançado',
+      'nav.map': 'Mapa',
+      'nav.resume': 'Retomada',
+      'nav.companion': 'Parceiro',
+      'nav.concepts': 'Conceitos',
       'wn.label': 'Novidades',
       'wn.title': 'Sua documentação, do seu jeito',
       'wn.sub':   'A última atualização separou o que é do kit do que é seu. Menos confusão, nenhum susto.',
@@ -1388,6 +1401,7 @@
       'qs.c1': '# Instale pelo GitHub',
       'qs.c2': '# Ou clone e instale em modo editável',
       'qs.c3': '# Valide seu scaffold de governança',
+      'qs.advanced': 'Detalhes avançados de uso →',
       'map.label': 'Mapa de código',
       'map.title': 'Indexe uma vez. Oriente em segundos.',
       'map.sub':   'Agentes de IA releem arquivos-fonte a cada nova sessão, consumindo tokens sem benefício persistente. Execute <code>map</code> uma vez e faça commit — qualquer agente lê um único documento em vez de escanear dezenas de arquivos.',
@@ -1427,12 +1441,20 @@
       'don.cap.eth': "Ethereum mainnet · ERC-20 compatível",
     },
     es: {
-      'hero.badge': 'Fase bootstrap · v0.1.0',
+      'hero.badge': 'Fase bootstrap · v0.2.2',
       'hero.h1':    'Haz el trabajo con IA<br /><em>predecible</em>',
       'hero.p':     'AI GovernanceKit es un toolkit de orquestación local que transforma las reglas de gobernanza del repositorio en flujos de trabajo ejecutables — usable por CLIs, agentes de IDE, servidores MCP y jobs de CI.',
       'hero.cta1':  'Comenzar →',
       'hero.cta2':  'Ver en GitHub',
       'nav.whatsnew': 'Novedades',
+      'nav.problem': 'Problema',
+      'nav.workflow': 'Funcionamiento',
+      'nav.start': 'Inicio',
+      'nav.advanced': 'Avanzado',
+      'nav.map': 'Mapa',
+      'nav.resume': 'Retomar',
+      'nav.companion': 'Compañero',
+      'nav.concepts': 'Conceptos',
       'wn.label': 'Novedades',
       'wn.title': 'Tu documentación, a tu manera',
       'wn.sub':   'La última actualización separó lo que es del kit de lo que es tuyo. Menos confusión, ningún susto.',
@@ -1473,6 +1495,7 @@
       'qs.c1': '# Instala desde GitHub',
       'qs.c2': '# O clona e instala en modo editable',
       'qs.c3': '# Valida tu scaffold de gobernanza',
+      'qs.advanced': 'Detalles avanzados de uso →',
       'map.label': 'Mapa de código',
       'map.title': 'Indexa una vez. Oriéntate en segundos.',
       'map.sub':   'Los agentes de IA releen archivos fuente en cada nueva sesión, consumiendo tokens sin beneficio persistente. Ejecuta <code>map</code> una vez y haz commit — cualquier agente lee un único documento en lugar de escanear decenas de archivos.',
@@ -1512,12 +1535,20 @@
       'don.cap.eth': "Ethereum mainnet · compatible ERC-20",
     },
     en: {
-      'hero.badge': 'Bootstrap phase · v0.1.0',
+      'hero.badge': 'Bootstrap phase · v0.2.2',
       'hero.h1':    'Make AI-assisted work<br /><em>predictable</em>',
       'hero.p':     'AI GovernanceKit is a local-first runtime orchestration toolkit that turns repository governance rules into executable workflows — usable by CLI tools, IDE agents, MCP servers, and CI jobs.',
       'hero.cta1':  'Get started →',
       'hero.cta2':  'View on GitHub',
-      'nav.whatsnew': "What's new",
+      'nav.whatsnew': 'News',
+      'nav.problem': 'Problem',
+      'nav.workflow': 'Workflow',
+      'nav.start': 'Start',
+      'nav.advanced': 'Advanced',
+      'nav.map': 'Map',
+      'nav.resume': 'Resume',
+      'nav.companion': 'Companion',
+      'nav.concepts': 'Concepts',
       'wn.label': "What's new",
       'wn.title': 'Your docs, your way',
       'wn.sub':   'The latest update separated what belongs to the kit from what belongs to you. Less clutter, no surprises.',
@@ -1558,6 +1589,7 @@
       'qs.c1': '# Install from GitHub',
       'qs.c2': '# Or clone and install in editable mode',
       'qs.c3': '# Validate your governance scaffold',
+      'qs.advanced': 'Advanced usage details →',
       'map.label': 'Code Map',
       'map.title': 'Index once. Orient in seconds.',
       'map.sub':   'AI agents re-read source files every new session, burning tokens with no persistent benefit. Run <code>map</code> once and commit it — any agent reads one document instead of scanning dozens of files.',
@@ -1613,6 +1645,11 @@
       }
     });
     document.documentElement.lang = lang === 'ptbr' ? 'pt-BR' : lang === 'es' ? 'es' : 'en';
+    var advancedHref = lang === 'ptbr' ? './advanced-usage-ptbr.html' :
+      lang === 'es' ? './advanced-usage-es.html' : './advanced-usage.html';
+    document.querySelectorAll('[data-advanced-link]').forEach(function(link) {
+      link.setAttribute('href', advancedHref);
+    });
     try { localStorage.setItem('gk-lang', lang); } catch(e) {}
   }
 
