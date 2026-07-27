@@ -1,5 +1,13 @@
 # AI GovernanceKit
 
+```bash
+governancekit --version
+```
+
+Reports the GovernanceKit version, its default AI-Agents release, and the release
+recorded by the nearest parent project's `.gk/manifest.json`, including a local
+upgrade indication when the installed semantic version is older.
+
 AI GovernanceKit is a local-first runtime orchestration toolkit for agentic software work.
 
 The project turns repository governance rules into executable workflows that can be reused by CLI tools, IDE agents, MCP-compatible agents, and CI jobs. Its first responsibility is not to replace coding agents, but to make their work predictable: restore context, validate boundaries, run checks, collect evidence, and close sessions consistently.
@@ -29,6 +37,7 @@ governancekit context build --task implementation --risk runtime \
 
 `context build --telemetry` appends local metadata-only JSONL under `.gk/`. It
 requires a `work_id` and captures paths/counts, never prompt or source content.
+Use `governancekit context telemetry prune` to apply manifest retention.
 
 ## Initial Status
 

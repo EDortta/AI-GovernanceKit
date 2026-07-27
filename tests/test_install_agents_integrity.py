@@ -22,6 +22,11 @@ class DefaultRefPinTests(unittest.TestCase):
     def test_default_repo_ref_has_a_known_checksum(self) -> None:
         self.assertIn((ia.REPO, ia.DEFAULT_REF), ia.KNOWN_TARBALL_SHA256)
 
+    def test_amazon_q_adapter_is_installed_and_upgraded(self) -> None:
+        adapter = ".amazonq/rules/ai-agents.md"
+        self.assertIn(adapter, ia._FRESH_PATHS)
+        self.assertIn(adapter, ia._UPGRADE_PATHS)
+
 
 class DownloadChecksumTests(unittest.TestCase):
     def test_matching_checksum_is_accepted(self) -> None:

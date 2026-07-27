@@ -49,5 +49,7 @@ The current scope is repository bootstrap plus two executable CLI commands:
 - `governancekit context inspect/build` — validate a context manifest, select
   task/risk contracts, enforce budgets, preserve provenance, report duplication,
   and optionally write metadata-only local telemetry
+- `governancekit --version` — report GovernanceKit, default AI-Agents, and the
+  AI-Agents ref recorded by the nearest dependent project
 
 No long-running orchestration service, MCP server, IDE extension, or external issue/PR automation exists yet.
