@@ -16,7 +16,7 @@ REPO = "EDortta/AI-Agents"
 # Pinned to a tagged release (not the mutable "main" branch) so installs are
 # reproducible and can be checksum-verified. Bump alongside KNOWN_TARBALL_SHA256
 # when a new AI-Agents release is adopted.
-DEFAULT_REF = "v1.1.3"
+DEFAULT_REF = "v1.1.4"
 
 # codeload.github.com tarball SHA-256 for (repo, ref) pairs we can vouch for.
 # Only the upstream default repo/ref is pinned here; a custom --repo/--ref
@@ -27,6 +27,7 @@ KNOWN_TARBALL_SHA256: dict[tuple[str, str], str] = {
     (REPO, "v1.1.1"): "7255592a071dfe331adba5d739ec5b4ee9e10c0f37471301870e826719f8da60",
     (REPO, "v1.1.2"): "ff163a7bf11b74fe9f9b30c4794ad081f9b6f678ea436f0980687fefda6033ed",
     (REPO, "v1.1.3"): "0bcdf6968e3018664f685abd5079c2cb99a8bb439ef0b5d97ba47e9218931ebd",
+    (REPO, "v1.1.4"): "497670c3ce1bbdbd2d434f845438a32d6d3afa3337933b8567367127884e9403",
 }
 
 # ── layout: kit lives in .docs/, project owns docs/ ──────────────────────────────

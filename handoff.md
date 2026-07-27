@@ -2,6 +2,14 @@
 
 ## Current Status
 
+- work_id: WK-20260727-restore-landing
+- status: finished
+- Public landing uses EDortta links and restored Pix, ETH, and Ko-fi values.
+- Reusable README/templates keep placeholders. Package version is 0.2.1.
+
+## Prior Status
+
+
 - work_id: WK-20260727-context-hardening
 - branch: `feature/uc-007/context-hardening`
 - status: finished
