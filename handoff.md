@@ -11,9 +11,13 @@
   provenance, duplicate reporting, stable JSON, and metadata-only JSONL.
 - validation: `python3 -m pytest -q` -> 125 passed; real AI-Agents manifest inspected
   at 19,692 / 22,000 exact tokens for implementation + runtime; JSON build parsed.
-- not validated: installation from a published AI-Agents ref; third-party agents.
+- not validated: third-party agent integrations.
 - next: no implementation action remains; merge/push authorized. Release and deploy
   remain separate gated actions.
+- release follow-up: AI-Agents `v1.1.2` published; GovernanceKit default installer
+  ref and verified tarball SHA-256 updated to that immutable tag.
+- published-ref install validated in a temporary target; manifest, schemas,
+  context documentation, and telemetry ignore rule were present.
 
 ## Prior Status
 
