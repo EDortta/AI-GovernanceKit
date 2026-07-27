@@ -6,7 +6,9 @@ import hashlib
 import json
 import math
 import re
+import subprocess
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol, Sequence
 
@@ -19,8 +21,10 @@ class ContextError(RuntimeError):
 
 
 class TokenCounter(Protocol):
-    exact: bool
+    estimated: bool
     name: str
+    tokenizer: str | None
+    precise_for: str | None
 
     def count(self, text: str) -> int:
         """Return the token count for text."""
@@ -29,18 +33,22 @@ class TokenCounter(Protocol):
 class DeterministicTokenCounter:
     """Provider-neutral fallback: one token per four Unicode characters."""
 
-    exact = False
+    estimated = True
     name = "deterministic_chars_div_4"
+    tokenizer = None
+    precise_for = None
 
     def count(self, text: str) -> int:
         return math.ceil(len(text) / 4)
 
 
 class TiktokenCounter:
-    """Optional exact counter, activated only when tiktoken is installed."""
+    """Tokenizer-specific estimate, activated only when tiktoken is installed."""
 
-    exact = True
+    estimated = True
     name = "tiktoken_cl100k_base"
+    tokenizer = "cl100k_base"
+    precise_for = None
 
     def __init__(self) -> None:
         import tiktoken
@@ -85,6 +93,7 @@ class ContextResult:
     risks: list[str]
     total_tokens: int
     budget: int
+    usable_budget: int
     category_tokens: dict[str, int]
     category_budgets: dict[str, int]
     sources: list[Source]
@@ -92,6 +101,9 @@ class ContextResult:
     duplicates: list[dict[str, Any]]
     exact_count: bool
     counter: str
+    count_mode: str
+    tokenizer: str | None
+    target_model: str | None
     exceeded: bool = False
     hard_violations: list[str] = field(default_factory=list)
 
@@ -109,6 +121,7 @@ class ContextResult:
             "risks": self.risks,
             "total_tokens": self.total_tokens,
             "budget": self.budget,
+            "usable_budget": self.usable_budget,
             "category_tokens": self.category_tokens,
             "category_budgets": self.category_budgets,
             "sources": [source.metadata() for source in self.sources],
@@ -116,6 +129,9 @@ class ContextResult:
             "duplicates": self.duplicates,
             "exact_count": self.exact_count,
             "counter": self.counter,
+            "count_mode": self.count_mode,
+            "tokenizer": self.tokenizer,
+            "target_model": self.target_model,
             "exceeded": self.exceeded,
             "hard_violations": self.hard_violations,
         }
@@ -184,9 +200,9 @@ def _select_content(
     text: str,
     mode: str,
     entry: dict[str, Any],
-    terms: Sequence[str],
-    max_chunks: int,
-    max_chunk_tokens: int,
+    terms: dict[str, int],
+    max_sections: int,
+    max_section_tokens: int,
     counter: TokenCounter,
 ) -> tuple[str, tuple[str, ...]]:
     if mode == "full":
@@ -203,20 +219,23 @@ def _select_content(
         )
     if mode != "retrieve":
         raise ContextError(f"unsupported document mode: {mode}")
-    needles = {term.casefold() for term in [*terms, *entry.get("terms", [])] if len(term) >= 3}
+    needles = dict(terms)
+    for term in entry.get("terms", []):
+        if len(term) >= 3:
+            needles[term.casefold()] = max(needles.get(term.casefold(), 0), 3)
     ranked: list[tuple[int, int, str, str]] = []
     for index, (heading, _, _, body) in enumerate(sections):
         haystack = f"{heading}\n{body}".casefold()
-        score = sum(haystack.count(needle) for needle in needles)
+        score = sum(haystack.count(needle) * weight for needle, weight in needles.items())
         if score:
             ranked.append((-score, index, heading, body))
     ranked.sort()
     chunks: list[str] = []
     provenance: list[str] = []
-    for _, _, heading, body in ranked[:max_chunks]:
-        if counter.count(body) > max_chunk_tokens:
+    for _, _, heading, body in ranked[:max_sections]:
+        if counter.count(body) > max_section_tokens:
             raise ContextError(
-                f"retrieved section '{heading}' exceeds max_chunk_tokens={max_chunk_tokens}; "
+                f"retrieved section '{heading}' exceeds max_section_tokens={max_section_tokens}; "
                 "declare a narrower section instead of silently truncating it"
             )
         chunks.append(body)
@@ -224,12 +243,24 @@ def _select_content(
     return "\n\n".join(chunks), tuple(provenance)
 
 
-def _terms(task: str, issue_path: Path | None) -> list[str]:
-    values = [task, *re.findall(r"[A-Za-zÀ-ÿ_][\wÀ-ÿ.-]{2,}", task)]
+_STOPWORDS = {"deve", "arquivo", "contexto", "projeto", "testes", "implementar", "para", "como", "with", "from", "that", "this"}
+
+
+def _terms(task: str, issue_path: Path | None) -> dict[str, int]:
+    values: dict[str, int] = {task.casefold(): 5}
     if issue_path and issue_path.is_file():
         text = issue_path.read_text(encoding="utf-8")
-        values.extend(re.findall(r"[A-Za-zÀ-ÿ_][\wÀ-ÿ.-]{3,}", text))
-    return sorted(set(values), key=str.casefold)
+        for exact in re.findall(r"`([^`]+)`|(?:[\w.-]+/)+[\w.-]+", text):
+            if exact:
+                values[exact.casefold()] = 10
+        for heading in re.findall(r"(?m)^#{1,6}\s+(.+)$", text):
+            for word in re.findall(r"[A-Za-zÀ-ÿ_][\wÀ-ÿ.-]{3,}", heading):
+                values[word.casefold()] = max(values.get(word.casefold(), 0), 5)
+        for word in re.findall(r"[A-Za-zÀ-ÿ_][\wÀ-ÿ.-]{3,}", text):
+            folded = word.casefold()
+            if folded not in _STOPWORDS:
+                values.setdefault(folded, 1)
+    return values
 
 
 def _normalized_blocks(text: str) -> set[str]:
@@ -260,12 +291,23 @@ def _duplicates(sources: Sequence[Source]) -> list[dict[str, Any]]:
             right_blocks = _normalized_blocks(right.content)
             union = left_blocks | right_blocks
             score = len(left_blocks & right_blocks) / len(union) if union else 0
+            containment = len(left_blocks & right_blocks) / min(
+                len(left_blocks), len(right_blocks)
+            )
             if 0.5 <= score < 1:
                 findings.append(
                     {
                         "kind": "substantial_overlap",
                         "paths": [left.path, right.path],
                         "score": round(score, 3),
+                    }
+                )
+            elif containment >= 0.7:
+                findings.append(
+                    {
+                        "kind": "contained_overlap",
+                        "paths": [left.path, right.path],
+                        "score": round(containment, 3),
                     }
                 )
     return findings
@@ -279,6 +321,7 @@ def build_context(
     manifest_path: Path | None = None,
     counter: TokenCounter | None = None,
     write_telemetry: bool = False,
+    strict: bool = True,
 ) -> ContextResult:
     root = root.resolve()
     counter = counter or default_token_counter()
@@ -293,9 +336,9 @@ def build_context(
     entries: list[dict[str, Any]] = []
     entries.extend(_entry(value, "base_contracts", True) for value in manifest["base"]["required"])
     entries.extend(_entry(value, "project_context") for value in manifest.get("project", {}).get("include", []))
-    entries.extend(_entry(value, "project_context") for value in tasks[task].get("include", []))
+    entries.extend(_entry(value, "task_contracts") for value in tasks[task].get("include", []))
     for risk in risks:
-        entries.extend(_entry(value, "project_context") for value in manifest["risks"][risk].get("include", []))
+        entries.extend(_entry(value, "risk_contracts") for value in manifest["risks"][risk].get("include", []))
     if issue:
         issue_abs = (issue if issue.is_absolute() else root / issue).resolve()
         entries.append(
@@ -331,25 +374,24 @@ def build_context(
                 }
             )
 
-    # Mandatory contracts always get first claim on the budget. Otherwise an
-    # earlier optional source could make a later mandatory source fail even though
-    # omitting the optional source would have produced a valid context.
-    entries.sort(key=lambda item: not bool(item.get("required", False)))
-
     budget = int(manifest["budgets"]["total_input_tokens"])
     category_budgets = {
         str(name): int(value) for name, value in manifest["budgets"]["categories"].items()
     }
+    reserve = category_budgets["reserve"]
+    usable_budget = budget - reserve
+    if usable_budget <= 0:
+        raise ContextError("reserve must be smaller than total_input_tokens")
     retrieval = manifest["retrieval"]
     excluded = manifest.get("exclude_by_default", [])
     issue_abs = (issue if issue and issue.is_absolute() else root / issue).resolve() if issue else None
     terms = _terms(task, issue_abs)
+    candidates: list[Source] = []
     selected: list[Source] = []
     warnings: list[str] = []
     hard_violations: list[str] = []
     seen_paths: set[Path] = set()
     category_tokens = {name: 0 for name in category_budgets}
-    total = 0
 
     for entry in entries:
         rel = str(entry["path"])
@@ -375,48 +417,75 @@ def build_context(
             str(entry["mode"]),
             entry,
             terms,
-            int(retrieval["max_chunks"]),
-            int(retrieval["max_chunk_tokens"]),
+            int(retrieval["max_sections"]),
+            int(retrieval["max_section_tokens"]),
             counter,
         )
         if not content:
+            if required:
+                raise ContextError(f"required retrieval produced no content: {rel}")
             warnings.append(f"no matching content retrieved: {rel}")
             continue
         tokens = counter.count(content)
         category = str(entry["category"])
-        category_limit = category_budgets[category]
-        violation = total + tokens > budget or category_tokens[category] + tokens > category_limit
-        if violation and required:
-            reason = (
-                f"required source does not fit budget: {rel} ({tokens} tokens, "
-                f"category {category} {category_tokens[category] + tokens}/{category_limit}, "
-                f"total {total + tokens}/{budget})"
-            )
-            hard_violations.append(reason)
-            raise ContextError(reason)
-        if violation:
-            warnings.append(f"optional source omitted by budget: {rel} ({tokens} tokens)")
-            continue
-        selected.append(
+        if category not in category_budgets or category == "reserve":
+            raise ContextError(f"source {rel} references unbudgeted category: {category}")
+        candidates.append(
             Source(rel, category, tokens, required, str(entry["mode"]), content, provenance)
         )
         seen_paths.add(path)
-        category_tokens[category] += tokens
-        total += tokens
+
+    required_total = sum(source.tokens for source in candidates if source.required)
+    required_categories = {name: 0 for name in category_budgets}
+    for source in candidates:
+        if source.required:
+            required_categories[source.category] += source.tokens
+    if required_total > usable_budget:
+        hard_violations.append(
+            f"required context exceeds usable budget: {required_total}/{usable_budget} "
+            f"(reserve {reserve})"
+        )
+    for category, used in required_categories.items():
+        if used > category_budgets[category]:
+            hard_violations.append(
+                f"required category exceeds budget: {category} {used}/{category_budgets[category]}"
+            )
+    if hard_violations and strict:
+        raise ContextError("; ".join(hard_violations))
+
+    total = 0
+    for source in candidates:
+        violation = (
+            total + source.tokens > usable_budget
+            or category_tokens[source.category] + source.tokens
+            > category_budgets[source.category]
+        )
+        if violation and not source.required:
+            warnings.append(
+                f"optional source omitted by budget: {source.path} ({source.tokens} tokens)"
+            )
+            continue
+        selected.append(source)
+        category_tokens[source.category] += source.tokens
+        total += source.tokens
 
     result = ContextResult(
         task=task,
         risks=list(risks),
         total_tokens=total,
         budget=budget,
+        usable_budget=usable_budget,
         category_tokens=category_tokens,
         category_budgets=category_budgets,
         sources=selected,
         warnings=warnings,
         duplicates=_duplicates(selected),
-        exact_count=counter.exact,
+        exact_count=not getattr(counter, "estimated", True),
         counter=counter.name,
-        exceeded=total > budget or any(
+        count_mode="estimate" if getattr(counter, "estimated", True) else "exact",
+        tokenizer=getattr(counter, "tokenizer", None),
+        target_model=getattr(counter, "precise_for", None),
+        exceeded=bool(hard_violations) or total > usable_budget or any(
             category_tokens[name] > limit for name, limit in category_budgets.items()
         ),
         hard_violations=hard_violations,
@@ -445,24 +514,65 @@ def _write_telemetry(
     path = root / manifest["telemetry"]["path"]
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "manifest_version": manifest["version"],
+        "repository": root.name,
+        "git_commit": _git_commit(root),
         "work_id": _work_id(issue),
         "phase": "context_build",
         "task": result.task,
         "total_tokens": result.total_tokens,
         "budget": result.budget,
+        "usable_budget": result.usable_budget,
         "sources": result.category_tokens,
         "source_paths": [source.path for source in result.sources],
-        "exact_count": result.exact_count,
+        "count_mode": result.count_mode,
         "counter": result.counter,
     }
     with path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(payload, sort_keys=True, ensure_ascii=False) + "\n")
 
 
+def _git_commit(root: Path) -> str | None:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=False
+    )
+    return completed.stdout.strip() if completed.returncode == 0 else None
+
+
+def prune_telemetry(
+    root: Path, manifest_path: Path | None = None, now: datetime | None = None
+) -> int:
+    manifest = load_manifest(root.resolve(), manifest_path)
+    path = root.resolve() / manifest["telemetry"]["path"]
+    if not path.is_file():
+        return 0
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(
+        days=int(manifest["telemetry"]["retention_days"])
+    )
+    kept: list[str] = []
+    removed = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            payload = json.loads(line)
+            timestamp = datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00"))
+        except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+            kept.append(line)
+            continue
+        if timestamp < cutoff:
+            removed += 1
+        else:
+            kept.append(line)
+    path.write_text(("\n".join(kept) + "\n") if kept else "", encoding="utf-8")
+    return removed
+
+
 def format_context(result: ContextResult) -> str:
-    qualifier = "exact" if result.exact_count else "estimated"
+    qualifier = result.count_mode
     lines = [
-        f"Context budget: {result.total_tokens:,} / {result.budget:,} tokens ({qualifier})",
+        f"Context budget: {result.total_tokens:,} / {result.usable_budget:,} usable "
+        f"tokens ({result.budget:,} total, {result.category_budgets['reserve']:,} reserve; "
+        f"{qualifier})",
         "",
         "Categories:",
     ]

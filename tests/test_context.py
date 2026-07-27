@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from governancekit.context import (
     DeterministicTokenCounter,
     build_context,
     format_context,
+    prune_telemetry,
 )
 
 
@@ -75,13 +77,15 @@ def make_repo(tmp_path: Path, *, total: int = 1000, category: int = 1000) -> Pat
             "total_input_tokens": total,
             "categories": {
                 "base_contracts": category,
+                "task_contracts": category,
+                "risk_contracts": category,
                 "project_context": category,
                 "active_work": category,
                 "retrieved_evidence": category,
-                "reserve": category,
+                "reserve": 1,
             },
         },
-        "retrieval": {"max_chunks": 4, "max_chunk_tokens": 100},
+        "retrieval": {"max_sections": 4, "max_section_tokens": 100},
         "exclude_by_default": ["handoff.md", "archive/**"],
         "telemetry": {
             "path": ".gk/context-telemetry.jsonl",
@@ -135,7 +139,7 @@ def test_history_is_not_loaded_by_default(tmp_path: Path) -> None:
 
 def test_required_over_budget_fails_without_truncation(tmp_path: Path) -> None:
     root = make_repo(tmp_path, total=5, category=5)
-    with pytest.raises(ContextError, match="required source does not fit budget"):
+    with pytest.raises(ContextError, match="required context exceeds usable budget"):
         build_context(root, "implementation")
 
 
@@ -208,7 +212,7 @@ def test_fallback_count_and_json_are_stable(tmp_path: Path) -> None:
 
 def test_category_budget_is_enforced(tmp_path: Path) -> None:
     root = make_repo(tmp_path, total=1000, category=5)
-    with pytest.raises(ContextError, match="category base_contracts"):
+    with pytest.raises(ContextError, match="category exceeds budget: base_contracts"):
         build_context(root, "review")
 
 
@@ -236,3 +240,59 @@ def test_real_base_context_stays_under_declared_budget() -> None:
         pytest.skip("companion AI-Agents checkout is not available")
     result = build_context(root, "implementation", counter=DeterministicTokenCounter())
     assert result.category_tokens["base_contracts"] <= result.category_budgets["base_contracts"]
+
+
+def test_reserve_reduces_usable_budget_and_declared_order_is_preserved(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    result = build_context(root, "implementation")
+    assert result.usable_budget == result.budget - 1
+    assert paths(result)[:3] == ["AGENTS.md", "programmer.md", "design.md"]
+
+
+def test_required_retrieve_without_match_fails(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    manifest_path = root / ".docs/context-manifest.yaml"
+    manifest = yaml.safe_load(manifest_path.read_text())
+    manifest["tasks"]["review"]["include"] = [
+        {"path": "reviewer.md", "mode": "retrieve", "required": True, "terms": ["absent"]}
+    ]
+    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+    source(str(root / "reviewer.md"), "nothing relevant and no markdown headings")
+    with pytest.raises(ContextError, match="required retrieval produced no content"):
+        build_context(root, "review")
+
+
+def test_inspect_mode_returns_hard_violations_instead_of_raising(tmp_path: Path) -> None:
+    root = make_repo(tmp_path, total=5, category=5)
+    result = build_context(root, "implementation", strict=False)
+    assert result.exceeded
+    assert result.hard_violations
+
+
+def test_containment_detects_small_document_inside_large_one(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    shared = ["shared rule block " + str(index) + " x" * 80 for index in range(3)]
+    source(str(root / "reviewer.md"), "\n\n".join(shared))
+    source(str(root / "large.md"), "\n\n".join(shared + ["unique " + str(i) + " y" * 80 for i in range(8)]))
+    manifest_path = root / ".docs/context-manifest.yaml"
+    manifest = yaml.safe_load(manifest_path.read_text())
+    manifest["project"]["include"] = [{"path": "large.md", "mode": "full"}]
+    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+    result = build_context(root, "review")
+    assert any(item["kind"] == "contained_overlap" for item in result.duplicates)
+
+
+def test_telemetry_has_timestamp_and_prune_applies_retention(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    issue = root / "docs/issues/007/epic.md"
+    source(str(issue), "# WK-20260727-context-hardening\n")
+    build_context(root, "review", issue=issue, write_telemetry=True)
+    telemetry = root / ".gk/context-telemetry.jsonl"
+    current = json.loads(telemetry.read_text())
+    assert current["timestamp"].endswith("Z")
+    old = dict(current)
+    now = datetime.now(timezone.utc)
+    old["timestamp"] = (now - timedelta(days=31)).isoformat()
+    telemetry.write_text(json.dumps(old) + "\n" + json.dumps(current) + "\n")
+    assert prune_telemetry(root, now=now) == 1
+    assert len(telemetry.read_text().splitlines()) == 1

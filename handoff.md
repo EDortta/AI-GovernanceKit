@@ -2,6 +2,23 @@
 
 ## Current Status
 
+- work_id: WK-20260727-context-hardening
+- branch: `feature/uc-007/context-hardening`
+- status: finished
+- delivered: honest tokenizer estimate metadata; semantic task/risk categories;
+  enforced reserve; declared-order emission; required retrieval failure; weighted
+  lexical ranking; containment; inspect diagnostics; timestamp/prune telemetry;
+  `governancekit --version` with nearest-project version and upgrade indication.
+- validation: 136 pytest PASS; real AI-Agents context 19,221 / 21,000 usable;
+  AI-Agents gate PASS.
+- not validated: three-project benchmark because only AI-Agents currently carries
+  the compatible v1.1.3 context manifest.
+- compatibility: Amazon Q Developer adapter added to installer; both landing pages
+  now describe the shared, upgrade-protected mandatory context.
+
+## Prior Status
+
+
 - work_id: WK-20260727-context-optimization
 - date: 2026-07-27
 - branch: `feature/uc-006/context-optimization`

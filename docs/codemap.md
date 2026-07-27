@@ -3,7 +3,7 @@
 > Generated: 2026-07-27 · Root: `/home/esteban/Sync/Projects/AI/GovernanceKit`
 > Refresh: `governancekit map`
 
-23 file(s) · 206 symbol(s) indexed
+25 file(s) · 222 symbol(s) indexed
 
 ## Entry Points
 
@@ -24,6 +24,7 @@ governancekit/
   identity.py  — "Per-host / per-instance programmer identity."
   install_agents.py
   resume.py
+  version.py  — "Version reporting for GovernanceKit and its installed AI-Agents policy pack."
 pyproject.toml
 scripts/
   notify-nexo.sh
@@ -39,6 +40,7 @@ tests/
   test_install_agents_integrity.py
   test_install_agents_safe_extract.py
   test_resume.py
+  test_version.py
 ```
 
 ## Symbol Index
@@ -78,7 +80,7 @@ tests/
   - `count(self, text)` *(method)* — "Return the token count for text."
 - **`DeterministicTokenCounter`** *(class)* — "Provider-neutral fallback: one token per four Unicode characters."
   - `count(self, text)` *(method)*
-- **`TiktokenCounter`** *(class)* — "Optional exact counter, activated only when tiktoken is installed."
+- **`TiktokenCounter`** *(class)* — "Tokenizer-specific estimate, activated only when tiktoken is installed."
   - `__init__(self)` *(method)*
   - `count(self, text)` *(method)*
 - `default_token_counter()`
@@ -88,7 +90,8 @@ tests/
   - `content` *(property)*
   - `as_dict(self, include_content)` *(method)*
 - `load_manifest(root, manifest_path)`
-- `build_context(root, task, risks, issue, manifest_path, counter, write_telemetry)`
+- `build_context(root, task, risks, issue, manifest_path, counter, write_telemetry, strict)`
+- `prune_telemetry(root, manifest_path, now)`
 - `format_context(result)`
 
 ### `governancekit/doctor.py`
@@ -124,6 +127,14 @@ tests/
 - **`HandoffEntry`** *(class)* — "Parsed snapshot from the most recent handoff.md entry."
 - **`ResumeResult`** *(class)* — "Context assembled for the start of a new session."
 - `run_resume(root)` — "Assemble session-start context from RESUME.md and handoff.md."
+
+### `governancekit/version.py`
+
+> Version reporting for GovernanceKit and its installed AI-Agents policy pack.
+
+- **`VersionInfo`** *(class)*
+- `get_version_info(root)`
+- `format_version(info)`
 
 ### `tests/test_codemap.py`
 
@@ -190,6 +201,11 @@ tests/
 - `test_metadata_only_telemetry_requires_and_records_work_id(tmp_path)`
 - `test_human_output_shows_budget_categories_and_largest_sources(tmp_path)`
 - `test_real_base_context_stays_under_declared_budget()`
+- `test_reserve_reduces_usable_budget_and_declared_order_is_preserved(tmp_path)`
+- `test_required_retrieve_without_match_fails(tmp_path)`
+- `test_inspect_mode_returns_hard_violations_instead_of_raising(tmp_path)`
+- `test_containment_detects_small_document_inside_large_one(tmp_path)`
+- `test_telemetry_has_timestamp_and_prune_applies_retention(tmp_path)`
 
 ### `tests/test_doctor.py`
 
@@ -277,6 +293,7 @@ tests/
 - **`DefaultRefPinTests`** *(class)*
   - `test_default_ref_is_not_the_mutable_main_branch(self)` *(method)*
   - `test_default_repo_ref_has_a_known_checksum(self)` *(method)*
+  - `test_amazon_q_adapter_is_installed_and_upgraded(self)` *(method)*
 - **`DownloadChecksumTests`** *(class)*
   - `test_matching_checksum_is_accepted(self)` *(method)*
   - `test_mismatched_checksum_is_rejected_before_extraction(self)` *(method)*
@@ -309,4 +326,13 @@ tests/
 - **`ResumeIdentityTests`** *(class)*
   - `test_displays_operator_and_host(self)` *(method)*
   - `test_warns_when_identity_missing(self)` *(method)*
+
+### `tests/test_version.py`
+
+- `write_manifest(root, ref, repo)`
+- `test_reports_runtime_and_default_without_project(tmp_path)`
+- `test_finds_project_manifest_from_nested_directory(tmp_path)`
+- `test_reports_upgrade_when_project_ref_is_older(tmp_path)`
+- `test_custom_repository_is_not_compared_as_an_upgrade(tmp_path)`
+- `test_human_format_contains_all_versions(tmp_path)`
 

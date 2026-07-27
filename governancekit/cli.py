@@ -20,8 +20,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path.cwd(),
         help="Repository root to inspect. Defaults to the current directory.",
     )
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        dest="show_version",
+        help="Show GovernanceKit, default AI-Agents, and project AI-Agents versions.",
+    )
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command")
 
     doctor_parser = subparsers.add_parser(
         "doctor", help="Validate required governance files and readiness gates."
@@ -66,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
     context_commands.choices["build"].add_argument(
         "--telemetry", action="store_true", help="Append metadata-only JSONL telemetry."
     )
+    telemetry_parser = context_commands.add_parser("telemetry")
+    telemetry_commands = telemetry_parser.add_subparsers(
+        dest="telemetry_command", required=True
+    )
+    prune_parser = telemetry_commands.add_parser("prune")
+    prune_parser.add_argument("--manifest", type=Path)
 
     install_parser = subparsers.add_parser(
         "install-agents",
@@ -243,7 +255,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    if args.show_version:
+        from .version import format_version, get_version_info
+
+        print(format_version(get_version_info(args.root)))
+        return 0
+    if args.command is None:
+        parser.error("a command is required")
+
     if args.command == "context":
+        if args.context_command == "telemetry":
+            from .context import prune_telemetry
+
+            try:
+                removed = prune_telemetry(args.root, args.manifest)
+            except ContextError as exc:
+                print(f"Context error: {exc}")
+                return 2
+            print(f"Telemetry entries pruned: {removed}")
+            return 0
         try:
             result = build_context(
                 args.root,
@@ -252,6 +282,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 issue=args.issue,
                 manifest_path=args.manifest,
                 write_telemetry=getattr(args, "telemetry", False),
+                strict=args.context_command == "build",
             )
         except ContextError as exc:
             if args.as_json:

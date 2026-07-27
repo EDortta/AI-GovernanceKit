@@ -1,5 +1,9 @@
 # Napkin Lessons
 
+- 2026-07-27: A tokenizer can count its own encoding precisely without predicting
+  another model's billing tokens. Report tokenizer and estimate mode separately;
+  never translate library precision into universal model precision.
+
 - 2026-07-27: Optional sources must be selected after every mandatory source.
   Otherwise an optional file can consume budget and make a later mandatory contract
   fail even though omitting the optional source would produce a valid context.
