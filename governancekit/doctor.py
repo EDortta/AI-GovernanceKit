@@ -5,7 +5,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_PLACEHOLDER_RE = re.compile(r"\[([A-Z][A-Z0-9_]{2,})\]")
+_PLACEHOLDER_RE = re.compile(r"(?:\{\{|\[)([A-Z][A-Z0-9_]{2,})(?:\}\}|\])")
 
 
 @dataclass(frozen=True)
@@ -259,7 +259,7 @@ _PLACEHOLDER_SCAN_PATHS = [
 
 
 def _check_unfilled_placeholders(root: Path) -> CheckResult:
-    """Fail if any [PLACEHOLDER] tokens remain in installed kit files."""
+    """Fail if any kit placeholder token remains in installed files."""
     found: dict[str, list[str]] = {}
     for rel in _PLACEHOLDER_SCAN_PATHS:
         path = root / rel
@@ -275,7 +275,7 @@ def _check_unfilled_placeholders(root: Path) -> CheckResult:
 
     if found:
         detail = "; ".join(
-            f"{rel}: {', '.join(f'[{t}]' for t in tokens)}"
+            f"{rel}: {', '.join(f'{{{{{t}}}}}' for t in tokens)}"
             for rel, tokens in found.items()
         )
         return CheckResult(
@@ -543,4 +543,3 @@ def _check_codemap(root: Path) -> CheckResult:
             advisory=True,
         )
     return CheckResult("codemap", True, "docs/codemap.md is up to date")
-

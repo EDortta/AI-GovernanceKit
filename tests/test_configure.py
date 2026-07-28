@@ -24,16 +24,16 @@ class ConfigureTests(unittest.TestCase):
     def test_fills_known_placeholder_across_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            (root / "AGENTS.md").write_text("Hi [OPERATOR_NAME]\n", encoding="utf-8")
+            (root / "AGENTS.md").write_text("Hi {{OPERATOR_NAME}}\n", encoding="utf-8")
             (root / "docs").mkdir()
-            (root / "docs" / "x.md").write_text("owner [OPERATOR_NAME]\n", encoding="utf-8")
+            (root / "docs" / "x.md").write_text("owner {{OPERATOR_NAME}}\n", encoding="utf-8")
 
             result = run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
 
             self.assertEqual(result.values, {"OPERATOR_NAME": "Ann"})
             self.assertEqual(len(result.changed_files), 2)
-            self.assertNotIn("[OPERATOR_NAME]", (root / "AGENTS.md").read_text())
-            self.assertNotIn("[OPERATOR_NAME]", (root / "docs" / "x.md").read_text())
+            self.assertNotIn("{{OPERATOR_NAME}}", (root / "AGENTS.md").read_text())
+            self.assertNotIn("{{OPERATOR_NAME}}", (root / "docs" / "x.md").read_text())
 
     def test_ignores_unknown_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -48,7 +48,7 @@ class ConfigureTests(unittest.TestCase):
     def test_reports_unfilled(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            (root / "AGENTS.md").write_text("[OPERATOR_NAME] [GITHUB_OWNER]\n", encoding="utf-8")
+            (root / "AGENTS.md").write_text("{{OPERATOR_NAME}} {{GITHUB_OWNER}}\n", encoding="utf-8")
 
             result = run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
 
@@ -110,7 +110,7 @@ class ConfigureIdentityTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            (root / "AGENTS.md").write_text("owner: [OPERATOR_NAME]\n", encoding="utf-8")
+            (root / "AGENTS.md").write_text("owner: {{OPERATOR_NAME}}\n", encoding="utf-8")
 
             code = cli.main(["--root", str(root), "configure", "--set", "OPERATOR_NAME=Ann"])
 
@@ -126,7 +126,7 @@ class ConfigureIdentityTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            (root / "AGENTS.md").write_text("owner: [OPERATOR_NAME]\n", encoding="utf-8")
+            (root / "AGENTS.md").write_text("owner: {{OPERATOR_NAME}}\n", encoding="utf-8")
 
             code = cli.main(
                 ["--root", str(root), "configure", "--set", "OPERATOR_NAME=Ann",
@@ -134,6 +134,28 @@ class ConfigureIdentityTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 1)
+
+    def test_fills_legacy_and_current_placeholder_syntax(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "AGENTS.md").write_text(
+                "owner [OPERATOR_NAME] smtp {{SMTP_ACCOUNT}}\n", encoding="utf-8"
+            )
+
+            result = run_configure(
+                root,
+                preset={"OPERATOR_NAME": "Ann", "SMTP_ACCOUNT": "ann@example.com"},
+                interactive=False,
+            )
+
+            self.assertEqual(
+                (root / "AGENTS.md").read_text(encoding="utf-8"),
+                "owner Ann smtp ann@example.com\n",
+            )
+            self.assertEqual(
+                result.values,
+                {"OPERATOR_NAME": "Ann", "SMTP_ACCOUNT": "ann@example.com"},
+            )
 
 
 if __name__ == "__main__":

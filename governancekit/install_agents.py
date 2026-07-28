@@ -862,7 +862,7 @@ def _resolve_track_kit_docs(root: Path, cli_value: bool | None) -> bool:
 
 # ── placeholder resolution ─────────────────────────────────────────────────────
 
-_PLACEHOLDER_RE = re.compile(r"\[([A-Z][A-Z0-9_]+)\]")
+_PLACEHOLDER_RE = re.compile(r"(?:\{\{|\[)([A-Z][A-Z0-9_]+)(?:\}\}|\])")
 
 _PLACEHOLDER_DESCRIPTIONS: dict[str, str] = {
     "OPERATOR_NAME": "operator / project owner name (used in agent greetings)",
@@ -887,12 +887,12 @@ def _fill_placeholders(
     *,
     known: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """Scan installed files for known [PLACEHOLDER] tokens and fill them in.
+    """Scan installed files for known placeholder tokens and fill them in.
 
     Only tokens described in ``_PLACEHOLDER_DESCRIPTIONS`` are treated as fillable
-    variables. Arbitrary ``[WORD]`` tokens that merely appear as documentation
-    examples (e.g. the literal ``[PLACEHOLDER]`` / ``[TOKEN]`` used to *explain* the
-    mechanism) are skipped instead of being prompted for. Mirrors ``configure.py``.
+    variables. Both legacy ``[TOKEN]`` and current ``{{TOKEN}}`` syntaxes are
+    supported. Arbitrary documentation-example tokens are skipped instead of being
+    prompted for. Mirrors ``configure.py``.
 
     *known* carries answers from previous runs (``.gk/state.json``). They are offered
     as the default so the operator confirms with Enter instead of retyping, and they
@@ -931,7 +931,7 @@ def _fill_placeholders(
             print(
                 "\nWarning: the following placeholders were not filled "
                 "(no interactive terminal, no stored value):\n  "
-                + ", ".join(f"[{p}]" for p in unknown)
+                + ", ".join(f"{{{{{p}}}}}" for p in unknown)
             )
         if not values:
             return dict(known)
@@ -948,7 +948,7 @@ def _fill_placeholders(
         for token in sorted(placeholder_files):
             desc = _PLACEHOLDER_DESCRIPTIONS.get(token, "")
             current = remembered.get(token)
-            prompt = f"  [{token}]"
+            prompt = f"  {{{{{token}}}}}"
             if desc:
                 prompt += f"  ({desc})"
             prompt += f" [{current}]: " if current else ": "
@@ -979,6 +979,7 @@ def _fill_placeholders(
             new_text = text
             for t, v in values.items():
                 new_text = new_text.replace(f"[{t}]", v)
+                new_text = new_text.replace(f"{{{{{t}}}}}", v)
             if new_text != text:
                 path.write_text(new_text, encoding="utf-8")
                 changed.append(str(path.relative_to(root)))

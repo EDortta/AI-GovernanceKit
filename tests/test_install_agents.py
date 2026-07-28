@@ -8,7 +8,9 @@ from governancekit import install_agents as ia
 
 
 def _make_source(src: Path) -> None:
-    (src / "AGENTS.md").write_text("# kit AGENTS [OPERATOR_NAME]\n", encoding="utf-8")
+    (src / "AGENTS.md").write_text(
+        "# kit AGENTS {{OPERATOR_NAME}} {{SMTP_ACCOUNT}}\n", encoding="utf-8"
+    )
     (src / "docs" / "agents").mkdir(parents=True)
     (src / "docs" / "agents" / "programmer.md").write_text("v2\n", encoding="utf-8")
     (src / "docs" / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
@@ -162,11 +164,11 @@ class InstallAgentsTests(unittest.TestCase):
 
     def test_metadata_reapplied_without_a_terminal(self) -> None:
         # The continuity case: an upgrade overwrote the file with a fresh template, so
-        # [OPERATOR_NAME] is raw again. A stored answer must be re-applied silently
+        # {{OPERATOR_NAME}} is raw again. A stored answer must be re-applied silently
         # instead of leaving the placeholder exposed.
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            (root / "AGENTS.md").write_text("# kit [OPERATOR_NAME]\n", encoding="utf-8")
+            (root / "AGENTS.md").write_text("# kit {{OPERATOR_NAME}}\n", encoding="utf-8")
 
             values = ia._fill_placeholders(
                 root, ["AGENTS.md"], known={"OPERATOR_NAME": "Esteban"}
@@ -181,14 +183,14 @@ class InstallAgentsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             (root / "AGENTS.md").write_text(
-                "[OPERATOR_NAME] / [SMTP_ACCOUNT]\n", encoding="utf-8"
+                "{{OPERATOR_NAME}} / {{SMTP_ACCOUNT}}\n", encoding="utf-8"
             )
 
             values = ia._fill_placeholders(
                 root, ["AGENTS.md"], known={"OPERATOR_NAME": "Esteban"}
             )
 
-            self.assertEqual((root / "AGENTS.md").read_text(), "Esteban / [SMTP_ACCOUNT]\n")
+            self.assertEqual((root / "AGENTS.md").read_text(), "Esteban / {{SMTP_ACCOUNT}}\n")
             self.assertNotIn("SMTP_ACCOUNT", values)
 
     def test_state_hash_matches_file_after_placeholder_fill(self) -> None:
@@ -197,7 +199,7 @@ class InstallAgentsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             agents = root / "AGENTS.md"
-            agents.write_text("# kit [OPERATOR_NAME]\n", encoding="utf-8")
+            agents.write_text("# kit {{OPERATOR_NAME}}\n", encoding="utf-8")
 
             metadata = ia._fill_placeholders(
                 root, ["AGENTS.md"], known={"OPERATOR_NAME": "Esteban"}
@@ -423,14 +425,36 @@ class InstallAgentsTests(unittest.TestCase):
             root = Path(temp_dir)
             doc = root / "AGENTS.md"
             doc.write_text(
-                "Replace [PLACEHOLDER] and [TOKEN] examples. Owner: [OPERATOR_NAME].\n",
+                "Replace [PLACEHOLDER] and [TOKEN] examples. Owner: {{OPERATOR_NAME}}.\n",
                 encoding="utf-8",
             )
             ia._fill_placeholders(root, ["AGENTS.md"])
             text = doc.read_text(encoding="utf-8")
             self.assertIn("[PLACEHOLDER]", text)
             self.assertIn("[TOKEN]", text)
-            self.assertIn("[OPERATOR_NAME]", text)
+            self.assertIn("{{OPERATOR_NAME}}", text)
+
+    def test_fill_placeholders_supports_legacy_and_current_syntax(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            doc = root / "AGENTS.md"
+            doc.write_text(
+                "legacy [OPERATOR_NAME] current {{SMTP_ACCOUNT}}\n",
+                encoding="utf-8",
+            )
+
+            values = ia._fill_placeholders(
+                root,
+                ["AGENTS.md"],
+                known={"OPERATOR_NAME": "Esteban", "SMTP_ACCOUNT": "esteban@example.com"},
+            )
+
+            self.assertEqual(
+                doc.read_text(encoding="utf-8"),
+                "legacy Esteban current esteban@example.com\n",
+            )
+            self.assertEqual(values["OPERATOR_NAME"], "Esteban")
+            self.assertEqual(values["SMTP_ACCOUNT"], "esteban@example.com")
 
 
 if __name__ == "__main__":

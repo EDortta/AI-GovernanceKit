@@ -147,7 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     configure_parser = subparsers.add_parser(
         "configure",
-        help="Fill kit placeholder variables (e.g. [OPERATOR_NAME]) across all docs.",
+        help="Fill kit placeholder variables (e.g. {{OPERATOR_NAME}}) across all docs.",
     )
     configure_parser.add_argument(
         "--set",

@@ -159,7 +159,8 @@ def run_configure(
     """Fill kit placeholder variables across all text files under *root*.
 
     ``preset`` supplies non-interactive ``KEY=VALUE`` answers. Remaining tokens are
-    prompted for when a TTY is available (override with ``interactive``).
+    prompted for when a TTY is available (override with ``interactive``). Supports
+    both legacy ``[TOKEN]`` and current ``{{TOKEN}}`` placeholders.
     """
     root = root.resolve()
     preset = dict(preset or {})
@@ -180,7 +181,7 @@ def run_configure(
         print("Press Enter to leave a value unchanged.\n")
         for token in to_prompt:
             desc = _PLACEHOLDER_DESCRIPTIONS.get(token, "")
-            prompt = f"  [{token}]" + (f"  ({desc})" if desc else "") + ": "
+            prompt = f"  {{{{{token}}}}}" + (f"  ({desc})" if desc else "") + ": "
             try:
                 answer = input(prompt).strip()
             except EOFError:
@@ -207,6 +208,7 @@ def run_configure(
         new_text = text
         for token, val in values.items():
             new_text = new_text.replace(f"[{token}]", val)
+            new_text = new_text.replace(f"{{{{{token}}}}}", val)
         if new_text != text:
             path.write_text(new_text, encoding="utf-8")
             result.changed_files.append(str(path.relative_to(root)))
