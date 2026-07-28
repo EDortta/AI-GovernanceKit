@@ -29,7 +29,7 @@ KNOWN_TARBALL_SHA256: dict[tuple[str, str], str] = {
     (REPO, "v1.1.3"): "0bcdf6968e3018664f685abd5079c2cb99a8bb439ef0b5d97ba47e9218931ebd",
     (REPO, "v1.1.4"): "497670c3ce1bbdbd2d434f845438a32d6d3afa3337933b8567367127884e9403",
     (REPO, "v1.1.5"): "68881466d94fead63d8f55d2c48e3ab82d4b4099a3741c2064b08e44a726f2fd",
-    (REPO, "v1.1.6"): "947276fc2e1cec3cef68b45e3166d7c280992252107cedcc62bdf20ec553de2b",
+    (REPO, "v1.1.6"): "0cac041c9e5c7ce0cc28b032fbb6cc400509b9a23dc9f04c24e21b6d7daf6c21",
 }
 
 # ── layout: kit lives in .docs/, project owns docs/ ──────────────────────────────

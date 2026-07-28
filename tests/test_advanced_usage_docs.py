@@ -90,7 +90,7 @@ def test_landing_navigation_is_translated_compact_and_agents_install_is_separate
 def test_default_agents_release_is_current_and_checksum_pinned() -> None:
     assert DEFAULT_REF == "v1.1.6"
     assert KNOWN_TARBALL_SHA256[(REPO, DEFAULT_REF)] == (
-        "947276fc2e1cec3cef68b45e3166d7c280992252107cedcc62bdf20ec553de2b"
+        "0cac041c9e5c7ce0cc28b032fbb6cc400509b9a23dc9f04c24e21b6d7daf6c21"
     )
 
 
