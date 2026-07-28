@@ -162,33 +162,43 @@ _CONFIG_FILE = ".governancekit"
 # ships and deletes NOTHING. Safe by default — the cost is that a file genuinely
 # retired upstream lingers until the first state-backed upgrade records it.
 _STATE_DIR = ".gk"
-# Split by who may read it, because the two halves have opposite requirements.
+# Split by who may read it, because the three halves have different requirements.
 #
 # manifest.json is COMMITTED: file hashes are not secret, and a team sharing a
 # checkout must share them — that is what makes every programmer's upgrade decide
-# ownership the same way. Non-sensitive answers (operator, org, repo owner) ride
-# along so a teammate's first run is not re-interrogated.
+# ownership the same way. Only project-wide answers (org, repo owner) belong here.
 #
-# secrets.json is GITIGNORED: SMTP account, PIX keys, wallet address. Per-machine.
-# If a team genuinely needs to share these, encrypt this file to the RECIPIENTS'
-# public keys (sops/age) — never "encrypt with the origin machine's private key",
-# which only signs and leaves the content readable to anyone holding the public key.
+# operator.json is GITIGNORED: per-programmer / per-machine identity answers such
+# as operator name, SMTP account, and local absolute paths. These must never be
+# shared through the repository, or every clone would inherit the previous
+# programmer's identity.
+#
+# secrets.json is GITIGNORED: sensitive local values such as PIX payloads and
+# wallet addresses. If a team genuinely needs to share these, encrypt this file to
+# the RECIPIENTS' public keys (sops/age) — never "encrypt with the origin machine's
+# private key", which only signs and leaves the content readable to anyone holding
+# the public key.
 _STATE_FILE = f"{_STATE_DIR}/manifest.json"
+_OPERATOR_FILE = f"{_STATE_DIR}/operator.json"
 _SECRETS_FILE = f"{_STATE_DIR}/secrets.json"
 _STATE_VERSION = 1
 
-# Answers that must never be committed. Everything else is shareable project context.
-_SENSITIVE_PLACEHOLDERS: frozenset[str] = frozenset({
+# Answers that must never be committed because they are operator/machine-local.
+_OPERATOR_PLACEHOLDERS: frozenset[str] = frozenset({
+    "OPERATOR_NAME",
     "SMTP_ACCOUNT",
+    "PROJECT_ROOT",
+})
+
+# Answers that must never be committed because they are sensitive. Everything else
+# is shareable project context.
+_SENSITIVE_PLACEHOLDERS: frozenset[str] = frozenset({
     "PIX_KEY_UUID",
     "PIX_HOLDER_NAME",
     "PIX_PAYLOAD",
     "PIX_QR_BASE64",
     "ETH_WALLET_ADDRESS",
     "KOFI_HANDLE",
-    # Not a secret, but an absolute path on one machine — sharing it would point a
-    # teammate's agents at a directory that does not exist for them.
-    "PROJECT_ROOT",
 })
 
 _GITIGNORE_BEGIN = "# AI-Agents kit — managed by governancekit install-agents"
@@ -610,14 +620,26 @@ def _read_state(root: Path) -> dict:
     delete or assume.
     """
     state = _read_json(root / _STATE_FILE)
+    operator = _read_json(root / _OPERATOR_FILE)
     secrets = _read_json(root / _SECRETS_FILE)
-    if not secrets:
+    # Legacy manifests may still carry operator-local fields from before
+    # operator.json existed. Ignore them here so a clone never inherits another
+    # programmer's identity; the next write strips them from the manifest.
+    manifest_meta = {
+        k: v for k, v in _state_metadata(state).items() if k not in _OPERATOR_PLACEHOLDERS
+    }
+    if not operator and not secrets:
+        if manifest_meta != _state_metadata(state):
+            merged = dict(state)
+            merged["metadata"] = manifest_meta
+            return merged
         return state
-    # Present the two files to callers as one logical state; only _write_state knows
-    # they are stored apart.
+    # Present the split files to callers as one logical state; only _write_state
+    # knows they are stored apart.
     merged = dict(state)
     merged["metadata"] = {
-        **_state_metadata(state),
+        **manifest_meta,
+        **_state_metadata(operator),
         **_state_metadata(secrets),
     }
     return merged
@@ -662,7 +684,11 @@ def _write_state(
                 files[f.relative_to(root).as_posix()] = _file_sha256(f)
 
     merged_meta = {**_state_metadata(previous), **metadata}
-    shareable = {k: v for k, v in merged_meta.items() if k not in _SENSITIVE_PLACEHOLDERS}
+    shareable = {
+        k: v for k, v in merged_meta.items()
+        if k not in _OPERATOR_PLACEHOLDERS and k not in _SENSITIVE_PLACEHOLDERS
+    }
+    operator_local = {k: v for k, v in merged_meta.items() if k in _OPERATOR_PLACEHOLDERS}
     sensitive = {k: v for k, v in merged_meta.items() if k in _SENSITIVE_PLACEHOLDERS}
 
     state_dir = root / _STATE_DIR
@@ -674,6 +700,7 @@ def _write_state(
     (state_dir / ".gitignore").write_text(
         "# Managed by governancekit.\n"
         "# manifest.json is intentionally NOT ignored — the team must share it.\n"
+        "operator.json\n"
         "secrets.json\n"
         "context-telemetry.jsonl\n"
         "overwritten/\n",
@@ -696,6 +723,21 @@ def _write_state(
         encoding="utf-8",
     )
 
+    operator_path = root / _OPERATOR_FILE
+    if operator_local:
+        operator_path.write_text(
+            json.dumps(
+                {"state_version": _STATE_VERSION, "metadata": operator_local},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        operator_path.chmod(0o600)
+    elif operator_path.exists():
+        operator_path.unlink()
+
     # Written only when there is something to write, so a project with no secrets
     # never grows a confusing empty file.
     if sensitive:
@@ -710,6 +752,10 @@ def _write_state(
             encoding="utf-8",
         )
         secrets_path.chmod(0o600)
+    else:
+        secrets_path = root / _SECRETS_FILE
+        if secrets_path.exists():
+            secrets_path.unlink()
 
 
 # ── legacy layout migration ──────────────────────────────────────────────────────
@@ -1028,8 +1074,10 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     entries.append(f"{_MIGRATION_BACKUP_DIR}/")
     # .gk/manifest.json is deliberately NOT ignored: a team sharing a checkout must
     # share the file hashes, or each programmer's upgrade would judge ownership from a
-    # different baseline. Only the credential half and the stash are ignored, and
-    # unconditionally — unlike .docs/, this is not subject to the track-kit-docs choice.
+    # different baseline. Only the local operator/secrets halves and the stash are
+    # ignored, unconditionally — unlike .docs/, this is not subject to the
+    # track-kit-docs choice.
+    entries.append(_OPERATOR_FILE)
     entries.append(_SECRETS_FILE)
     entries.append(f"{_STATE_DIR}/context-telemetry.jsonl")
     entries.append(f"{_STATE_DIR}/overwritten/")

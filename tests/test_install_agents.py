@@ -257,34 +257,86 @@ class InstallAgentsTests(unittest.TestCase):
         # The team must share the hashes; only the credential half stays out of git.
         for track in (True, False):
             entries = ia._gitignore_entries(["AGENTS.md", "docs/agents"], track_kit_docs=track)
+            self.assertIn(ia._OPERATOR_FILE, entries)
             self.assertIn(ia._SECRETS_FILE, entries)
             self.assertNotIn(f"{ia._STATE_DIR}/", entries)
             self.assertNotIn(ia._STATE_FILE, entries)
 
-    def test_secrets_split_from_shareable_metadata(self) -> None:
+    def test_operator_and_secrets_split_from_shareable_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             ia._write_state(
                 root, [], repo="r", ref="v1",
-                metadata={"OPERATOR_NAME": "Esteban", "SMTP_ACCOUNT": "a@b.c"},
+                metadata={
+                    "OPERATOR_NAME": "Esteban",
+                    "SMTP_ACCOUNT": "a@b.c",
+                    "PIX_KEY_UUID": "uuid-123",
+                },
             )
             manifest = ia._read_json(root / ia._STATE_FILE)
+            operator = ia._read_json(root / ia._OPERATOR_FILE)
             secrets = ia._read_json(root / ia._SECRETS_FILE)
 
-            self.assertEqual(manifest["metadata"], {"OPERATOR_NAME": "Esteban"})
-            self.assertEqual(secrets["metadata"], {"SMTP_ACCOUNT": "a@b.c"})
+            self.assertEqual(manifest["metadata"], {})
+            self.assertEqual(
+                operator["metadata"],
+                {"OPERATOR_NAME": "Esteban", "SMTP_ACCOUNT": "a@b.c"},
+            )
+            self.assertEqual(secrets["metadata"], {"PIX_KEY_UUID": "uuid-123"})
+            self.assertEqual((root / ia._OPERATOR_FILE).stat().st_mode & 0o777, 0o600)
             self.assertEqual((root / ia._SECRETS_FILE).stat().st_mode & 0o777, 0o600)
             # Callers still see one logical state.
             self.assertEqual(
                 ia._state_metadata(ia._read_state(root)),
-                {"OPERATOR_NAME": "Esteban", "SMTP_ACCOUNT": "a@b.c"},
+                {
+                    "OPERATOR_NAME": "Esteban",
+                    "SMTP_ACCOUNT": "a@b.c",
+                    "PIX_KEY_UUID": "uuid-123",
+                },
             )
 
     def test_no_secrets_file_when_nothing_sensitive(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             ia._write_state(root, [], repo="r", ref="v1", metadata={"ORG_NAME": "YouBR"})
+            self.assertFalse((root / ia._OPERATOR_FILE).exists())
             self.assertFalse((root / ia._SECRETS_FILE).exists())
+
+    def test_legacy_manifest_operator_metadata_is_ignored_until_reentered(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ia._STATE_DIR).mkdir()
+            (root / ia._STATE_FILE).write_text(
+                '{\n'
+                '  "state_version": 1,\n'
+                '  "repo": "r",\n'
+                '  "ref": "v1",\n'
+                '  "metadata": {"OPERATOR_NAME": "Esteban", "ORG_NAME": "YouBR"}\n'
+                '}\n',
+                encoding="utf-8",
+            )
+
+            self.assertEqual(ia._state_metadata(ia._read_state(root)), {"ORG_NAME": "YouBR"})
+
+    def test_operator_metadata_is_not_shared_in_manifest_after_rewrite(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ia._STATE_DIR).mkdir()
+            (root / ia._STATE_FILE).write_text(
+                '{\n'
+                '  "state_version": 1,\n'
+                '  "repo": "r",\n'
+                '  "ref": "v1",\n'
+                '  "metadata": {"OPERATOR_NAME": "Esteban", "ORG_NAME": "YouBR"}\n'
+                '}\n',
+                encoding="utf-8",
+            )
+
+            ia._write_state(root, [], repo="r", ref="v2", metadata={})
+
+            manifest = ia._read_json(root / ia._STATE_FILE)
+            self.assertEqual(manifest["metadata"], {"ORG_NAME": "YouBR"})
+            self.assertFalse((root / ia._OPERATOR_FILE).exists())
 
     def test_gitignore_uses_dotdocs_and_leaves_docs_tracked(self) -> None:
         entries = ia._gitignore_entries(
