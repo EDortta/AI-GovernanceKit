@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
 from governancekit.project_config import ProviderConfig, apply_project_config_plan, build_project_config_plan
-from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _detected_providers, _domain_answer, _print_analysis_notice, _print_domain_help, _print_domain_selection_help, _print_provider_catalog, _print_provider_help, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
+from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _detected_providers, _domain_answer, _is_legacy_pending_scope_baseline, _print_analysis_notice, _print_domain_help, _print_domain_selection_help, _print_provider_catalog, _print_provider_help, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
 
 
 def _proposal() -> ScopeProposal:
@@ -87,6 +88,16 @@ def test_domain_selection_can_accept_the_complete_agent_proposal(capsys) -> None
     output = capsys.readouterr().out
     assert "Type `proposal` to accept every domain" in output
     assert "replaces the whole list" in output
+
+
+def test_legacy_pending_adoption_baseline_does_not_override_scope_proposal(tmp_path: Path) -> None:
+    plan = build_project_config_plan(tmp_path, domains=["shell"])
+    legacy = replace(plan.config, config_version=1)
+
+    assert _is_legacy_pending_scope_baseline(tmp_path, legacy)
+    (tmp_path / ".gk").mkdir()
+    (tmp_path / ".gk/project-config.json").write_text("{}", encoding="utf-8")
+    assert not _is_legacy_pending_scope_baseline(tmp_path, legacy)
 
 
 def test_analysis_notice_explains_the_delay_and_read_only_boundary(capsys) -> None:

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .agent_scope import ScopeProposal, propose_project_scope, supported_scope_agents
 from .discover import run_discover
-from .project_config import ProviderConfig, ProjectConfig, _config_from_existing, load_project_config
+from .project_config import ProviderConfig, ProjectConfig, _CONFIG_VERSION, _config_from_existing, load_project_config
 
 _MANDATORY_SOURCES = (
     "AGENTS.md",
@@ -229,6 +229,28 @@ def _pending_or_applied_config(root: Path) -> ProjectConfig | None:
     plan = data.get("plan") if isinstance(data, dict) else None
     config = plan.get("config") if isinstance(plan, dict) else None
     return _config_from_existing(config) if isinstance(config, dict) else None
+
+
+def _is_legacy_pending_scope_baseline(root: Path, config: ProjectConfig | None) -> bool:
+    """Initial adoption plans predate the interview and contain generic discovery defaults."""
+    return bool(
+        config
+        and not (root / ".gk/project-config.json").is_file()
+        and config.config_version < _CONFIG_VERSION
+    )
+
+
+def _print_legacy_pending_notice(locale: str) -> None:
+    if locale == "pt-BR":
+        print("A sessão pendente anterior contém valores genéricos de descoberta, não decisões de escopo.")
+        print("A proposta atual do agente será o padrão; ela não será substituída por esses valores antigos.")
+        return
+    if locale == "es":
+        print("La sesión pendiente anterior contiene valores genéricos de descubrimiento, no decisiones de alcance.")
+        print("La propuesta actual del agente será el valor predeterminado; no será reemplazada por esos valores antiguos.")
+        return
+    print("The earlier pending session contains generic discovery values, not scope decisions.")
+    print("The current agent proposal will be the default; those older values will not replace it.")
 
 
 def _print_provider_help(locale: str) -> None:
@@ -609,6 +631,7 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
     sources, missing = load_required_reading(root)
     discovery = run_discover(root)
     existing = _pending_or_applied_config(root)
+    scope_defaults = None if _is_legacy_pending_scope_baseline(root, existing) else existing
     available_agents = supported_scope_agents(discovery.agents)
 
     print("\n" + _message(locale, "title"))
@@ -634,7 +657,7 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
     print(_message(locale, "agents") + (", ".join(available_agents) or _message(locale, "no_agents")))
     if not available_agents:
         raise RuntimeError("no supported scope agent is installed (codex, claude, gemini, or cursor)")
-    selected_default = existing.selected_agent if existing and existing.selected_agent in available_agents else available_agents[0]
+    selected_default = scope_defaults.selected_agent if scope_defaults and scope_defaults.selected_agent in available_agents else available_agents[0]
     selected_agent = _ask(_message(locale, "agent"), selected_default, gap=False)
     while selected_agent not in available_agents:
         print("  " + _message(locale, "choose_agent"))
@@ -643,13 +666,15 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
     proposal: ScopeProposal = propose_project_scope(root, selected_agent, sources, locale=locale, provider=api_provider)
     print("\n" + _message(locale, "proposal"))
     print(proposal.render(locale=locale))
-    if existing:
+    if _is_legacy_pending_scope_baseline(root, existing):
+        _print_legacy_pending_notice(locale)
+    elif scope_defaults:
         print(_message(locale, "saved_defaults"))
 
     print("\n" + _message(locale, "domains_help"))
     _print_domain_help(locale, proposal)
-    _print_domain_selection_help(locale, existing, proposal)
-    proposal_default = ", ".join(existing.domains) if existing else ", ".join(proposal.domain_names)
+    _print_domain_selection_help(locale, scope_defaults, proposal)
+    proposal_default = ", ".join(scope_defaults.domains) if scope_defaults else ", ".join(proposal.domain_names)
     domains = _domain_answer(_ask(_message(locale, "domains"), proposal_default, gap=False), locale, proposal)
     while not domains:
         print("  " + _message(locale, "domain_required"))
@@ -661,8 +686,8 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
     capability_domains: dict[str, str] = {}
     for domain in domains:
         default_capabilities = ", ".join(
-            capability for capability in (existing.capabilities if existing else [])
-            if existing and existing.capability_domains.get(capability) == domain
+            capability for capability in (scope_defaults.capabilities if scope_defaults else [])
+            if scope_defaults and scope_defaults.capability_domains.get(capability) == domain
         ) or ", ".join(proposal.capabilities_for(domain))
         names = _clean_csv(_ask(_message(locale, "capabilities").format(domain=domain), default_capabilities, gap=False))
         for name in names:
@@ -683,5 +708,5 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
 
     print("\n" + _message(locale, "summary_help"))
     _print_summary_help(locale)
-    scope_summary = _ask(_message(locale, "summary"), existing.scope_summary if existing and existing.scope_summary else proposal.summary, gap=False) or None
+    scope_summary = _ask(_message(locale, "summary"), scope_defaults.scope_summary if scope_defaults and scope_defaults.scope_summary else proposal.summary, gap=False) or None
     return ScopeConversation(project_name, sources, missing, domains, capabilities, capability_domains, available_agents, selected_agent, providers, scope_summary)
