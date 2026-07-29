@@ -4,7 +4,7 @@ from pathlib import Path
 
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
 from governancekit.project_config import ProviderConfig, apply_project_config_plan, build_project_config_plan
-from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _detected_providers, _print_domain_help, _print_provider_catalog, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
+from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _detected_providers, _domain_answer, _print_domain_help, _print_domain_selection_help, _print_provider_catalog, _print_provider_help, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
 
 
 def _proposal() -> ScopeProposal:
@@ -60,11 +60,12 @@ def test_provider_catalog_lists_nvidia_nim_as_openai_compatible(capsys) -> None:
 
 
 def test_provider_help_limits_llm_use_to_the_scope_interview(capsys) -> None:
-    from governancekit.scope_conversation import _print_provider_help
-
     _print_provider_help("en")
 
-    assert "not for development tasks or project implementation" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "not for development tasks or project implementation" in output
+    assert ".credentials/llm/<provider>.key" in output
+    assert "Configuration stores only that file path" in output
 
 
 def test_domain_help_defines_the_concept_and_lists_agent_candidates(capsys) -> None:
@@ -75,6 +76,17 @@ def test_domain_help_defines_the_concept_and_lists_agent_candidates(capsys) -> N
     assert "Candidates found by the agent" in output
     assert "sessions: manage-sessions" in output
     assert "https://edortta.github.io/AI-GovernanceKit/advanced-usage.html" in output
+
+
+def test_domain_selection_can_accept_the_complete_agent_proposal(capsys) -> None:
+    proposal = _proposal()
+
+    _print_domain_selection_help("en", None, proposal)
+
+    assert _domain_answer("proposal", "en", proposal) == ["sessions"]
+    output = capsys.readouterr().out
+    assert "Type `proposal` to accept every domain" in output
+    assert "replaces the whole list" in output
 
 
 def test_created_credential_file_is_private_and_not_part_of_provider_config(tmp_path: Path) -> None:

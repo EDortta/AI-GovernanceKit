@@ -25,6 +25,9 @@ mudança proposta sem apagar silenciosamente configuração anterior.
 - A proposta rotula explicitamente a estrutura `domínio: capacidades` e
   esclarece que perguntas abertas são lacunas de evidência para revisão, não
   respostas salvas nem campos obrigatórios ocultos.
+- Quando houver uma lista salva ou pendente, a entrevista mostra essa lista ao
+  lado da proposta do agente e explica como mantê-la, aceitar a proposta inteira
+  ou substituí-la por uma lista CSV completa.
 - Estado de entrevista serializável, sem segredos, para retomar após erro de
   validação sem descartar decisões já confirmadas.
 - Garantia de que uma capability possui exatamente um domínio primário.

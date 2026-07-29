@@ -235,16 +235,29 @@ def _print_provider_help(locale: str) -> None:
     if locale == "pt-BR":
         print("Esta configuração define qual LLM pode analisar o escopo.")
         print("Você pode usar uma variável de ambiente, apontar um arquivo existente ou criar um arquivo local protegido.")
-        print("Ao criar o arquivo, a chave pode ser colada com a entrada oculta; ela não aparece na tela nem na configuração.")
+        print("Ao criar o arquivo, cole a chave com entrada oculta; ela será salva em `.credentials/llm/<provedor>.key` com acesso apenas do dono.")
+        print("A configuração guarda somente esse caminho, nunca a chave de API.")
         print("Papéis de roteamento:")
         print("  primary  - escolha padrão para análise.")
         print("  fallback - usada se a primary falhar.")
         print("  optional - disponível, mas fora do caminho padrão.")
         return
+    if locale == "es":
+        print("Esta configuración determina qué LLM puede analizar el alcance del proyecto.")
+        print("Se usa solo para esta entrevista de alcance, no para tareas de desarrollo ni implementación del proyecto.")
+        print("Puede usar una variable de entorno, referenciar un archivo existente o crear un archivo local protegido.")
+        print("Al crearlo, pegue la clave con entrada oculta; se guardará en `.credentials/llm/<proveedor>.key` con acceso solo del propietario.")
+        print("La configuración guarda solo esa ruta, nunca la clave de API.")
+        print("Roles de enrutamiento:")
+        print("  primary  - elección predeterminada para el análisis.")
+        print("  fallback - se usa si falla primary.")
+        print("  optional - disponible, pero fuera de la ruta predeterminada.")
+        return
     print("This configuration determines which LLM can analyze the project scope.")
     print("It is used only for this scope interview, not for development tasks or project implementation.")
     print("Use an environment variable, reference an existing file, or create a protected local credential file.")
-    print("When creating the file, the API key can be pasted into hidden input; it is not shown or stored in configuration.")
+    print("When creating the file, paste the API key into hidden input; it is saved in `.credentials/llm/<provider>.key` with owner-only access.")
+    print("Configuration stores only that file path, never the API key itself.")
     print("Routing roles:")
     print("  primary  - default choice for analysis.")
     print("  fallback - used when the primary fails.")
@@ -309,6 +322,43 @@ def _print_domain_help(locale: str, proposal: ScopeProposal) -> None:
     for domain in proposal.domains:
         print(f"  - {domain.name}: {', '.join(domain.capabilities)}")
     print("More context: https://edortta.github.io/AI-GovernanceKit/advanced-usage.html")
+
+
+def _print_domain_selection_help(locale: str, existing: ProjectConfig | None, proposal: ScopeProposal) -> None:
+    current = ", ".join(existing.domains) if existing and existing.domains else ""
+    proposed = ", ".join(proposal.domain_names)
+    if locale == "pt-BR":
+        if current:
+            print(f"Lista salva ou pendente atual: {current}")
+            print("Pressione Enter para mantê-la. Digite `proposta` para aceitar todos os domínios encontrados pelo agente.")
+        else:
+            print("Digite `proposta` para aceitar todos os domínios encontrados pelo agente.")
+        print("Para definir outra lista, informe todos os domínios separados por vírgulas; isso substitui a lista inteira.")
+        print(f"Proposta do agente: {proposed}")
+        return
+    if locale == "es":
+        if current:
+            print(f"Lista guardada o pendiente actual: {current}")
+            print("Pulse Enter para conservarla. Escriba `propuesta` para aceptar todos los dominios encontrados por el agente.")
+        else:
+            print("Escriba `propuesta` para aceptar todos los dominios encontrados por el agente.")
+        print("Para definir otra lista, escriba todos los dominios separados por comas; esto reemplaza la lista completa.")
+        print(f"Propuesta del agente: {proposed}")
+        return
+    if current:
+        print(f"Current saved or pending list: {current}")
+        print("Press Enter to keep it. Type `proposal` to accept every domain found by the agent.")
+    else:
+        print("Type `proposal` to accept every domain found by the agent.")
+    print("To define another list, enter every domain separated by commas; this replaces the whole list.")
+    print(f"Agent proposal: {proposed}")
+
+
+def _domain_answer(value: str, locale: str, proposal: ScopeProposal) -> list[str]:
+    proposal_words = {"proposal", "proposta", "propuesta"}
+    if value.strip().lower() in proposal_words:
+        return proposal.domain_names
+    return _clean_csv(value)
 
 
 def _print_capability_help(locale: str) -> None:
@@ -577,11 +627,12 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
 
     print("\n" + _message(locale, "domains_help"))
     _print_domain_help(locale, proposal)
+    _print_domain_selection_help(locale, existing, proposal)
     proposal_default = ", ".join(existing.domains) if existing else ", ".join(proposal.domain_names)
-    domains = _clean_csv(_ask(_message(locale, "domains"), proposal_default, gap=False))
+    domains = _domain_answer(_ask(_message(locale, "domains"), proposal_default, gap=False), locale, proposal)
     while not domains:
         print("  " + _message(locale, "domain_required"))
-        domains = _clean_csv(_ask(_message(locale, "domains"), proposal_default, gap=False))
+        domains = _domain_answer(_ask(_message(locale, "domains"), proposal_default, gap=False), locale, proposal)
 
     print("\n" + _message(locale, "capabilities_help"))
     _print_capability_help(locale)
