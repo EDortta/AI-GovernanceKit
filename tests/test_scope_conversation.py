@@ -5,7 +5,7 @@ from pathlib import Path
 
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
 from governancekit.project_config import ProviderConfig, apply_project_config_plan, build_project_config_plan
-from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _detected_providers, _domain_answer, _is_legacy_pending_scope_baseline, _print_analysis_notice, _print_domain_help, _print_domain_selection_help, _print_provider_catalog, _print_provider_help, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
+from governancekit.scope_conversation import DomainCandidate, _LLM_PRESETS, _collect_providers, _detected_providers, _domain_answer, _is_legacy_pending_scope_baseline, _merge_domain_candidates, _print_analysis_notice, _print_domain_selection_help, _print_provider_catalog, _print_provider_help, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
 
 
 def _proposal() -> ScopeProposal:
@@ -69,25 +69,38 @@ def test_provider_help_limits_llm_use_to_the_scope_interview(capsys) -> None:
     assert "Configuration stores only that file path" in output
 
 
-def test_domain_help_defines_the_concept_and_lists_agent_candidates(capsys) -> None:
-    _print_domain_help("en", _proposal())
-
-    output = capsys.readouterr().out
-    assert "stable product-responsibility area" in output
-    assert "Candidates found by the agent" in output
-    assert "sessions: manage-sessions" in output
-    assert "https://edortta.github.io/AI-GovernanceKit/advanced-usage.html" in output
-
-
 def test_domain_selection_can_accept_the_complete_agent_proposal(capsys) -> None:
-    proposal = _proposal()
+    candidates = [DomainCandidate("sessions", ["manage-sessions"], ["docs/product-model.md: session workflow"], ("LLM",))]
 
-    _print_domain_selection_help("en", None, proposal)
+    _print_domain_selection_help("en", candidates)
 
-    assert _domain_answer("proposal", "en", proposal) == ["sessions"]
+    assert _domain_answer("proposal", candidates) == ["sessions"]
     output = capsys.readouterr().out
-    assert "Type `proposal` to accept every domain" in output
-    assert "replaces the whole list" in output
+    assert "Single domain and capability list" in output
+    assert "Press Enter to accept the single list" in output
+
+
+def test_domain_candidates_merge_declared_and_llm_origins_without_merging_similar_names() -> None:
+    declared = build_project_config_plan(
+        Path("/tmp/example-project"), domains=["collaboration"], capabilities=["review"],
+        capability_domains={"review": "collaboration"},
+    ).config
+    proposal = ScopeProposal(
+        summary="Product.",
+        domains=[
+            ProposedDomain("collaboration", ["conversations"], ["docs/product.md: collaboration"]),
+            ProposedDomain("review-conversation", ["review"], ["docs/product.md: review"]),
+        ],
+        questions=[],
+    )
+
+    candidates = _merge_domain_candidates(declared, proposal)
+
+    assert [(candidate.name, candidate.origins) for candidate in candidates] == [
+        ("collaboration", ("both",)),
+        ("review-conversation", ("LLM",)),
+    ]
+    assert candidates[0].capabilities == ["review", "conversations"]
 
 
 def test_legacy_pending_adoption_baseline_does_not_override_scope_proposal(tmp_path: Path) -> None:

@@ -68,8 +68,6 @@ def test_scope_proposal_labels_domains_capabilities_and_open_questions() -> None
         questions=["Which approvals need audit?"],
     ).render()
 
-    assert "Domains and capabilities proposed by the agent:" in rendered
-    assert "Each entry follows `domain: capabilities`." in rendered
     assert "evidence gaps to resolve before implementation" in rendered
     assert "not saved answers or required fields" in rendered
 

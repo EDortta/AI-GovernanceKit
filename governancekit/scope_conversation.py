@@ -43,6 +43,14 @@ class ScopeConversation:
     scope_summary: str | None
 
 
+@dataclass(frozen=True)
+class DomainCandidate:
+    name: str
+    capabilities: list[str]
+    evidence: list[str]
+    origins: tuple[str, ...]
+
+
 def _project_locale(root: Path) -> str | None:
     """Infer only when the process locale is the neutral C locale."""
     portuguese = (" nao ", " para ", " uma ", " decisoes ", " aprovacoes ", " projeto ")
@@ -173,7 +181,7 @@ def _message(locale: str, key: str) -> str:
             "agent": "Agente que analisará o projeto",
             "proposal": "── Proposta do agente ─────────────────────────────────────────────",
             "saved_defaults": "Há uma configuração salva ou pendente. Os valores entre colchetes serão mantidos se você pressionar Enter.",
-            "domains_help": "Revise os domínios que serão salvos. Enter aceita a proposta mostrada; para alterá-la, informe a lista completa separada por vírgulas. Exemplo: projetos, missões, conversas.",
+            "domains_help": "Revise a lista única de domínios que será salva. Ela combina o que já foi declarado com o que o agente encontrou.",
             "domains": "Domínios a salvar",
             "capabilities_help": "Agora confirme as capacidades de cada domínio. Enter aceita a proposta; uma lista separada por vírgulas substitui somente as capacidades deste domínio.",
             "capabilities": "Capacidades de '{domain}'",
@@ -206,12 +214,12 @@ def _message(locale: str, key: str) -> str:
             "title": "── Definir alcance del proyecto ───────────────────────────────────",
             "reading": "Fuentes que el agente leyó antes de la entrevista:", "missing": "Fuentes ausentes o rechazadas:", "agents": "Agentes disponibles: ", "project_agent_title": "── Proyecto y agente ──────────────────────────────────────────────", "project": "Nombre del proyecto", "agent": "Agente que analizará el proyecto", "proposal": "── Propuesta del agente ───────────────────────────────────────────",
             "saved_defaults": "Hay una configuración guardada o pendiente. Enter conserva los valores entre corchetes.", "llm_title": "── Acceso LLM para el análisis ───────────────────────────────────",
-            "domains_help": "Revise los dominios. Enter acepta la propuesta; para cambiarla, escriba la lista completa separada por comas.", "domains": "Dominios a guardar", "capabilities_help": "Confirme las capacidades de cada dominio. Enter acepta la propuesta.", "capabilities": "Capacidades de '{domain}'", "providers_title": "── Proveedores LLM ───────────────────────────────────────────────", "providers_help": "La finalidad describe el uso. primary es predeterminado, fallback se usa si falla y optional no participa por defecto. No se solicitarán secretos.", "configure_providers": "Configurar proveedores LLM ahora", "provider_name": "Nombre del proveedor (Enter termina la lista)", "provider_purpose": "Finalidad (ejemplo: general, razonamiento, rápido)", "provider_role": "Rol (primary, fallback u optional)", "provider_mode": "Referencia de credencial (env, file-ref o manual)", "provider_ref": "Referencia de credencial, nunca el secreto", "provider_url": "URL base compatible con OpenAI", "provider_model": "Nombre del modelo", "another_provider": "Agregar otro proveedor", "invalid_role": "Rol inválido. Use primary, fallback u optional.", "primary_taken": "Ya existe un proveedor primary. Elija fallback u optional.", "invalid_mode": "Modo inválido. Use env, file-ref o manual.", "missing_ref": "Este modo requiere una referencia de credencial.", "summary_help": "Describa finalidad, usuarios y límites. Enter acepta el resumen.", "summary": "Resumen del alcance", "no_agents": "ninguno detectado", "choose_agent": "Elija un agente detectado.", "domain_required": "Se requiere un dominio.", "capability_required": "Se requiere una capacidad.", "primary_domain": "Dominio primario", "use_domain": "Use un dominio declarado.",
+            "domains_help": "Revise la lista única de dominios que se guardará. Combina lo ya declarado con lo encontrado por el agente.", "domains": "Dominios a guardar", "capabilities_help": "Confirme las capacidades de cada dominio. Enter acepta la propuesta.", "capabilities": "Capacidades de '{domain}'", "providers_title": "── Proveedores LLM ───────────────────────────────────────────────", "providers_help": "La finalidad describe el uso. primary es predeterminado, fallback se usa si falla y optional no participa por defecto. No se solicitarán secretos.", "configure_providers": "Configurar proveedores LLM ahora", "provider_name": "Nombre del proveedor (Enter termina la lista)", "provider_purpose": "Finalidad (ejemplo: general, razonamiento, rápido)", "provider_role": "Rol (primary, fallback u optional)", "provider_mode": "Referencia de credencial (env, file-ref o manual)", "provider_ref": "Referencia de credencial, nunca el secreto", "provider_url": "URL base compatible con OpenAI", "provider_model": "Nombre del modelo", "another_provider": "Agregar otro proveedor", "invalid_role": "Rol inválido. Use primary, fallback u optional.", "primary_taken": "Ya existe un proveedor primary. Elija fallback u optional.", "invalid_mode": "Modo inválido. Use env, file-ref o manual.", "missing_ref": "Este modo requiere una referencia de credencial.", "summary_help": "Describa finalidad, usuarios y límites. Enter acepta el resumen.", "summary": "Resumen del alcance", "no_agents": "ninguno detectado", "choose_agent": "Elija un agente detectado.", "domain_required": "Se requiere un dominio.", "capability_required": "Se requiere una capacidad.", "primary_domain": "Dominio primario", "use_domain": "Use un dominio declarado.",
         },
         "en": {
             "title": "── Define project scope ───────────────────────────────────────────", "reading": "Sources the agent read before this interview:", "missing": "Missing or rejected sources (complete/fix before implementation):", "agents": "Available scope agents: ", "llm_title": "── LLM access for analysis ───────────────────────────────────────", "project_agent_title": "── Project and agent ──────────────────────────────────────────────", "project": "Project name", "agent": "Agent that will analyze the project", "proposal": "── Agent proposal ─────────────────────────────────────────────────",
             "saved_defaults": "A saved or pending configuration exists. Enter keeps the values in brackets.",
-            "domains_help": "Review the domains to save. Enter accepts the proposal; to change it, enter the complete comma-separated list. Example: projects, missions, conversations.", "domains": "Domains to save", "capabilities_help": "Confirm each domain's capabilities. Enter accepts the proposal; a comma-separated list replaces only this domain's capabilities.", "capabilities": "Capabilities for '{domain}'", "providers_title": "── LLM providers ─────────────────────────────────────────────────", "providers_help": "Purpose describes human use (for example general or reasoning). Role controls routing: primary is default, fallback is used if primary fails, and optional is not used by default. No secret will be requested or stored.", "configure_providers": "Configure LLM providers now", "provider_name": "Provider name (Enter ends the list)", "provider_purpose": "Provider purpose (example: general, reasoning, fast)", "provider_role": "Routing role (primary, fallback, or optional)", "provider_mode": "Credential reference mode (env, file-ref, or manual)", "provider_ref": "Credential reference (environment variable or local path, never the secret)", "provider_url": "OpenAI-compatible base URL", "provider_model": "Model name", "another_provider": "Add another provider", "invalid_role": "Invalid role. Use primary, fallback, or optional.", "primary_taken": "A primary provider already exists. Choose fallback or optional.", "invalid_mode": "Invalid mode. Use env, file-ref, or manual.", "missing_ref": "This mode requires a credential reference; do not enter the secret.", "summary_help": "Describe the purpose, users, and boundaries in one sentence. Enter accepts the proposed summary.", "summary": "Scope summary", "no_agents": "none detected", "choose_agent": "Choose one of the detected agents.", "domain_required": "At least one domain is required.", "capability_required": "At least one observable capability is required.", "primary_domain": "Primary domain for the capability", "use_domain": "Use one of the declared domains.",
+            "domains_help": "Review the single domain list that will be saved. It combines previously declared domains with those found by the agent.", "domains": "Domains to save", "capabilities_help": "Confirm each domain's capabilities. Enter accepts the proposal; a comma-separated list replaces only this domain's capabilities.", "capabilities": "Capabilities for '{domain}'", "providers_title": "── LLM providers ─────────────────────────────────────────────────", "providers_help": "Purpose describes human use (for example general or reasoning). Role controls routing: primary is default, fallback is used if primary fails, and optional is not used by default. No secret will be requested or stored.", "configure_providers": "Configure LLM providers now", "provider_name": "Provider name (Enter ends the list)", "provider_purpose": "Provider purpose (example: general, reasoning, fast)", "provider_role": "Routing role (primary, fallback, or optional)", "provider_mode": "Credential reference mode (env, file-ref, or manual)", "provider_ref": "Credential reference (environment variable or local path, never the secret)", "provider_url": "OpenAI-compatible base URL", "provider_model": "Model name", "another_provider": "Add another provider", "invalid_role": "Invalid role. Use primary, fallback, or optional.", "primary_taken": "A primary provider already exists. Choose fallback or optional.", "invalid_mode": "Invalid mode. Use env, file-ref, or manual.", "missing_ref": "This mode requires a credential reference; do not enter the secret.", "summary_help": "Describe the purpose, users, and boundaries in one sentence. Enter accepts the proposed summary.", "summary": "Scope summary", "no_agents": "none detected", "choose_agent": "Choose one of the detected agents.", "domain_required": "At least one domain is required.", "capability_required": "At least one observable capability is required.", "primary_domain": "Primary domain for the capability", "use_domain": "Use one of the declared domains.",
         },
     }
     return messages[locale][key]
@@ -321,65 +329,89 @@ def _print_project_agent_help(locale: str) -> None:
     print("The agent only reads the listed sources and proposes scope; it does not implement or modify the project at this stage.")
 
 
-def _print_domain_help(locale: str, proposal: ScopeProposal) -> None:
+def _domain_key(name: str) -> str:
+    return " ".join(name.split()).casefold()
+
+
+def _merge_capabilities(existing: list[str], discovered: list[str]) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for capability in [*existing, *discovered]:
+        key = _domain_key(capability)
+        if key not in seen:
+            values.append(capability)
+            seen.add(key)
+    return values
+
+
+def _merge_domain_candidates(existing: ProjectConfig | None, proposal: ScopeProposal) -> list[DomainCandidate]:
+    candidates: list[DomainCandidate] = []
+    indexes: dict[str, int] = {}
+    if existing:
+        for domain in existing.domains:
+            capabilities = [
+                capability for capability in existing.capabilities
+                if existing.capability_domains.get(capability) == domain
+            ]
+            indexes[_domain_key(domain)] = len(candidates)
+            candidates.append(DomainCandidate(domain, capabilities, [], ("declared",)))
+    for domain in proposal.domains:
+        key = _domain_key(domain.name)
+        if key in indexes:
+            index = indexes[key]
+            current = candidates[index]
+            candidates[index] = DomainCandidate(
+                current.name,
+                _merge_capabilities(current.capabilities, domain.capabilities),
+                list(dict.fromkeys([*current.evidence, *domain.evidence])),
+                ("both",),
+            )
+            continue
+        indexes[key] = len(candidates)
+        candidates.append(DomainCandidate(domain.name, list(domain.capabilities), list(domain.evidence), ("LLM",)))
+    return candidates
+
+
+def _print_domain_selection_help(locale: str, candidates: list[DomainCandidate]) -> None:
     if locale == "pt-BR":
         print("Um domínio é uma área estável de responsabilidade do produto, não uma pasta nem uma camada técnica.")
-        print("Cada domínio agrupa capacidades que pertencem à mesma área e orienta futuras decisões de escopo.")
-        print("Candidatos encontrados pelo agente:")
-        for domain in proposal.domains:
-            print(f"  - {domain.name}: {', '.join(domain.capabilities)}")
-        print("Mais contexto: https://edortta.github.io/AI-GovernanceKit/advanced-usage-ptbr.html")
-        return
-    if locale == "es":
+        print("Cada domínio agrupa capacidades da mesma área e orienta futuras decisões de escopo.")
+        print("Lista única de domínios e capacidades a salvar (origem entre colchetes):")
+    elif locale == "es":
         print("Un dominio es un área estable de responsabilidad del producto, no una carpeta ni una capa técnica.")
         print("Cada dominio agrupa capacidades de la misma área y orienta futuras decisiones de alcance.")
-        print("Candidatos encontrados por el agente:")
-        for domain in proposal.domains:
-            print(f"  - {domain.name}: {', '.join(domain.capabilities)}")
-        print("Más contexto: https://edortta.github.io/AI-GovernanceKit/advanced-usage-es.html")
-        return
-    print("A domain is a stable product-responsibility area, not a folder or technical layer.")
-    print("Each domain groups capabilities from the same area and guides future scope decisions.")
-    print("Candidates found by the agent:")
-    for domain in proposal.domains:
-        print(f"  - {domain.name}: {', '.join(domain.capabilities)}")
-    print("More context: https://edortta.github.io/AI-GovernanceKit/advanced-usage.html")
-
-
-def _print_domain_selection_help(locale: str, existing: ProjectConfig | None, proposal: ScopeProposal) -> None:
-    current = ", ".join(existing.domains) if existing and existing.domains else ""
-    proposed = ", ".join(proposal.domain_names)
+        print("Lista única de dominios y capacidades a guardar (origen entre corchetes):")
+    else:
+        print("A domain is a stable product-responsibility area, not a folder or technical layer.")
+        print("Each domain groups capabilities from the same area and guides future scope decisions.")
+        print("Single domain and capability list to save (origin in brackets):")
+    for candidate in candidates:
+        print(f"  - {candidate.name}: {', '.join(candidate.capabilities) or '(no capability proposed)'} [{', '.join(candidate.origins)}]")
+        for evidence in candidate.evidence:
+            print(f"      evidence: {evidence}")
     if locale == "pt-BR":
-        if current:
-            print(f"Lista salva ou pendente atual: {current}")
-            print("Pressione Enter para mantê-la. Digite `proposta` para aceitar todos os domínios encontrados pelo agente.")
-        else:
-            print("Digite `proposta` para aceitar todos os domínios encontrados pelo agente.")
-        print("Para definir outra lista, informe todos os domínios separados por vírgulas; isso substitui a lista inteira.")
-        print(f"Proposta do agente: {proposed}")
+        print("Mais contexto: https://edortta.github.io/AI-GovernanceKit/advanced-usage-ptbr.html")
+    elif locale == "es":
+        print("Más contexto: https://edortta.github.io/AI-GovernanceKit/advanced-usage-es.html")
+    else:
+        print("More context: https://edortta.github.io/AI-GovernanceKit/advanced-usage.html")
+
+    if locale == "pt-BR":
+        print("Pressione Enter para aceitar a lista única acima.")
+        print("Digite `proposta` para aceitar a mesma lista explicitamente, ou informe uma lista completa separada por vírgulas para substituí-la.")
         return
     if locale == "es":
-        if current:
-            print(f"Lista guardada o pendiente actual: {current}")
-            print("Pulse Enter para conservarla. Escriba `propuesta` para aceptar todos los dominios encontrados por el agente.")
-        else:
-            print("Escriba `propuesta` para aceptar todos los dominios encontrados por el agente.")
-        print("Para definir otra lista, escriba todos los dominios separados por comas; esto reemplaza la lista completa.")
-        print(f"Propuesta del agente: {proposed}")
+        print("Pulse Enter para aceptar la lista única anterior.")
+        print("Escriba `propuesta` para aceptarla explícitamente, o indique una lista completa separada por comas para reemplazarla.")
         return
-    if current:
-        print(f"Current saved or pending list: {current}")
-        print("Press Enter to keep it. Type `proposal` to accept every domain found by the agent.")
-    else:
-        print("Type `proposal` to accept every domain found by the agent.")
-    print("To define another list, enter every domain separated by commas; this replaces the whole list.")
-    print(f"Agent proposal: {proposed}")
+    print("Press Enter to accept the single list above.")
+    print("Type `proposal` to accept it explicitly, or enter a complete comma-separated list to replace it.")
 
 
-def _domain_answer(value: str, locale: str, proposal: ScopeProposal) -> list[str]:
+def _domain_answer(value: str, candidates: list[DomainCandidate]) -> list[str]:
     proposal_words = {"proposal", "proposta", "propuesta"}
     if value.strip().lower() in proposal_words:
-        return proposal.domain_names
+        return [candidate.name for candidate in candidates]
     return _clean_csv(value)
 
 
@@ -672,13 +704,13 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
         print(_message(locale, "saved_defaults"))
 
     print("\n" + _message(locale, "domains_help"))
-    _print_domain_help(locale, proposal)
-    _print_domain_selection_help(locale, scope_defaults, proposal)
-    proposal_default = ", ".join(scope_defaults.domains) if scope_defaults else ", ".join(proposal.domain_names)
-    domains = _domain_answer(_ask(_message(locale, "domains"), proposal_default, gap=False), locale, proposal)
+    candidates = _merge_domain_candidates(scope_defaults, proposal)
+    _print_domain_selection_help(locale, candidates)
+    proposal_default = ", ".join(candidate.name for candidate in candidates)
+    domains = _domain_answer(_ask(_message(locale, "domains"), proposal_default, gap=False), candidates)
     while not domains:
         print("  " + _message(locale, "domain_required"))
-        domains = _domain_answer(_ask(_message(locale, "domains"), proposal_default, gap=False), locale, proposal)
+        domains = _domain_answer(_ask(_message(locale, "domains"), proposal_default, gap=False), candidates)
 
     print("\n" + _message(locale, "capabilities_help"))
     _print_capability_help(locale)
@@ -688,7 +720,7 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
         default_capabilities = ", ".join(
             capability for capability in (scope_defaults.capabilities if scope_defaults else [])
             if scope_defaults and scope_defaults.capability_domains.get(capability) == domain
-        ) or ", ".join(proposal.capabilities_for(domain))
+        ) or ", ".join(next((candidate.capabilities for candidate in candidates if _domain_key(candidate.name) == _domain_key(domain)), []))
         names = _clean_csv(_ask(_message(locale, "capabilities").format(domain=domain), default_capabilities, gap=False))
         for name in names:
             if name in capability_domains:

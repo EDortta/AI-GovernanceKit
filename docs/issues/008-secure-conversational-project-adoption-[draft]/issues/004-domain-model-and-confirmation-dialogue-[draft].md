@@ -28,6 +28,10 @@ mudança proposta sem apagar silenciosamente configuração anterior.
 - Quando houver uma lista salva ou pendente, a entrevista mostra essa lista ao
   lado da proposta do agente e explica como mantê-la, aceitar a proposta inteira
   ou substituí-la por uma lista CSV completa.
+- A entrevista apresenta uma única lista reconciliada de domínios declarados e
+  descobertos pela LLM, identificando a origem como `declared`, `LLM` ou `both`.
+  Só nomes iguais após normalização são fundidos; nomes semanticamente parecidos
+  permanecem separados para decisão explícita do operador.
 - Estado de entrevista serializável, sem segredos, para retomar após erro de
   validação sem descartar decisões já confirmadas.
 - Garantia de que uma capability possui exatamente um domínio primário.
