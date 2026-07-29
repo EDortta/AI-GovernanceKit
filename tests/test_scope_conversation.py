@@ -66,7 +66,11 @@ def test_ptbr_interview_guides_provider_and_retries_invalid_role(tmp_path: Path,
         "openai", "general", "general", "primary", "env", "OPENAI_API_KEY", "n",  # provider
         "Companion for remote work.",
     ])
-    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    def fake_input(prompt: str) -> str:
+        print(prompt, end="")
+        return next(answers)
+
+    monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr("governancekit.scope_conversation.supported_scope_agents", lambda _agents: ["openai-agents"])
     monkeypatch.setattr("governancekit.scope_conversation.propose_project_scope", lambda *_args, **_kwargs: _proposal())
 
@@ -79,6 +83,7 @@ def test_ptbr_interview_guides_provider_and_retries_invalid_role(tmp_path: Path,
     assert "primary é o padrão" in output
     assert "── Provedores LLM" in output
     assert "\n\n" in output
+    assert output.index("Nome do projeto") < output.index("Agentes de escopo disponíveis")
 
 
 def test_scope_conversation_reuses_pending_configuration_as_defaults(tmp_path: Path, monkeypatch, capsys) -> None:

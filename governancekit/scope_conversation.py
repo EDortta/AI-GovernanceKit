@@ -271,11 +271,10 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
         print(_message(locale, "missing"))
         for source in missing:
             print(f"  - {source}")
+    project_name = _ask(_message(locale, "project"), existing.project_name if existing else root.name)
     print(_message(locale, "agents") + (", ".join(available_agents) or _message(locale, "no_agents")))
     if not available_agents:
         raise RuntimeError("no supported scope agent is installed (codex, claude, gemini, or cursor)")
-
-    project_name = _ask(_message(locale, "project"), existing.project_name if existing else root.name)
     selected_default = existing.selected_agent if existing and existing.selected_agent in available_agents else available_agents[0]
     selected_agent = _ask(_message(locale, "agent"), selected_default)
     while selected_agent not in available_agents:
