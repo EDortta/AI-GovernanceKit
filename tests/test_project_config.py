@@ -6,6 +6,7 @@ from pathlib import Path
 from governancekit import cli
 from governancekit.project_config import (
     _PROJECT_CONFIG_FILE,
+    ProviderConfig,
     apply_project_config_plan,
     build_project_config_plan,
     load_project_config,
@@ -66,15 +67,42 @@ def test_apply_writes_shareable_files(tmp_path: Path) -> None:
 
 def test_parse_provider_specs_supports_modes_and_refs() -> None:
     providers = parse_provider_specs(
-        ["openai:env:OPENAI_API_KEY", "anthropic:file-ref:.credentials/anthropic.key", "manual"]
+        ["openai:env:OPENAI_API_KEY:primary", "anthropic:file-ref:.credentials/anthropic.key:fallback", "manual"]
     )
 
     assert providers[0].name == "openai"
     assert providers[0].mode == "env"
     assert providers[0].credential_ref == "OPENAI_API_KEY"
+    assert providers[0].role == "primary"
     assert providers[1].mode == "file-ref"
+    assert providers[1].role == "fallback"
     assert providers[2].name == "manual"
     assert providers[2].mode == "manual"
+
+
+def test_guided_provider_purpose_persists_without_a_secret(tmp_path: Path) -> None:
+    _seed_contract(tmp_path)
+    plan = build_project_config_plan(
+        tmp_path,
+        provider_configs=[
+            ProviderConfig(
+                name="openai",
+                purpose="general",
+                mode="env",
+                credential_ref="OPENAI_API_KEY",
+                validation="reference-required",
+                role="primary",
+            )
+        ],
+    )
+
+    apply_project_config_plan(plan)
+
+    saved = json.loads((tmp_path / _PROJECT_CONFIG_FILE).read_text(encoding="utf-8"))
+    assert saved["providers"] == [{
+        "name": "openai", "purpose": "general", "mode": "env",
+        "credential_ref": "OPENAI_API_KEY", "validation": "reference-required", "role": "primary",
+    }]
 
 
 def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:

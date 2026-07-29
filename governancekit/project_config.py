@@ -10,16 +10,19 @@ from .discover import DiscoveryReport, run_discover
 from .integration import inspect_integration_contract
 
 _PROJECT_CONFIG_FILE = ".gk/project-config.json"
-_CONFIG_VERSION = 1
+_CONFIG_VERSION = 3
 _PROVIDER_MODES = {"manual", "env", "file-ref"}
+_PROVIDER_ROLES = {"primary", "fallback", "optional"}
 
 
 @dataclass(frozen=True)
 class ProviderConfig:
     name: str
+    purpose: str | None = None
     mode: str = "manual"
     credential_ref: str | None = None
     validation: str = "manual"
+    role: str = "primary"
 
 
 @dataclass(frozen=True)
@@ -33,10 +36,14 @@ class ProjectConfig:
     automation_commands: list[str]
     domains: list[str]
     capabilities: list[str]
+    capability_domains: dict[str, str]
     agents: list[str]
+    selected_agent: str | None
     providers: list[ProviderConfig]
     governance_files: list[str]
     integration_status: str
+    required_reading: list[str]
+    scope_summary: str | None
     notes: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
@@ -108,16 +115,22 @@ def _default_providers(existing: ProjectConfig | None) -> list[ProviderConfig]:
 def parse_provider_specs(specs: list[str]) -> list[ProviderConfig]:
     providers: list[ProviderConfig] = []
     for raw in specs:
-        parts = [part.strip() for part in raw.split(":", 2)]
+        parts = [part.strip() for part in raw.split(":", 3)]
         if not parts or not parts[0]:
             raise ValueError(f"invalid provider spec: {raw!r}")
         name = parts[0]
         mode = parts[1] if len(parts) >= 2 and parts[1] else "manual"
-        credential_ref = parts[2] if len(parts) == 3 and parts[2] else None
+        credential_ref = parts[2] if len(parts) >= 3 and parts[2] else None
+        role = parts[3] if len(parts) == 4 and parts[3] else "primary"
         if mode not in _PROVIDER_MODES:
             raise ValueError(
                 f"invalid provider mode for {name!r}: {mode!r} "
                 f"(expected one of {', '.join(sorted(_PROVIDER_MODES))})"
+            )
+        if role not in _PROVIDER_ROLES:
+            raise ValueError(
+                f"invalid provider role for {name!r}: {role!r} "
+                f"(expected one of {', '.join(sorted(_PROVIDER_ROLES))})"
             )
         validation = "manual" if mode == "manual" else "reference-required"
         providers.append(
@@ -126,6 +139,7 @@ def parse_provider_specs(specs: list[str]) -> list[ProviderConfig]:
                 mode=mode,
                 credential_ref=credential_ref,
                 validation=validation,
+                role=role,
             )
         )
     return providers
@@ -138,6 +152,9 @@ def provider_warnings(providers: list[ProviderConfig]) -> list[str]:
             warnings.append(
                 f"provider {provider.name} uses mode {provider.mode} but has no credential_ref"
             )
+    configured = [provider for provider in providers if provider.name != "manual"]
+    if configured and len([provider for provider in configured if provider.role == "primary"]) != 1:
+        warnings.append("provider configuration must have exactly one primary provider")
     return warnings
 
 
@@ -157,6 +174,9 @@ def _config_from_existing(data: dict) -> ProjectConfig | None:
                 providers.append(
                     ProviderConfig(
                         name=name,
+                        purpose=(
+                            str(provider.get("purpose")) if provider.get("purpose") else None
+                        ),
                         mode=str(mode) if mode else "manual",
                         credential_ref=str(credential_ref) if credential_ref else None,
                         validation=(
@@ -164,8 +184,16 @@ def _config_from_existing(data: dict) -> ProjectConfig | None:
                             if provider.get("validation")
                             else ("manual" if str(mode or "manual") == "manual" else "reference-required")
                         ),
+                        role=(
+                            str(provider.get("role"))
+                            if provider.get("role") in _PROVIDER_ROLES
+                            else "primary"
+                        ),
                     )
                 )
+    capability_domains_raw = data.get("capability_domains", {})
+    if not isinstance(capability_domains_raw, dict):
+        capability_domains_raw = {}
     try:
         return ProjectConfig(
             config_version=int(data.get("config_version", _CONFIG_VERSION)),
@@ -183,12 +211,24 @@ def _config_from_existing(data: dict) -> ProjectConfig | None:
             capabilities=[
                 str(item) for item in data.get("capabilities", []) if isinstance(item, str)
             ],
+            capability_domains={
+                str(name): str(domain)
+                for name, domain in capability_domains_raw.items()
+                if isinstance(name, str) and isinstance(domain, str)
+            },
             agents=[str(item) for item in data.get("agents", []) if isinstance(item, str)],
+            selected_agent=(
+                str(data.get("selected_agent")) if data.get("selected_agent") else None
+            ),
             providers=providers,
             governance_files=[
                 str(item) for item in data.get("governance_files", []) if isinstance(item, str)
             ],
             integration_status=str(data.get("integration_status", "")),
+            required_reading=[
+                str(item) for item in data.get("required_reading", []) if isinstance(item, str)
+            ],
+            scope_summary=(str(data.get("scope_summary")) if data.get("scope_summary") else None),
             notes=[str(item) for item in data.get("notes", []) if isinstance(item, str)],
         )
     except (TypeError, ValueError):
@@ -214,6 +254,11 @@ def build_project_config_plan(
     capabilities: list[str] | None = None,
     agents: list[str] | None = None,
     provider_names: list[str] | None = None,
+    provider_configs: list[ProviderConfig] | None = None,
+    selected_agent: str | None = None,
+    capability_domains: dict[str, str] | None = None,
+    required_reading: list[str] | None = None,
+    scope_summary: str | None = None,
 ) -> ProjectConfigPlan:
     root = root.resolve()
     discovery = run_discover(root)
@@ -233,9 +278,22 @@ def build_project_config_plan(
     selected_agents = _dedupe(agents if agents else existing_agents) or (
         discovery.agents if discovery.agents else _default_agents()
     )
+    chosen_agent = selected_agent or (existing.selected_agent if existing else None)
+    if chosen_agent and chosen_agent not in selected_agents:
+        selected_agents = _dedupe([*selected_agents, chosen_agent])
+    configured_owners = capability_domains or (
+        existing.capability_domains if existing else {}
+    )
+    default_domain = selected_domains[0] if selected_domains else "unassigned"
+    selected_capability_domains = {
+        capability: configured_owners.get(capability, default_domain)
+        for capability in selected_capabilities
+    }
 
     providers: list[ProviderConfig]
-    if provider_names:
+    if provider_configs is not None:
+        providers = provider_configs
+    elif provider_names:
         providers = parse_provider_specs(provider_names)
     else:
         providers = _default_providers(existing)
@@ -252,10 +310,14 @@ def build_project_config_plan(
         automation_commands=discovery.automation_commands,
         domains=selected_domains,
         capabilities=selected_capabilities,
+        capability_domains=selected_capability_domains,
         agents=selected_agents,
+        selected_agent=chosen_agent,
         providers=providers,
         governance_files=discovery.governance_files,
         integration_status=integration.status,
+        required_reading=required_reading or (existing.required_reading if existing else []),
+        scope_summary=scope_summary or (existing.scope_summary if existing else None),
         notes=[
             *discovery.notes,
             "provider credentials stay outside project-config.json; use credential_ref only",
@@ -308,6 +370,7 @@ def render_project_config_markdown(config: ProjectConfig) -> str:
         f"- domains: {', '.join(config.domains) or '(none)'}",
         f"- capabilities: {', '.join(config.capabilities) or '(none)'}",
         f"- agents: {', '.join(config.agents) or '(none)'}",
+        f"- selected_agent: {config.selected_agent or '(unset)'}",
         f"- integration_status: {config.integration_status}",
         "",
         "## Providers",
@@ -316,11 +379,23 @@ def render_project_config_markdown(config: ProjectConfig) -> str:
     if config.providers:
         for provider in config.providers:
             lines.append(
-                f"- {provider.name}: mode={provider.mode}, credential_ref={provider.credential_ref or '(unset)'}"
+                f"- {provider.name}: purpose={provider.purpose or '(unset)'}, role={provider.role}, mode={provider.mode}, credential_ref={provider.credential_ref or '(unset)'}"
             )
     else:
         lines.append("- (none)")
-    lines.extend(["", "## Notes", ""])
+    lines.extend(["", "## Capability Ownership", ""])
+    if config.capability_domains:
+        for capability, domain in sorted(config.capability_domains.items()):
+            lines.append(f"- {capability}: {domain}")
+    else:
+        lines.append("- (none)")
+    lines.extend(["", "## Required Reading Used For Scope", ""])
+    if config.required_reading:
+        for source in config.required_reading:
+            lines.append(f"- `{source}`")
+    else:
+        lines.append("- (none)")
+    lines.extend(["", "## Scope Summary", "", config.scope_summary or "(unset)", "", "## Notes", ""])
     if config.notes:
         for note in config.notes:
             lines.append(f"- {note}")
@@ -330,7 +405,11 @@ def render_project_config_markdown(config: ProjectConfig) -> str:
 
 
 def apply_project_config_plan(plan: ProjectConfigPlan) -> list[str]:
-    root = plan.root
+    return apply_project_config(plan.root, plan.config)
+
+
+def apply_project_config(root: Path, config: ProjectConfig) -> list[str]:
+    root = root.resolve()
     state_dir = root / ".gk"
     docs_dir = root / "docs"
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -339,13 +418,13 @@ def apply_project_config_plan(plan: ProjectConfigPlan) -> list[str]:
     written: list[str] = []
     config_path = root / _PROJECT_CONFIG_FILE
     config_path.write_text(
-        json.dumps(plan.config.as_dict(), indent=2, sort_keys=True) + "\n",
+        json.dumps(config.as_dict(), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     written.append(_PROJECT_CONFIG_FILE)
 
     summary_path = docs_dir / "project-configuration.md"
-    summary_path.write_text(render_project_config_markdown(plan.config), encoding="utf-8")
+    summary_path.write_text(render_project_config_markdown(config), encoding="utf-8")
     written.append("docs/project-configuration.md")
     return written
 
@@ -358,6 +437,7 @@ def format_project_config_plan(plan: ProjectConfigPlan) -> str:
     lines.append("domains: " + (", ".join(plan.config.domains) or "(none)"))
     lines.append("capabilities: " + (", ".join(plan.config.capabilities) or "(none)"))
     lines.append("agents: " + (", ".join(plan.config.agents) or "(none)"))
+    lines.append("selected agent: " + (plan.config.selected_agent or "(unset)"))
     lines.append(
         "providers: "
         + (", ".join(provider.name for provider in plan.config.providers) or "(none)")

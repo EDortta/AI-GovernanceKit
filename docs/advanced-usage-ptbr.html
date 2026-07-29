@@ -148,12 +148,12 @@ governancekit --root /projeto context build \
 
   <section>
     <h2>Configuração de projeto, classificação e retomada</h2>
-    <pre><code>governancekit --root /projeto configure-project plan --project-name "Demo" --domain backend --capability api --agent openai-agents --provider openai:env:OPENAI_API_KEY --json
+    <pre><code>governancekit --root /projeto configure-project plan --project-name "Demo" --domain backend --capability api --agent openai-agents --provider openai:env:OPENAI_API_KEY:primary --json
 governancekit --root /projeto classify-change plan --summary "Mover fronteira de autenticação" --label migration --label contract-change --rationale "Chamadores existentes precisam se adaptar" --domain backend --capability api --compatibility "unsafe in any order" --residual-risk "rollout manual" --json
-governancekit --root /projeto config-session start --project-name "Demo" --domain backend --capability api --provider openai:env:OPENAI_API_KEY --json
+governancekit --root /projeto config-session start --interactive
 governancekit --root /projeto config-session approve --approval project-config-review
 governancekit --root /projeto config-session apply</code></pre>
-    <p>Os comandos acima introduzem as flags <code>--project-name</code>, <code>--domain</code>, <code>--capability</code>, <code>--agent</code>, <code>--provider</code>, <code>--summary</code>, <code>--label</code>, <code>--rationale</code>, <code>--compatibility</code>, <code>--residual-risk</code> e <code>--approval</code>. O estado compartilhável vai para <code>.gk/project-config.json</code> e o gating de aprovação fica em <code>.gk/config-session.json</code>.</p>
+    <p><code>config-session start --interactive</code> lê as fontes listadas em <code>docs/required-reading.md</code>, usa o idioma operacional e conduz a definição de escopo com explicação, exemplo e espaço visual antes de cada resposta estruturada. Registra agente escolhido, domínio primário de cada capacidade e, para cada provider, finalidade, papel de roteamento, modo e apenas a referência da credencial; nunca o segredo. <code>primary</code> é o padrão, <code>fallback</code> é usado quando ele falha e <code>optional</code> não participa do roteamento padrão. Valores salvos ou pendentes reaparecem como defaults no próximo upgrade. O estado compartilhável vai para <code>.gk/project-config.json</code> e o gating de aprovação fica em <code>.gk/config-session.json</code>.</p>
   </section>
 
   <section>

@@ -64,8 +64,14 @@ Three CLI commands are available:
   `contract-change`, `security-sensitive`, etc.).
 
 - **`governancekit config-session`** — turns configuration into a resumable,
-  approval-gated session so discovery, classification, and project config can be
-  approved and then applied later without losing state.
+  approval-gated session. `config-session start --interactive` loads every
+  available source named by `docs/required-reading.md`, invokes the chosen,
+  locally authenticated agent in read-only mode to propose domains with source
+  evidence, then records the reviewed agent, domains, owned capabilities, LLM
+  provider purpose, routing role, and credential reference without ever storing
+  a secret. The guided interview explains each choice, validates providers in
+  place, and uses saved or pending values as defaults on the next installation
+  or upgrade.
 
 - **`governancekit bootstrap-issue`** — generates local epic/task scaffolding
   from the installed issue templates, reusing the current project config and
@@ -158,7 +164,7 @@ governancekit configure-project plan            # preview shareable project-conf
 governancekit configure-project apply           # write .gk/project-config.json + docs summary
 governancekit classify-change plan              # preview required architecture classification
 governancekit classify-change apply             # persist .gk/change-classification.json
-governancekit config-session start              # create resumable, approval-gated config session
+governancekit config-session start --interactive # define scope from the agent reading index
 governancekit config-session approve --approval project-config-review
 governancekit config-session apply              # apply approved session
 governancekit bootstrap-issue                   # scaffold local epic/task files from templates

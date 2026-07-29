@@ -8,9 +8,12 @@ from pathlib import Path
 
 from .classification import load_change_classification
 from .project_config import (
+    ProviderConfig,
     ProjectConfigPlan,
-    apply_project_config_plan,
+    _config_from_existing,
+    apply_project_config,
     build_project_config_plan,
+    provider_warnings,
 )
 
 _SESSION_FILE = ".gk/config-session.json"
@@ -54,6 +57,11 @@ def start_config_session(
     capabilities: list[str] | None = None,
     agents: list[str] | None = None,
     provider_names: list[str] | None = None,
+    provider_configs: list[ProviderConfig] | None = None,
+    selected_agent: str | None = None,
+    capability_domains: dict[str, str] | None = None,
+    required_reading: list[str] | None = None,
+    scope_summary: str | None = None,
 ) -> ConfigSession:
     root = root.resolve()
     plan = build_project_config_plan(
@@ -63,7 +71,15 @@ def start_config_session(
         capabilities=capabilities,
         agents=agents,
         provider_names=provider_names,
+        provider_configs=provider_configs,
+        selected_agent=selected_agent,
+        capability_domains=capability_domains,
+        required_reading=required_reading,
+        scope_summary=scope_summary,
     )
+    warnings = provider_warnings(plan.config.providers)
+    if warnings:
+        raise ValueError("configuration session cannot start: " + "; ".join(warnings))
     session = ConfigSession(
         status="pending_approval",
         approvals_required=_required_approvals(root, plan),
@@ -130,13 +146,16 @@ def apply_config_session(root: Path) -> list[str]:
         raise RuntimeError(
             "configuration session is not approved; missing: " + ", ".join(missing)
         )
-    plan = build_project_config_plan(root)
-    written = apply_project_config_plan(plan)
+    config_raw = session.plan.get("config")
+    config = _config_from_existing(config_raw) if isinstance(config_raw, dict) else None
+    if config is None:
+        raise RuntimeError("configuration session has an invalid saved plan")
+    written = apply_project_config(root, config)
     updated = ConfigSession(
         status="applied",
         approvals_required=session.approvals_required,
         approvals_granted=session.approvals_granted,
-        plan=plan.as_dict(),
+        plan=session.plan,
         notes=[*session.notes, "session applied to disk"],
     )
     _session_path(root).write_text(

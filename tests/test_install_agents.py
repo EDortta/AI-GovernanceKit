@@ -498,12 +498,12 @@ class InstallAgentsTests(unittest.TestCase):
             self.assertIn("[TOKEN]", text)
             self.assertIn("{{OPERATOR_NAME}}", text)
 
-    def test_fill_placeholders_supports_legacy_and_current_syntax(self) -> None:
+    def test_fill_placeholders_only_supports_canonical_syntax(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             doc = root / "AGENTS.md"
             doc.write_text(
-                "legacy [OPERATOR_NAME] current {{SMTP_ACCOUNT}}\n",
+                "policy [OPERATOR_NAME] current {{SMTP_ACCOUNT}}\n",
                 encoding="utf-8",
             )
 
@@ -515,7 +515,7 @@ class InstallAgentsTests(unittest.TestCase):
 
             self.assertEqual(
                 doc.read_text(encoding="utf-8"),
-                "legacy Esteban current esteban@example.com\n",
+                "policy [OPERATOR_NAME] current esteban@example.com\n",
             )
             self.assertEqual(values["OPERATOR_NAME"], "Esteban")
             self.assertEqual(values["SMTP_ACCOUNT"], "esteban@example.com")

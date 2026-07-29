@@ -91,16 +91,16 @@ governancekit --root /proyecto install-agents --upgrade</code></pre>
 governancekit --root /proyecto configure-project plan \
   --project-name "Repo de ejemplo" \
   --domain payments --capability reconciliation \
-  --agent codex --provider openai:env:OPENAI_API_KEY \
+  --agent codex --provider openai:env:OPENAI_API_KEY:primary \
   --json
 governancekit --root /proyecto configure-project apply \
   --project-name "Repo de ejemplo" \
   --domain payments --capability reconciliation \
-  --agent codex --provider openai:env:OPENAI_API_KEY \
+  --agent codex --provider openai:env:OPENAI_API_KEY:primary \
   --json
 governancekit --root /proyecto configure-project show --json</code></pre>
     <p><code>discover</code> informa si el repositorio parece nuevo o existente y detecta lenguajes, frameworks, gestores de paquetes, comandos, archivos de gobernanza e integraciones locales. <code>configure-project</code> guarda el estado compartible del proyecto en <code>.gk/project-config.json</code>.</p>
-    <p><code>--provider</code> usa el formato <code>NAME[:MODE[:CREDENTIAL_REF]]</code>, donde <code>MODE</code> puede ser <code>manual</code>, <code>env</code> o <code>file-ref</code>.</p>
+    <p><code>--provider</code> usa el formato <code>NAME[:MODE[:CREDENTIAL_REF[:ROLE]]]</code>, donde <code>MODE</code> puede ser <code>manual</code>, <code>env</code> o <code>file-ref</code>; <code>ROLE</code> es <code>primary</code>, <code>fallback</code> u <code>optional</code>.</p>
   </section>
 
   <section>
@@ -121,12 +121,12 @@ governancekit --root /proyecto classify-change apply \
   --compatibility "Requiere actualización coordinada del cliente" \
   --residual-risk "Puede fallar la automatización heredada" \
   --json
-governancekit --root /proyecto config-session start --project-name "Repo de ejemplo" --domain identity --capability onboarding --json
+governancekit --root /proyecto config-session start --interactive
 governancekit --root /proyecto config-session approve --approval project-config-review --json
 governancekit --root /proyecto config-session show --json
 governancekit --root /proyecto config-session apply</code></pre>
     <p><code>classify-change</code> escribe la clasificación en <code>.gk/change-classification.json</code>. Las etiquetas admitidas incluyen <code>additive</code>, <code>behavioral-change</code>, <code>contract-change</code>, <code>migration</code> y <code>security-sensitive</code>.</p>
-    <p><code>config-session</code> crea una sesión reanudable en <code>.gk/config-session.json</code> y exige aprobaciones explícitas antes de aplicar la configuración.</p>
+    <p><code>config-session start --interactive</code> carga las fuentes del índice <code>docs/required-reading.md</code>, usa el idioma operativo y guía cada respuesta estructurada con explicación, ejemplo y separación visual. Guarda el agente, el dominio primario de cada capacidad y, para cada proveedor, finalidad, rol, modo y solo la referencia de credencial; nunca secretos. <code>primary</code> es el valor predeterminado, <code>fallback</code> se usa si falla y <code>optional</code> no participa por defecto. Los valores guardados o pendientes reaparecen como valores predeterminados en el próximo upgrade. La sesión exige aprobaciones explícitas antes de aplicar la configuración.</p>
   </section>
 
   <section>

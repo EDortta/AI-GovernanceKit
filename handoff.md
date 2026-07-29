@@ -2,6 +2,35 @@
 
 ## Current Status
 
+- work_id: WK-20260729-secure-project-adoption
+- branch: `feature/project-scope-conversation`
+- status: core interview implementation committed for review; epic remains in progress.
+- scope: secure, localized conversational project adoption after `install-agents`,
+  `install-agents --upgrade`, and interactive configuration sessions.
+- evidence: a real CodexBridgeMobile upgrade produced a useful domain proposal in
+  English under a PT-BR operational environment, then ended with an ambiguous
+  `Domains (comma-separated...)` prompt. The epic makes locale precedence and
+  explicit accept/edit/merge/discard decisions contractual.
+- follow-up evidence: after completing domains and capabilities, the provider
+  prompt accepted `openai:::general` without explaining that `general` is not a
+  valid routing role. It failed only at the end and offered no local retry.
+  Task 007 now requires guided provider collection, explanation/example/spacing,
+  immediate validation, and resumable progress without secrets.
+- delivered: operational locale, guided PT-BR/EN/ES prompts with visual spacing,
+  in-place provider validation, saved/pending defaults, provider purpose/role,
+  root-confined source selection, isolated temporary agent workspace, strict
+  proposal validation, and Unicode-safe issue slugs.
+- validation: GovernanceKit `pytest -q` -> 184 passed; AI-Agents
+  `scripts/run-checks.sh` passed. Critical-review revision isolated the agent
+  workspace from the full project root.
+- remaining: durable mid-interview draft recovery, provider validation before
+  scope-agent invocation, and dependency/sensitivity metadata remain open tasks;
+  do not close the epic from this commit.
+- next: test the interactive upgrade against CodexBridgeMobile before closing
+  the remaining tasks.
+
+## Prior Status
+
 - work_id: WK-20260727-restore-landing
 - status: finished
 - Public landing uses EDortta links and restored Pix, ETH, and Ko-fi values.

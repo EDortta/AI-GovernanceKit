@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -30,7 +31,7 @@ _ROOT_HELP_EPILOG = """Common command options:
     --sibling-path PATH, --assigned-ports PORTS, --branch-ownership BRANCH
   configure-project plan|apply
     --project-name NAME, --domain NAME, --capability NAME, --agent NAME,
-    --provider NAME[:MODE[:CREDENTIAL_REF]], --json
+    --provider NAME[:MODE[:CREDENTIAL_REF[:ROLE]]], --json
   configure-project show
     --json
   classify-change plan|apply
@@ -43,7 +44,7 @@ _ROOT_HELP_EPILOG = """Common command options:
     --related-commit REF
   config-session start
     --project-name NAME, --domain NAME, --capability NAME, --agent NAME,
-    --provider NAME[:MODE[:CREDENTIAL_REF]], --json
+    --provider NAME[:MODE[:CREDENTIAL_REF[:ROLE]]], --interactive, --json
   config-session approve
     --approval TOKEN, --json
   config-session show
@@ -185,6 +186,11 @@ def build_parser() -> argparse.ArgumentParser:
             "onto PATH). Off by default since it executes code from the kit."
         ),
     )
+    install_parser.add_argument(
+        "--skip-project-configuration",
+        action="store_true",
+        help="Do not offer the required-reading-driven scope interview after installation.",
+    )
     track_group = install_parser.add_mutually_exclusive_group()
     track_group.add_argument(
         "--track",
@@ -243,8 +249,8 @@ def build_parser() -> argparse.ArgumentParser:
             dest="providers",
             action="append",
             default=[],
-            metavar="NAME[:MODE[:CREDENTIAL_REF]]",
-            help="Provider spec. MODE is one of manual, env, file-ref.",
+            metavar="NAME[:MODE[:CREDENTIAL_REF[:ROLE]]]",
+            help="Provider spec. MODE is manual, env, or file-ref; ROLE is primary, fallback, or optional.",
         )
         sub.add_argument("--json", dest="as_json", action="store_true")
     project_commands.add_parser("show").add_argument(
@@ -297,7 +303,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="providers",
         action="append",
         default=[],
-        metavar="NAME[:MODE[:CREDENTIAL_REF]]",
+        metavar="NAME[:MODE[:CREDENTIAL_REF[:ROLE]]]",
+    )
+    start_parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Run the required-reading-driven project scope interview.",
     )
     start_parser.add_argument("--json", dest="as_json", action="store_true")
     approve_parser = session_commands.add_parser("approve")
@@ -552,6 +563,37 @@ def main(argv: Sequence[str] | None = None) -> int:
             label = "awt" if result.awt_installed else "awt (manual step needed)"
             for line in result.awt_message.splitlines():
                 print(f"{label}: {line}")
+        if not args.docs_only and not args.skip_project_configuration:
+            if sys.stdin.isatty():
+                answer = input("Review project scope now? [Y/n] ").strip().lower()
+                if answer not in {"n", "no"}:
+                    from .config_session import format_config_session, start_config_session
+                    from .scope_conversation import run_scope_conversation
+
+                    try:
+                        conversation = run_scope_conversation(args.root)
+                    except RuntimeError as exc:
+                        print(f"ERROR: {exc}")
+                        return 1
+                    try:
+                        session = start_config_session(
+                            args.root,
+                            project_name=conversation.project_name,
+                            domains=conversation.domains,
+                            capabilities=conversation.capabilities,
+                            agents=conversation.agents,
+                            provider_configs=conversation.providers,
+                            selected_agent=conversation.selected_agent,
+                            capability_domains=conversation.capability_domains,
+                            required_reading=conversation.required_reading,
+                            scope_summary=conversation.scope_summary,
+                        )
+                    except ValueError as exc:
+                        print(f"ERROR: {exc}")
+                        return 1
+                    print(format_config_session(session))
+            else:
+                print("Run: governancekit config-session start --interactive to review project scope.")
         return 0
 
     if args.command == "configure":
@@ -738,18 +780,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         if args.session_command == "start":
+            conversation = None
+            if args.interactive:
+                if not sys.stdin.isatty():
+                    print("ERROR: --interactive requires a terminal.")
+                    return 1
+                if any([args.project_name, args.domains, args.capabilities, args.agents, args.providers]):
+                    parser.error("--interactive cannot be combined with project scope flags")
+                from .scope_conversation import run_scope_conversation
+
+                try:
+                    conversation = run_scope_conversation(args.root)
+                except RuntimeError as exc:
+                    print(f"ERROR: {exc}")
+                    return 1
+            if conversation is None:
+                try:
+                    parse_provider_specs(args.providers)
+                except ValueError as exc:
+                    parser.error(str(exc))
             try:
-                parse_provider_specs(args.providers)
+                session = start_config_session(
+                    args.root,
+                    project_name=conversation.project_name if conversation else args.project_name,
+                    domains=conversation.domains if conversation else args.domains,
+                    capabilities=conversation.capabilities if conversation else args.capabilities,
+                    agents=conversation.agents if conversation else args.agents,
+                    provider_names=args.providers if conversation is None else None,
+                    provider_configs=conversation.providers if conversation else None,
+                    selected_agent=conversation.selected_agent if conversation else None,
+                    capability_domains=conversation.capability_domains if conversation else None,
+                    required_reading=conversation.required_reading if conversation else None,
+                    scope_summary=conversation.scope_summary if conversation else None,
+                )
             except ValueError as exc:
-                parser.error(str(exc))
-            session = start_config_session(
-                args.root,
-                project_name=args.project_name,
-                domains=args.domains,
-                capabilities=args.capabilities,
-                agents=args.agents,
-                provider_names=args.providers,
-            )
+                print(f"ERROR: {exc}")
+                return 1
             if getattr(args, "as_json", False):
                 print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
             else:

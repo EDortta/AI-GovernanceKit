@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 import re
+import unicodedata
 
 from .classification import load_change_classification
 from .project_config import load_project_config
@@ -22,7 +23,8 @@ class IssueBootstrapResult:
 
 
 def _slugify(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
     return slug or "item"
 
 

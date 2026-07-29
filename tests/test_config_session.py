@@ -83,6 +83,9 @@ def test_session_requires_approvals_before_apply(tmp_path: Path, capsys) -> None
     session = load_config_session(tmp_path)
     assert session is not None
     assert session.status == "applied"
+    config = json.loads((tmp_path / ".gk" / "project-config.json").read_text(encoding="utf-8"))
+    assert config["project_name"] == "Demo"
+    assert config["capability_domains"]["api"] == "backend"
 
 
 def test_show_session_as_json(tmp_path: Path, capsys) -> None:
@@ -97,3 +100,23 @@ def test_show_session_as_json(tmp_path: Path, capsys) -> None:
     assert code == 0
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "pending_approval"
+
+
+def test_session_rejects_configured_provider_without_credential_reference(
+    tmp_path: Path, capsys
+) -> None:
+    _seed_contract(tmp_path)
+
+    code = cli.main(
+        [
+            "--root",
+            str(tmp_path),
+            "config-session",
+            "start",
+            "--provider",
+            "openai:env",
+        ]
+    )
+
+    assert code == 1
+    assert "credential_ref" in capsys.readouterr().out
