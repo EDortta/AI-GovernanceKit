@@ -31,6 +31,17 @@ def test_locale_prefers_operational_ptbr() -> None:
     assert resolve_locale({"LANG": "C.UTF-8"}) == "en"
 
 
+def test_neutral_shell_uses_project_language_before_inherited_language(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "product-foundation.md").write_text(
+        "O projeto precisa de uma decisao para aprovacoes e uma experiencia clara.\n",
+        encoding="utf-8",
+    )
+
+    assert resolve_locale({"LANG": "C.UTF-8", "LANGUAGE": "en_US"}, root=tmp_path) == "pt-BR"
+
+
 def test_load_required_reading_rejects_traversal_and_symlink_escape(tmp_path: Path) -> None:
     _seed_sources(tmp_path)
     outside = tmp_path.parent / "outside.md"

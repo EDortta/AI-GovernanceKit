@@ -94,7 +94,8 @@ def _command(agent: str, root: Path, prompt: str, output_path: Path) -> list[str
     if agent == "gemini":
         return ["gemini", "--prompt", prompt, "--approval-mode", "plan"]
     if agent == "cursor":
-        return ["cursor", "agent", "--print", "--mode", "ask", "--workspace", str(root), prompt]
+        # The workspace is generated from approved sources only; Cursor otherwise blocks on trust.
+        return ["cursor", "agent", "--print", "--mode", "ask", "--trust", "--workspace", str(root), prompt]
     raise ValueError(f"unsupported scope agent: {agent}")
 
 

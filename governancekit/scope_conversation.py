@@ -38,14 +38,51 @@ class ScopeConversation:
     scope_summary: str | None
 
 
-def resolve_locale(environ: dict[str, str] | None = None) -> str:
+def _project_locale(root: Path) -> str | None:
+    """Infer only when the process locale is the neutral C locale."""
+    portuguese = (" nao ", " para ", " uma ", " decisoes ", " aprovacoes ", " projeto ")
+    spanish = (" para ", " una ", " decisiones ", " aprobaciones ", " proyecto ")
+    english = (" the ", " and ", " project ", " decisions ", " approvals ")
+    foundation = root / "docs/product-foundation.md"
+    candidates = [foundation] if foundation.is_file() else sorted((root / "docs").glob("*.md"))
+    text = " "
+    for path in candidates:
+        text += " " + path.read_text(encoding="utf-8", errors="replace").lower()[:20_000]
+    scores = {
+        "pt-BR": sum(text.count(token) for token in portuguese),
+        "es": sum(text.count(token) for token in spanish),
+        "en": sum(text.count(token) for token in english),
+    }
+    winner = max(scores, key=scores.get)
+    return winner if scores[winner] and list(scores.values()).count(scores[winner]) == 1 else None
+
+
+def resolve_locale(environ: dict[str, str] | None = None, root: Path | None = None) -> str:
     """Choose the operational language without relying on a model default."""
     environ = environ or os.environ
-    value = " ".join(environ.get(name, "") for name in ("LC_ALL", "LC_MESSAGES", "LANGUAGE", "LANG"))
+    explicit = environ.get("GOVERNANCEKIT_LOCALE", "").lower().replace("_", "-")
+    if explicit.startswith("pt"):
+        return "pt-BR"
+    if explicit.startswith("es"):
+        return "es"
+    if explicit.startswith("en"):
+        return "en"
+    value = " ".join(environ.get(name, "") for name in ("LC_ALL", "LC_MESSAGES", "LANG"))
     value = value.lower().replace("_", "-")
     if "pt" in value:
         return "pt-BR"
     if "es" in value:
+        return "es"
+    if "en" in value:
+        return "en"
+    if root is not None:
+        inferred = _project_locale(root)
+        if inferred:
+            return inferred
+    language = environ.get("LANGUAGE", "").lower().replace("_", "-")
+    if "pt" in language:
+        return "pt-BR"
+    if "es" in language:
         return "es"
     return "en"
 
@@ -220,7 +257,7 @@ def _collect_providers(locale: str, existing: ProjectConfig | None) -> list[Prov
 
 def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeConversation:
     root = root.resolve()
-    locale = locale or resolve_locale()
+    locale = locale or resolve_locale(root=root)
     sources, missing = load_required_reading(root)
     discovery = run_discover(root)
     existing = _pending_or_applied_config(root)

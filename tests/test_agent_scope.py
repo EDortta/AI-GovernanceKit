@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from subprocess import CompletedProcess
 
-from governancekit.agent_scope import propose_project_scope
+from governancekit.agent_scope import _command, propose_project_scope
 import pytest
 
 
@@ -49,3 +49,9 @@ def test_scope_proposal_rejects_evidence_outside_selected_sources(tmp_path: Path
 
     with pytest.raises(RuntimeError, match="outside the selected sources"):
         propose_project_scope(tmp_path, "openai-agents", ["docs/product.md"])
+
+
+def test_cursor_scope_adapter_trusts_only_the_generated_workspace(tmp_path: Path) -> None:
+    command = _command("cursor", tmp_path, "prompt", tmp_path / "output.json")
+
+    assert command[:7] == ["cursor", "agent", "--print", "--mode", "ask", "--trust", "--workspace"]
