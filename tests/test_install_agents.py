@@ -13,6 +13,11 @@ def _make_source(src: Path) -> None:
     )
     (src / "docs" / "agents").mkdir(parents=True)
     (src / "docs" / "agents" / "programmer.md").write_text("v2\n", encoding="utf-8")
+    (src / "docs" / "governancekit-integration.json").write_text(
+        '{"schema_version": 1, "ai_agents": {"repo": "EDortta/AI-Agents", "ref": "v1.1.6"}, '
+        '"governancekit": {"version_range": ">=0.2.2,<0.3.0", "required_features": ["version-reporting"]}}\n',
+        encoding="utf-8",
+    )
     (src / "docs" / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
     (src / "docs" / "software-overview.md").write_text(
         "- project_context_ready: yes\n", encoding="utf-8"
@@ -47,6 +52,11 @@ class InstallAgentsTests(unittest.TestCase):
             (src / "AGENTS.md").write_text("# kit\n", encoding="utf-8")
             (src / ".docs" / "agents").mkdir(parents=True)
             (src / ".docs" / "agents" / "programmer.md").write_text("v3\n", encoding="utf-8")
+            (src / ".docs" / "governancekit-integration.json").write_text(
+                '{"schema_version": 1, "ai_agents": {"repo": "EDortta/AI-Agents", "ref": "v1.1.6"}, '
+                '"governancekit": {"version_range": ">=0.2.2,<0.3.0", "required_features": ["version-reporting"]}}\n',
+                encoding="utf-8",
+            )
             (src / ".docs" / "software-overview.md").write_text(
                 "- project_context_ready: yes\n", encoding="utf-8"
             )
@@ -55,7 +65,9 @@ class InstallAgentsTests(unittest.TestCase):
 
             installed = ia._do_fresh(src, dst, force=True)
             self.assertIn(".docs/agents", installed)
+            self.assertIn(".docs/governancekit-integration.json", installed)
             self.assertEqual((dst / ".docs" / "agents" / "programmer.md").read_text(), "v3\n")
+            self.assertIn('"schema_version": 1', (dst / ".docs" / "governancekit-integration.json").read_text())
             self.assertEqual((dst / ".docs" / "software-overview.md").read_text().strip(),
                              "- project_context_ready: no")
             self.assertEqual((dst / "docs" / "required-reading.md").read_text(), "- (none)\n")
