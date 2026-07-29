@@ -63,6 +63,20 @@ Three CLI commands are available:
   structural change before implementation (`additive`, `migration`,
   `contract-change`, `security-sensitive`, etc.).
 
+- **`governancekit config-session`** — turns configuration into a resumable,
+  approval-gated session so discovery, classification, and project config can be
+  approved and then applied later without losing state.
+
+- **`governancekit bootstrap-issue`** — generates local epic/task scaffolding
+  from the installed issue templates, reusing the current project config and
+  change classification.
+
+- **`governancekit install-hooks`** — installs optional local git hooks (currently
+  `pre-commit`) that run GovernanceKit checks before a commit lands.
+
+- **`governancekit voice-integration detect`** — detects optional
+  AI-ListenToMeOnCLI availability without making voice a hard dependency.
+
   **Why map matters:** every time an AI agent starts a fresh session it re-reads source files to orient itself — burning tokens and adding latency with no persistent benefit. A committed `codemap.md` replaces that repeated traversal with a single, cheap document read. The map lives in the repository so it is always available immediately, survives context resets, and is readable by humans too.
 
 ## Companion: AI-Agents Policy Pack
@@ -111,6 +125,7 @@ python3 -m governancekit doctor   # validate governance scaffold
 python3 -m governancekit map      # generate docs/codemap.md
 python3 -m governancekit discover # inspect whether this looks new or existing
 python3 -m governancekit configure --set OPERATOR_NAME=Ann  # fill kit variables across docs
+python3 -m governancekit install-hooks --hook-type pre-commit
 ```
 
 ### Installing & updating the AI-Agents kit
@@ -143,6 +158,12 @@ governancekit configure-project plan            # preview shareable project-conf
 governancekit configure-project apply           # write .gk/project-config.json + docs summary
 governancekit classify-change plan              # preview required architecture classification
 governancekit classify-change apply             # persist .gk/change-classification.json
+governancekit config-session start              # create resumable, approval-gated config session
+governancekit config-session approve --approval project-config-review
+governancekit config-session apply              # apply approved session
+governancekit bootstrap-issue                   # scaffold local epic/task files from templates
+governancekit install-hooks --hook-type pre-commit
+governancekit voice-integration detect          # detect optional voice integration
 ```
 
 `resume` reads the active epic's RESUME.md and handoff.md, and prints a compact session-start summary. Use it in agent prompt starters: *"Run `governancekit resume` and use the output to orient yourself before planning."*
@@ -150,3 +171,7 @@ governancekit classify-change apply             # persist .gk/change-classificat
 `doctor` validates required governance files, readiness flags, active issue structure, resume next step, and tracked secret-file paths. It also hints when `docs/codemap.md` is missing or stale.
 
 `map` traverses the project, extracts the Python symbol tree via the standard-library `ast` module, and writes a human- and agent-readable Markdown document.
+
+For CI, `scripts/validate-governance.sh /repo/path` runs `doctor --json` and
+`discover --json` together so pipelines can fail on mandatory governance drift
+while still receiving structured context about the repository shape.

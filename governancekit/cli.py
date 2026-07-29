@@ -257,6 +257,21 @@ def build_parser() -> argparse.ArgumentParser:
     session_commands.add_parser("show").add_argument("--json", dest="as_json", action="store_true")
     session_commands.add_parser("apply")
 
+    hooks_parser = subparsers.add_parser(
+        "install-hooks",
+        help="Install optional local git hooks that enforce GovernanceKit checks.",
+    )
+    hooks_parser.add_argument("--hook-type", default="pre-commit")
+    hooks_parser.add_argument("--force", action="store_true")
+    hooks_parser.add_argument("--json", dest="as_json", action="store_true")
+
+    voice_parser = subparsers.add_parser(
+        "voice-integration",
+        help="Detect optional AI-ListenToMeOnCLI availability.",
+    )
+    voice_commands = voice_parser.add_subparsers(dest="voice_command", required=True)
+    voice_commands.add_parser("detect").add_argument("--json", dest="as_json", action="store_true")
+
     return parser
 
 
@@ -710,6 +725,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("AI GovernanceKit config-session apply")
         for rel in written:
             print(f"  wrote: {rel}")
+        return 0
+
+    if args.command == "install-hooks":
+        from .hooks import install_hook
+
+        try:
+            result = install_hook(args.root, hook_type=args.hook_type, force=args.force)
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        if getattr(args, "as_json", False):
+            print(json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False))
+        else:
+            print("AI GovernanceKit install-hooks")
+            print(f"  hook: {result.hook_type}")
+            print(f"  path: {result.path}")
+            print(f"  replaced: {'yes' if result.replaced else 'no'}")
+        return 0
+
+    if args.command == "voice-integration":
+        from .voice import detect_voice_integration, format_voice_integration
+
+        result = detect_voice_integration(args.root)
+        if getattr(args, "as_json", False):
+            print(json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False))
+        else:
+            print(format_voice_integration(result))
         return 0
 
     parser.error(f"unknown command: {args.command}")
