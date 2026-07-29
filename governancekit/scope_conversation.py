@@ -141,16 +141,17 @@ def load_required_reading(root: Path) -> tuple[list[str], list[str]]:
     return available, missing
 
 
-def _ask(prompt: str, default: str = "") -> str:
+def _ask(prompt: str, default: str = "", *, gap: bool = True) -> str:
     suffix = f" [{default}]" if default else ""
-    print()
+    if gap:
+        print()
     answer = input(f"  {prompt}{suffix}: ").strip()
     return answer or default
 
 
-def _yes_no(prompt: str, default: bool = True) -> bool:
+def _yes_no(prompt: str, default: bool = True, *, gap: bool = True) -> bool:
     default_label = "Y/n" if default else "y/N"
-    answer = _ask(f"{prompt} [{default_label}]").lower()
+    answer = _ask(f"{prompt} [{default_label}]", gap=gap).lower()
     return default if not answer else answer in {"y", "yes", "s", "sim"}
 
 
@@ -223,34 +224,34 @@ def _pending_or_applied_config(root: Path) -> ProjectConfig | None:
 def _collect_providers(locale: str, existing: ProjectConfig | None) -> list[ProviderConfig]:
     print("\n" + _message(locale, "providers_title"))
     print(_message(locale, "providers_help"))
-    if existing and existing.providers and _yes_no("Keep the saved provider configuration" if locale == "en" else "Manter a configuração de provedores já salva"):
+    if existing and existing.providers and _yes_no("Keep the saved provider configuration" if locale == "en" else "Manter a configuração de provedores já salva", gap=False):
         return existing.providers
-    if not _yes_no(_message(locale, "configure_providers")):
+    if not _yes_no(_message(locale, "configure_providers"), gap=False):
         return [ProviderConfig(name="manual", mode="manual")]
     providers: list[ProviderConfig] = []
     while True:
-        name = _ask(_message(locale, "provider_name"))
+        name = _ask(_message(locale, "provider_name"), gap=False)
         if not name:
             break
-        purpose = _ask(_message(locale, "provider_purpose"), "general")
+        purpose = _ask(_message(locale, "provider_purpose"), "general", gap=False)
         while True:
-            role = _ask(_message(locale, "provider_role"), "primary" if not providers else "fallback")
+            role = _ask(_message(locale, "provider_role"), "primary" if not providers else "fallback", gap=False)
             if role in _ROLES and not (role == "primary" and any(item.role == "primary" for item in providers)):
                 break
             print("  " + _message(locale, "primary_taken" if role == "primary" else "invalid_role"))
         while True:
-            mode = _ask(_message(locale, "provider_mode"), "env")
+            mode = _ask(_message(locale, "provider_mode"), "env", gap=False)
             if mode in _MODES:
                 break
             print("  " + _message(locale, "invalid_mode"))
         credential_ref = None
         if mode != "manual":
             while not credential_ref:
-                credential_ref = _ask(_message(locale, "provider_ref"))
+                credential_ref = _ask(_message(locale, "provider_ref"), gap=False)
                 if not credential_ref:
                     print("  " + _message(locale, "missing_ref"))
         providers.append(ProviderConfig(name=name, purpose=purpose or None, mode=mode, credential_ref=credential_ref, validation="manual" if mode == "manual" else "reference-required", role=role))
-        if not _yes_no(_message(locale, "another_provider"), default=False):
+        if not _yes_no(_message(locale, "another_provider"), default=False, gap=False):
             break
     return providers or [ProviderConfig(name="manual", mode="manual")]
 
@@ -276,10 +277,10 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
     if not available_agents:
         raise RuntimeError("no supported scope agent is installed (codex, claude, gemini, or cursor)")
     selected_default = existing.selected_agent if existing and existing.selected_agent in available_agents else available_agents[0]
-    selected_agent = _ask(_message(locale, "agent"), selected_default)
+    selected_agent = _ask(_message(locale, "agent"), selected_default, gap=False)
     while selected_agent not in available_agents:
         print("  " + _message(locale, "choose_agent"))
-        selected_agent = _ask(_message(locale, "agent"), selected_default)
+        selected_agent = _ask(_message(locale, "agent"), selected_default, gap=False)
     proposal: ScopeProposal = propose_project_scope(root, selected_agent, sources, locale=locale)
     print("\n" + _message(locale, "proposal"))
     print(proposal.render(locale=locale))
@@ -288,10 +289,10 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
 
     print("\n" + _message(locale, "domains_help"))
     proposal_default = ", ".join(existing.domains) if existing else ", ".join(proposal.domain_names)
-    domains = _clean_csv(_ask(_message(locale, "domains"), proposal_default))
+    domains = _clean_csv(_ask(_message(locale, "domains"), proposal_default, gap=False))
     while not domains:
         print("  " + _message(locale, "domain_required"))
-        domains = _clean_csv(_ask(_message(locale, "domains"), proposal_default))
+        domains = _clean_csv(_ask(_message(locale, "domains"), proposal_default, gap=False))
 
     print("\n" + _message(locale, "capabilities_help"))
     capabilities: list[str] = []
@@ -301,7 +302,7 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
             capability for capability in (existing.capabilities if existing else [])
             if existing and existing.capability_domains.get(capability) == domain
         ) or ", ".join(proposal.capabilities_for(domain))
-        names = _clean_csv(_ask(_message(locale, "capabilities").format(domain=domain), default_capabilities))
+        names = _clean_csv(_ask(_message(locale, "capabilities").format(domain=domain), default_capabilities, gap=False))
         for name in names:
             if name in capability_domains:
                 continue
@@ -309,16 +310,16 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
             capability_domains[name] = domain
     while not capabilities:
         print("  " + _message(locale, "capability_required"))
-        domain = _ask(_message(locale, "primary_domain"), domains[0])
+        domain = _ask(_message(locale, "primary_domain"), domains[0], gap=False)
         if domain not in domains:
             print("  " + _message(locale, "use_domain"))
             continue
-        for name in _clean_csv(_ask(_message(locale, "capabilities").format(domain=domain))):
+        for name in _clean_csv(_ask(_message(locale, "capabilities").format(domain=domain), gap=False)):
             if name not in capability_domains:
                 capabilities.append(name)
                 capability_domains[name] = domain
 
     providers = _collect_providers(locale, existing)
     print("\n" + _message(locale, "summary_help"))
-    scope_summary = _ask(_message(locale, "summary"), existing.scope_summary if existing and existing.scope_summary else proposal.summary) or None
+    scope_summary = _ask(_message(locale, "summary"), existing.scope_summary if existing and existing.scope_summary else proposal.summary, gap=False) or None
     return ScopeConversation(project_name, sources, missing, domains, capabilities, capability_domains, available_agents, selected_agent, providers, scope_summary)
