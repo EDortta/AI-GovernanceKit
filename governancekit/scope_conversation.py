@@ -250,6 +250,28 @@ def _print_provider_help(locale: str) -> None:
     print("  optional - available, but outside the default route.")
 
 
+def _print_provider_catalog(locale: str) -> None:
+    if locale == "pt-BR":
+        print("\nProvedores pré-configurados, compatíveis com a API OpenAI:")
+        print("  gemini - Google Gemini; URL, modelo e GEMINI_API_KEY sugeridos automaticamente.")
+        print("  nvidia - NVIDIA NIM; URL, modelo Nemotron e NVIDIA_API_KEY sugeridos automaticamente.")
+        print("  openai - OpenAI; URL, modelo e OPENAI_API_KEY sugeridos automaticamente.")
+        print("  outro  - qualquer endpoint compatível; informe URL, modelo e a referência da credencial.")
+        return
+    if locale == "es":
+        print("\nProveedores preconfigurados compatibles con la API OpenAI:")
+        print("  gemini - Google Gemini; URL, modelo y GEMINI_API_KEY sugeridos automáticamente.")
+        print("  nvidia - NVIDIA NIM; URL, modelo Nemotron y NVIDIA_API_KEY sugeridos automáticamente.")
+        print("  openai - OpenAI; URL, modelo y OPENAI_API_KEY sugeridos automáticamente.")
+        print("  otro   - cualquier endpoint compatible; indique URL, modelo y referencia de credencial.")
+        return
+    print("\nPreconfigured OpenAI-compatible providers:")
+    print("  gemini - Google Gemini; suggests its URL, model, and GEMINI_API_KEY.")
+    print("  nvidia - NVIDIA NIM; suggests its URL, Nemotron model, and NVIDIA_API_KEY.")
+    print("  openai - OpenAI; suggests its URL, model, and OPENAI_API_KEY.")
+    print("  other  - any compatible endpoint; provide its URL, model, and credential reference.")
+
+
 def _saved_providers(existing: ProjectConfig | None) -> list[ProviderConfig]:
     """A manual placeholder means no API provider was configured."""
     if existing is None:
@@ -307,8 +329,9 @@ def _print_credential_help(locale: str, provider_name: str) -> None:
 def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) -> list[ProviderConfig]:
     print("\n" + _message(locale, "providers_title"))
     _print_provider_help(locale)
+    _print_provider_catalog(locale)
     if locale == "pt-BR":
-        print(_message(locale, "llm_advice"))
+        print("\n" + _message(locale, "llm_advice"))
     saved = _saved_providers(existing)
     if saved:
         print("\nConfiguração LLM já salva:" if locale == "pt-BR" else "\nSaved LLM configuration:")

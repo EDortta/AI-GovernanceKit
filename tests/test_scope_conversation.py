@@ -4,7 +4,7 @@ from pathlib import Path
 
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
 from governancekit.project_config import ProviderConfig, apply_project_config_plan, build_project_config_plan
-from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
+from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _print_provider_catalog, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
 
 
 def _proposal() -> ScopeProposal:
@@ -48,6 +48,15 @@ def test_nvidia_preset_uses_its_openai_compatible_endpoint() -> None:
         "nvidia/nemotron-3-super-120b-a12b",
         "NVIDIA_API_KEY",
     )
+
+
+def test_provider_catalog_lists_nvidia_nim_as_openai_compatible(capsys) -> None:
+    _print_provider_catalog("en")
+
+    output = capsys.readouterr().out
+    assert "OpenAI-compatible" in output
+    assert "NVIDIA NIM" in output
+    assert "NVIDIA_API_KEY" in output
 
 
 def test_created_credential_file_is_private_and_not_part_of_provider_config(tmp_path: Path) -> None:

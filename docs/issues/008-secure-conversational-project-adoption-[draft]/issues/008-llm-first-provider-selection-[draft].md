@@ -10,6 +10,9 @@ ou gravar segredos na configuração versionável.
 
 - A entrevista explica opções grátis/baixo custo e afinidade básica/ampla,
   orientando o cadastro e a criação da API key no portal do provedor.
+- Antes de pedir o nome, a entrevista lista Gemini, NVIDIA NIM e OpenAI como
+  presets compatíveis com a API OpenAI, deixando explícito que outros endpoints
+  compatíveis também podem ser informados manualmente.
 - O operador pode usar uma variável de ambiente, referenciar um arquivo local
   existente ou criar `.credentials/llm/<provedor>.key` com colagem de entrada
   oculta. A configuração salva somente a referência; o arquivo é limitado ao
