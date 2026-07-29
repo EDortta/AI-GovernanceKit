@@ -4,7 +4,7 @@ from pathlib import Path
 
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
 from governancekit.project_config import apply_project_config_plan, build_project_config_plan
-from governancekit.scope_conversation import load_required_reading, resolve_locale, run_scope_conversation
+from governancekit.scope_conversation import _LLM_PRESETS, load_required_reading, resolve_locale, run_scope_conversation
 
 
 def _proposal() -> ScopeProposal:
@@ -40,6 +40,14 @@ def test_neutral_shell_uses_project_language_before_inherited_language(tmp_path:
     )
 
     assert resolve_locale({"LANG": "C.UTF-8", "LANGUAGE": "en_US"}, root=tmp_path) == "pt-BR"
+
+
+def test_nvidia_preset_uses_its_openai_compatible_endpoint() -> None:
+    assert _LLM_PRESETS["nvidia"] == (
+        "https://integrate.api.nvidia.com/v1",
+        "nvidia/nemotron-3-super-120b-a12b",
+        "NVIDIA_API_KEY",
+    )
 
 
 def test_load_required_reading_rejects_traversal_and_symlink_escape(tmp_path: Path) -> None:

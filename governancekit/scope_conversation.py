@@ -25,6 +25,7 @@ _MODES = ("env", "file-ref", "manual")
 _LLM_PRESETS = {
     "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash-lite", "GEMINI_API_KEY"),
     "openai": ("https://api.openai.com/v1", "gpt-5-mini", "OPENAI_API_KEY"),
+    "nvidia": ("https://integrate.api.nvidia.com/v1", "nvidia/nemotron-3-super-120b-a12b", "NVIDIA_API_KEY"),
 }
 
 
@@ -186,7 +187,7 @@ def _message(locale: str, key: str) -> str:
             "provider_ref": "Referência da credencial (nome da variável ou caminho local, nunca o segredo)",
             "provider_url": "URL base compatível com OpenAI",
             "provider_model": "Nome do modelo",
-            "llm_advice": "Sugestões: Gemini Flash-Lite costuma oferecer faixa grátis/baixo custo para uso básico a amplo; OpenAI GPT-5 mini tende a ser barato e tecnicamente amplo. Preços e franquias variam: confirme no portal do provedor. Crie a chave no portal e exporte-a no shell; informe abaixo somente o nome da variável, nunca a chave.",
+            "llm_advice": "Sugestões: Gemini Flash-Lite costuma oferecer faixa grátis/baixo custo para uso básico a amplo; NVIDIA NIM/Nemotron é OpenAI-compatible e tem afinidade técnica ampla; OpenAI GPT-5 mini tende a ser barato e tecnicamente amplo. Preços, créditos e franquias variam: confirme no portal do provedor. Crie a chave no portal e exporte-a no shell; informe abaixo somente o nome da variável, nunca a chave.",
             "another_provider": "Adicionar outro provedor",
             "invalid_role": "Papel inválido. Use primary, fallback ou optional.",
             "primary_taken": "Já existe um provider primary. Escolha fallback ou optional.",
