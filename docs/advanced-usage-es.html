@@ -86,6 +86,79 @@ governancekit --root /proyecto install-agents --upgrade</code></pre>
   </section>
 
   <section>
+    <h2><code>discover</code> y configuración compartible</h2>
+    <pre><code>governancekit --root /proyecto discover --json
+governancekit --root /proyecto configure-project plan \
+  --project-name "Repo de ejemplo" \
+  --domain payments --capability reconciliation \
+  --agent codex --provider openai:env:OPENAI_API_KEY \
+  --json
+governancekit --root /proyecto configure-project apply \
+  --project-name "Repo de ejemplo" \
+  --domain payments --capability reconciliation \
+  --agent codex --provider openai:env:OPENAI_API_KEY \
+  --json
+governancekit --root /proyecto configure-project show --json</code></pre>
+    <p><code>discover</code> informa si el repositorio parece nuevo o existente y detecta lenguajes, frameworks, gestores de paquetes, comandos, archivos de gobernanza e integraciones locales. <code>configure-project</code> guarda el estado compartible del proyecto en <code>.gk/project-config.json</code>.</p>
+    <p><code>--provider</code> usa el formato <code>NAME[:MODE[:CREDENTIAL_REF]]</code>, donde <code>MODE</code> puede ser <code>manual</code>, <code>env</code> o <code>file-ref</code>.</p>
+  </section>
+
+  <section>
+    <h2><code>classify-change</code> y sesiones de aprobación</h2>
+    <pre><code>governancekit --root /proyecto classify-change plan \
+  --summary "Separar el flujo de onboarding" \
+  --label behavioral-change --label security-sensitive \
+  --rationale "Introduce un gate adicional para datos sensibles" \
+  --domain identity --capability onboarding \
+  --compatibility "Requiere actualización coordinada del cliente" \
+  --residual-risk "Puede fallar la automatización heredada" \
+  --json
+governancekit --root /proyecto classify-change apply \
+  --summary "Separar el flujo de onboarding" \
+  --label behavioral-change --label security-sensitive \
+  --rationale "Introduce un gate adicional para datos sensibles" \
+  --domain identity --capability onboarding \
+  --compatibility "Requiere actualización coordinada del cliente" \
+  --residual-risk "Puede fallar la automatización heredada" \
+  --json
+governancekit --root /proyecto config-session start --project-name "Repo de ejemplo" --domain identity --capability onboarding --json
+governancekit --root /proyecto config-session approve --approval project-config-review --json
+governancekit --root /proyecto config-session show --json
+governancekit --root /proyecto config-session apply</code></pre>
+    <p><code>classify-change</code> escribe la clasificación en <code>.gk/change-classification.json</code>. Las etiquetas admitidas incluyen <code>additive</code>, <code>behavioral-change</code>, <code>contract-change</code>, <code>migration</code> y <code>security-sensitive</code>.</p>
+    <p><code>config-session</code> crea una sesión reanudable en <code>.gk/config-session.json</code> y exige aprobaciones explícitas antes de aplicar la configuración.</p>
+  </section>
+
+  <section>
+    <h2><code>bootstrap-issue</code></h2>
+    <pre><code>governancekit --root /proyecto bootstrap-issue \
+  --epic-number 010 \
+  --epic-title "Adoptar nuevo límite de autenticación" \
+  --task-title "Crear tarea de migración" \
+  --owner "Ana" \
+  --related-commit planned</code></pre>
+    <table><tbody>
+      <tr><td><code>--epic-number</code></td><td>Prefijo numérico obligatorio para la carpeta local del épico.</td></tr>
+      <tr><td><code>--epic-title</code></td><td>Título obligatorio del épico usado para derivar el slug.</td></tr>
+      <tr><td><code>--task-title</code></td><td>Título obligatorio de la primera tarea.</td></tr>
+      <tr><td><code>--owner</code></td><td>Responsable renderizado en las plantillas.</td></tr>
+      <tr><td><code>--related-commit</code></td><td>Referencia planned o final del commit escrita en los archivos.</td></tr>
+    </tbody></table>
+  </section>
+
+  <section>
+    <h2>Hooks y voz opcional</h2>
+    <pre><code>governancekit --root /proyecto install-hooks --hook-type pre-commit --force --json
+governancekit --root /proyecto voice-integration detect --json</code></pre>
+    <table><tbody>
+      <tr><td><code>--hook-type</code></td><td>Actualmente admite <code>pre-commit</code>.</td></tr>
+      <tr><td><code>--force</code></td><td>Reemplaza un hook local ya existente.</td></tr>
+      <tr><td><code>--json</code></td><td>Emite en JSON el resultado de instalación del hook o de detección de voz.</td></tr>
+    </tbody></table>
+    <p><code>voice-integration detect</code> busca un binario opcional de AI-ListenToMeOnCLI (o <code>AI_LISTENTOMEONCLI_BIN</code>) sin convertirlo en dependencia obligatoria.</p>
+  </section>
+
+  <section>
     <h2>Contexto determinista</h2>
     <pre><code>governancekit context inspect --task implementation --risk runtime --issue PATH --json
 governancekit context build --task review --risk security --telemetry
@@ -112,6 +185,7 @@ governancekit --root /proyecto doctor
 governancekit --root /proyecto --version
 governancekit --root /proyecto install-agents --upgrade
 governancekit --root /proyecto doctor</code></pre>
+    <p>Script auxiliar para CI: <code>scripts/validate-governance.sh /proyecto</code> ejecuta juntos <code>doctor --json</code> y <code>discover --json</code>.</p>
     <p>Para opciones del instalador Bash y migración heredada, consulta la <a href="https://edortta.github.io/AI-Agents/advanced-usage-es.html">guía avanzada de AI-Agents</a>.</p>
   </section>
 </main>

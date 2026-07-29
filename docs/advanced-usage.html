@@ -80,10 +80,101 @@ governancekit --root /project install-agents --upgrade</code></pre>
     <table><thead><tr><th>Command/parameter</th><th>Description</th></tr></thead><tbody>
       <tr><td><code>doctor</code></td><td>Validates governance files, readiness, identity, secrets, state, and sibling-branch warnings.</td></tr>
       <tr><td><code>doctor --json</code></td><td>Outputs structured results for CI.</td></tr>
+      <tr><td><code>discover --json</code></td><td>Inspects the repository read-only and reports project shape, detected agents, and governance artifacts as JSON.</td></tr>
       <tr><td><code>map --output PATH</code></td><td>Writes the code map to a chosen path; default is <code>docs/codemap.md</code>.</td></tr>
       <tr><td><code>map --all</code></td><td>Includes private, single-underscore Python symbols.</td></tr>
       <tr><td><code>resume</code></td><td>Shows active work, next step, handoff, identity, branch, and collision warnings.</td></tr>
     </tbody></table>
+  </section>
+
+  <section>
+    <h2><code>configure-project</code></h2>
+    <pre><code>governancekit --root /project configure-project plan \
+  --project-name "Demo" \
+  --domain backend \
+  --capability api \
+  --agent openai-agents \
+  --provider openai:env:OPENAI_API_KEY \
+  --json</code></pre>
+    <table><tbody>
+      <tr><td><code>--project-name</code></td><td>Overrides the inferred project name for the shareable config.</td></tr>
+      <tr><td><code>--domain</code></td><td>Adds or overrides governed domains; repeatable.</td></tr>
+      <tr><td><code>--capability</code></td><td>Adds or overrides governed capabilities; repeatable.</td></tr>
+      <tr><td><code>--agent</code></td><td>Adds or overrides the active agent inventory; repeatable.</td></tr>
+      <tr><td><code>--provider NAME[:MODE[:CREDENTIAL_REF]]</code></td><td>Declares provider config without storing secrets. <code>MODE</code> is <code>manual</code>, <code>env</code>, or <code>file-ref</code>.</td></tr>
+      <tr><td><code>--json</code></td><td>Outputs the plan or current configuration as JSON.</td></tr>
+    </tbody></table>
+    <p><code>apply</code> writes <code>.gk/project-config.json</code> plus <code>docs/project-configuration.md</code>. <code>show</code> prints the current saved configuration.</p>
+  </section>
+
+  <section>
+    <h2><code>classify-change</code></h2>
+    <pre><code>governancekit --root /project classify-change plan \
+  --summary "Move auth boundary" \
+  --label migration \
+  --label contract-change \
+  --rationale "Existing callers must adapt." \
+  --domain backend \
+  --capability api \
+  --compatibility "unsafe in any order" \
+  --residual-risk "manual rollout required" \
+  --json</code></pre>
+    <table><tbody>
+      <tr><td><code>--summary</code></td><td>Required summary of the structural change.</td></tr>
+      <tr><td><code>--label</code></td><td>Classification label; repeatable.</td></tr>
+      <tr><td><code>--rationale</code></td><td>Why the chosen labels apply.</td></tr>
+      <tr><td><code>--domain</code></td><td>Affected domain; repeatable.</td></tr>
+      <tr><td><code>--capability</code></td><td>Affected capability; repeatable.</td></tr>
+      <tr><td><code>--compatibility</code></td><td>Required compatibility/deploy-order note.</td></tr>
+      <tr><td><code>--residual-risk</code></td><td>Residual risk statement. Defaults to <code>not declared</code>.</td></tr>
+      <tr><td><code>--json</code></td><td>Outputs the classification as JSON.</td></tr>
+    </tbody></table>
+    <p><code>apply</code> persists <code>.gk/change-classification.json</code>. <code>show</code> prints the saved record.</p>
+  </section>
+
+  <section>
+    <h2><code>config-session</code></h2>
+    <pre><code>governancekit --root /project config-session start \
+  --project-name "Demo" \
+  --domain backend \
+  --capability api \
+  --agent openai-agents \
+  --provider openai:env:OPENAI_API_KEY \
+  --json
+
+governancekit --root /project config-session approve --approval project-config-review
+governancekit --root /project config-session show --json
+governancekit --root /project config-session apply</code></pre>
+    <p>Uses the same <code>--project-name</code>, <code>--domain</code>, <code>--capability</code>, <code>--agent</code>, <code>--provider</code>, and <code>--json</code> options as <code>configure-project plan</code>. The <code>approve</code> subcommand adds an approval token via <code>--approval</code> and only <code>apply</code> writes files once all required approvals are present.</p>
+  </section>
+
+  <section>
+    <h2><code>bootstrap-issue</code></h2>
+    <pre><code>governancekit --root /project bootstrap-issue \
+  --epic-number 010 \
+  --epic-title "Adopt new auth boundary" \
+  --task-title "Create migration task" \
+  --owner "Ann" \
+  --related-commit planned</code></pre>
+    <table><tbody>
+      <tr><td><code>--epic-number</code></td><td>Required numeric prefix for the local epic folder.</td></tr>
+      <tr><td><code>--epic-title</code></td><td>Required epic title used to derive the slug.</td></tr>
+      <tr><td><code>--task-title</code></td><td>Required first task title.</td></tr>
+      <tr><td><code>--owner</code></td><td>Owner value rendered into the templates.</td></tr>
+      <tr><td><code>--related-commit</code></td><td>Planned or final commit reference written into the files.</td></tr>
+    </tbody></table>
+  </section>
+
+  <section>
+    <h2>Hooks and Optional Voice</h2>
+    <pre><code>governancekit --root /project install-hooks --hook-type pre-commit --force --json
+governancekit --root /project voice-integration detect --json</code></pre>
+    <table><tbody>
+      <tr><td><code>--hook-type</code></td><td>Currently supports <code>pre-commit</code>.</td></tr>
+      <tr><td><code>--force</code></td><td>Replaces an existing local hook.</td></tr>
+      <tr><td><code>--json</code></td><td>Outputs hook-install or voice-detection results as JSON.</td></tr>
+    </tbody></table>
+    <p><code>voice-integration detect</code> looks for an optional AI-ListenToMeOnCLI binary (or <code>AI_LISTENTOMEONCLI_BIN</code>) without making it mandatory.</p>
   </section>
 
   <section>
@@ -113,6 +204,7 @@ governancekit --root /project doctor
 governancekit --root /project --version
 governancekit --root /project install-agents --upgrade
 governancekit --root /project doctor</code></pre>
+    <p>CI helper script: <code>scripts/validate-governance.sh /project</code> runs <code>doctor --json</code> and <code>discover --json</code> together.</p>
     <p>For Bash installer options and legacy migration, see the <a href="https://edortta.github.io/AI-Agents/advanced-usage.html">AI-Agents advanced guide</a>.</p>
   </section>
 </main>

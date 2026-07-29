@@ -147,6 +147,24 @@ governancekit --root /projeto context build \
   </section>
 
   <section>
+    <h2>Configuração de projeto, classificação e retomada</h2>
+    <pre><code>governancekit --root /projeto configure-project plan --project-name "Demo" --domain backend --capability api --agent openai-agents --provider openai:env:OPENAI_API_KEY --json
+governancekit --root /projeto classify-change plan --summary "Mover fronteira de autenticação" --label migration --label contract-change --rationale "Chamadores existentes precisam se adaptar" --domain backend --capability api --compatibility "unsafe in any order" --residual-risk "rollout manual" --json
+governancekit --root /projeto config-session start --project-name "Demo" --domain backend --capability api --provider openai:env:OPENAI_API_KEY --json
+governancekit --root /projeto config-session approve --approval project-config-review
+governancekit --root /projeto config-session apply</code></pre>
+    <p>Os comandos acima introduzem as flags <code>--project-name</code>, <code>--domain</code>, <code>--capability</code>, <code>--agent</code>, <code>--provider</code>, <code>--summary</code>, <code>--label</code>, <code>--rationale</code>, <code>--compatibility</code>, <code>--residual-risk</code> e <code>--approval</code>. O estado compartilhável vai para <code>.gk/project-config.json</code> e o gating de aprovação fica em <code>.gk/config-session.json</code>.</p>
+  </section>
+
+  <section>
+    <h2>Issues locais, hooks e voz opcional</h2>
+    <pre><code>governancekit --root /projeto bootstrap-issue --epic-number 010 --epic-title "Adotar nova fronteira de autenticação" --task-title "Criar task de migração" --owner "Ann" --related-commit planned
+governancekit --root /projeto install-hooks --hook-type pre-commit --force --json
+governancekit --root /projeto voice-integration detect --json</code></pre>
+    <p><code>bootstrap-issue</code> usa as flags <code>--epic-number</code>, <code>--epic-title</code>, <code>--task-title</code>, <code>--owner</code> e <code>--related-commit</code>. <code>install-hooks</code> usa <code>--hook-type</code> e <code>--force</code>. A detecção de voz continua opcional e não torna o AI-ListenToMeOnCLI dependência obrigatória.</p>
+  </section>
+
+  <section>
     <h2>Sequências usuais</h2>
     <h3>Primeira configuração</h3>
     <pre><code>governancekit --root /projeto install-agents
@@ -159,7 +177,8 @@ governancekit --root /projeto install-agents --upgrade
 governancekit --root /projeto doctor</code></pre>
     <h3>CI</h3>
     <pre><code>governancekit --root "$GITHUB_WORKSPACE" doctor --json
-governancekit --root "$GITHUB_WORKSPACE" context inspect --task review --risk security --json</code></pre>
+governancekit --root "$GITHUB_WORKSPACE" context inspect --task review --risk security --json
+scripts/validate-governance.sh "$GITHUB_WORKSPACE"</code></pre>
   </section>
 
   <section>
