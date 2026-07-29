@@ -9,6 +9,7 @@ from governancekit.project_config import (
     apply_project_config_plan,
     build_project_config_plan,
     load_project_config,
+    parse_provider_specs,
 )
 
 
@@ -59,6 +60,19 @@ def test_apply_writes_shareable_files(tmp_path: Path) -> None:
     assert loaded.project_name == "Demo"
 
 
+def test_parse_provider_specs_supports_modes_and_refs() -> None:
+    providers = parse_provider_specs(
+        ["openai:env:OPENAI_API_KEY", "anthropic:file-ref:.credentials/anthropic.key", "manual"]
+    )
+
+    assert providers[0].name == "openai"
+    assert providers[0].mode == "env"
+    assert providers[0].credential_ref == "OPENAI_API_KEY"
+    assert providers[1].mode == "file-ref"
+    assert providers[2].name == "manual"
+    assert providers[2].mode == "manual"
+
+
 def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
     _seed_contract(tmp_path)
     (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
@@ -75,6 +89,8 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
             "backend",
             "--capability",
             "api",
+            "--provider",
+            "openai:env:OPENAI_API_KEY",
         ]
     )
     assert code == 0
@@ -94,6 +110,8 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
             "backend",
             "--capability",
             "api",
+            "--provider",
+            "openai:env:OPENAI_API_KEY",
         ]
     )
     assert code == 0
@@ -104,3 +122,4 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
     current = json.loads(capsys.readouterr().out)
     assert current["project_name"] == "Sample"
     assert current["domains"] == ["backend"]
+    assert current["providers"][0]["credential_ref"] == "OPENAI_API_KEY"

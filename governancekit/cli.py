@@ -189,7 +189,14 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--domain", dest="domains", action="append", default=[])
         sub.add_argument("--capability", dest="capabilities", action="append", default=[])
         sub.add_argument("--agent", dest="agents", action="append", default=[])
-        sub.add_argument("--provider", dest="providers", action="append", default=[])
+        sub.add_argument(
+            "--provider",
+            dest="providers",
+            action="append",
+            default=[],
+            metavar="NAME[:MODE[:CREDENTIAL_REF]]",
+            help="Provider spec. MODE is one of manual, env, file-ref.",
+        )
         sub.add_argument("--json", dest="as_json", action="store_true")
     project_commands.add_parser("show").add_argument(
         "--json", dest="as_json", action="store_true"
@@ -507,6 +514,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             build_project_config_plan,
             format_project_config_plan,
             load_project_config,
+            parse_provider_specs,
             render_project_config_markdown,
         )
 
@@ -520,6 +528,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 print(render_project_config_markdown(current).rstrip())
             return 0
+
+        try:
+            parse_provider_specs(args.providers)
+        except ValueError as exc:
+            parser.error(str(exc))
 
         plan = build_project_config_plan(
             args.root,

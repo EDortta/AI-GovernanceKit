@@ -217,7 +217,7 @@ def _check_agents_integration_contract(root: Path) -> CheckResult:
 
 
 def _check_project_config(root: Path) -> CheckResult:
-    from .project_config import _PROJECT_CONFIG_FILE, load_project_config
+    from .project_config import _PROJECT_CONFIG_FILE, load_project_config, provider_warnings
 
     path = root / _PROJECT_CONFIG_FILE
     if not path.exists():
@@ -237,8 +237,12 @@ def _check_project_config(root: Path) -> CheckResult:
         )
     return CheckResult(
         "project configuration",
-        True,
-        f"{config.project_name} ({config.project_state}) with {len(config.domains)} domain(s)",
+        False if provider_warnings(config.providers) else True,
+        (
+            "; ".join(provider_warnings(config.providers))
+            if provider_warnings(config.providers)
+            else f"{config.project_name} ({config.project_state}) with {len(config.domains)} domain(s)"
+        ),
         advisory=True,
     )
 
