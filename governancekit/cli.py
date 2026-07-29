@@ -223,6 +223,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", dest="as_json", action="store_true"
     )
 
+    bootstrap_parser = subparsers.add_parser(
+        "bootstrap-issue",
+        help="Create local epic/task scaffolding from installed issue templates.",
+    )
+    bootstrap_parser.add_argument("--epic-number", required=True, metavar="NNN")
+    bootstrap_parser.add_argument("--epic-title", required=True)
+    bootstrap_parser.add_argument("--task-title", required=True)
+    bootstrap_parser.add_argument("--owner", default="operator")
+    bootstrap_parser.add_argument("--related-commit", default="planned")
+
     return parser
 
 
@@ -593,6 +603,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         rel = save_change_classification(args.root, classification)
         print("AI GovernanceKit classify-change apply")
         print(f"  wrote: {rel}")
+        return 0
+
+    if args.command == "bootstrap-issue":
+        from .issue_bootstrap import bootstrap_issue
+
+        try:
+            result = bootstrap_issue(
+                args.root,
+                epic_number=args.epic_number,
+                epic_title=args.epic_title,
+                task_title=args.task_title,
+                owner=args.owner,
+                related_commit=args.related_commit,
+            )
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        print("AI GovernanceKit bootstrap-issue")
+        print(f"  epic: {result.epic_dir}")
+        for rel in result.files:
+            print(f"  wrote: {rel}")
         return 0
 
     parser.error(f"unknown command: {args.command}")
