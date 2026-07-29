@@ -10,7 +10,7 @@ from .discover import DiscoveryReport, run_discover
 from .integration import inspect_integration_contract
 
 _PROJECT_CONFIG_FILE = ".gk/project-config.json"
-_CONFIG_VERSION = 3
+_CONFIG_VERSION = 4
 _PROVIDER_MODES = {"manual", "env", "file-ref"}
 _PROVIDER_ROLES = {"primary", "fallback", "optional"}
 
@@ -19,6 +19,8 @@ _PROVIDER_ROLES = {"primary", "fallback", "optional"}
 class ProviderConfig:
     name: str
     purpose: str | None = None
+    base_url: str | None = None
+    model: str | None = None
     mode: str = "manual"
     credential_ref: str | None = None
     validation: str = "manual"
@@ -177,6 +179,10 @@ def _config_from_existing(data: dict) -> ProjectConfig | None:
                         purpose=(
                             str(provider.get("purpose")) if provider.get("purpose") else None
                         ),
+                        base_url=(
+                            str(provider.get("base_url")) if provider.get("base_url") else None
+                        ),
+                        model=str(provider.get("model")) if provider.get("model") else None,
                         mode=str(mode) if mode else "manual",
                         credential_ref=str(credential_ref) if credential_ref else None,
                         validation=(
@@ -379,7 +385,7 @@ def render_project_config_markdown(config: ProjectConfig) -> str:
     if config.providers:
         for provider in config.providers:
             lines.append(
-                f"- {provider.name}: purpose={provider.purpose or '(unset)'}, role={provider.role}, mode={provider.mode}, credential_ref={provider.credential_ref or '(unset)'}"
+                f"- {provider.name}: purpose={provider.purpose or '(unset)'}, model={provider.model or '(unset)'}, base_url={provider.base_url or '(unset)'}, role={provider.role}, mode={provider.mode}, credential_ref={provider.credential_ref or '(unset)'}"
             )
     else:
         lines.append("- (none)")

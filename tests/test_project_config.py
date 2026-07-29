@@ -100,7 +100,7 @@ def test_guided_provider_purpose_persists_without_a_secret(tmp_path: Path) -> No
 
     saved = json.loads((tmp_path / _PROJECT_CONFIG_FILE).read_text(encoding="utf-8"))
     assert saved["providers"] == [{
-        "name": "openai", "purpose": "general", "mode": "env",
+        "name": "openai", "purpose": "general", "base_url": None, "model": None, "mode": "env",
         "credential_ref": "OPENAI_API_KEY", "validation": "reference-required", "role": "primary",
     }]
 

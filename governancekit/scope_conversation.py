@@ -22,6 +22,10 @@ _BACKTICK_PATH_RE = re.compile(r"`((?:\.docs|docs)/[^`]+|AGENTS\.md)`")
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _ROLES = ("primary", "fallback", "optional")
 _MODES = ("env", "file-ref", "manual")
+_LLM_PRESETS = {
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash-lite", "GEMINI_API_KEY"),
+    "openai": ("https://api.openai.com/v1", "gpt-5-mini", "OPENAI_API_KEY"),
+}
 
 
 @dataclass(frozen=True)
@@ -162,6 +166,7 @@ def _message(locale: str, key: str) -> str:
             "reading": "Fontes que o agente leu antes da entrevista:",
             "missing": "Fontes ausentes ou recusadas (complete/corrija antes de implementar):",
             "agents": "Agentes de escopo disponíveis: ",
+            "llm_title": "── Acesso LLM para a análise ──────────────────────────────────────",
             "project_agent_title": "── Projeto e agente ───────────────────────────────────────────────",
             "project": "Nome do projeto",
             "agent": "Agente que analisará o projeto",
@@ -179,6 +184,9 @@ def _message(locale: str, key: str) -> str:
             "provider_role": "Papel de roteamento (primary, fallback ou optional)",
             "provider_mode": "Como a credencial é referenciada (env, file-ref ou manual)",
             "provider_ref": "Referência da credencial (nome da variável ou caminho local, nunca o segredo)",
+            "provider_url": "URL base compatível com OpenAI",
+            "provider_model": "Nome do modelo",
+            "llm_advice": "Sugestões: Gemini Flash-Lite costuma oferecer faixa grátis/baixo custo para uso básico a amplo; OpenAI GPT-5 mini tende a ser barato e tecnicamente amplo. Preços e franquias variam: confirme no portal do provedor. Crie a chave no portal e exporte-a no shell; informe abaixo somente o nome da variável, nunca a chave.",
             "another_provider": "Adicionar outro provedor",
             "invalid_role": "Papel inválido. Use primary, fallback ou optional.",
             "primary_taken": "Já existe um provider primary. Escolha fallback ou optional.",
@@ -225,6 +233,8 @@ def _pending_or_applied_config(root: Path) -> ProjectConfig | None:
 def _collect_providers(locale: str, existing: ProjectConfig | None) -> list[ProviderConfig]:
     print("\n" + _message(locale, "providers_title"))
     print(_message(locale, "providers_help"))
+    if locale == "pt-BR":
+        print(_message(locale, "llm_advice"))
     if existing and existing.providers and _yes_no("Keep the saved provider configuration" if locale == "en" else "Manter a configuração de provedores já salva", gap=False):
         return existing.providers
     if not _yes_no(_message(locale, "configure_providers"), gap=False):
@@ -235,6 +245,7 @@ def _collect_providers(locale: str, existing: ProjectConfig | None) -> list[Prov
         if not name:
             break
         purpose = _ask(_message(locale, "provider_purpose"), "general", gap=False)
+        preset = _LLM_PRESETS.get(name.lower())
         while True:
             role = _ask(_message(locale, "provider_role"), "primary" if not providers else "fallback", gap=False)
             if role in _ROLES and not (role == "primary" and any(item.role == "primary" for item in providers)):
@@ -248,10 +259,12 @@ def _collect_providers(locale: str, existing: ProjectConfig | None) -> list[Prov
         credential_ref = None
         if mode != "manual":
             while not credential_ref:
-                credential_ref = _ask(_message(locale, "provider_ref"), gap=False)
+                credential_ref = _ask(_message(locale, "provider_ref"), preset[2] if preset else "", gap=False)
                 if not credential_ref:
                     print("  " + _message(locale, "missing_ref"))
-        providers.append(ProviderConfig(name=name, purpose=purpose or None, mode=mode, credential_ref=credential_ref, validation="manual" if mode == "manual" else "reference-required", role=role))
+        base_url = _ask(_message(locale, "provider_url"), preset[0] if preset else "", gap=False) if mode == "env" else ""
+        model = _ask(_message(locale, "provider_model"), preset[1] if preset else "", gap=False) if mode == "env" else ""
+        providers.append(ProviderConfig(name=name, purpose=purpose or None, base_url=base_url or None, model=model or None, mode=mode, credential_ref=credential_ref, validation="manual" if mode == "manual" else "reference-required", role=role))
         if not _yes_no(_message(locale, "another_provider"), default=False, gap=False):
             break
     return providers or [ProviderConfig(name="manual", mode="manual")]
@@ -275,6 +288,15 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
             print(f"  - {source}")
     print("\n" + _message(locale, "project_agent_title"))
     project_name = _ask(_message(locale, "project"), existing.project_name if existing else root.name, gap=False)
+    if locale == "pt-BR":
+        print("\n" + _message(locale, "llm_title"))
+    providers = _collect_providers(locale, existing)
+    api_provider = next(
+        (item for item in providers if item.role == "primary" and item.mode == "env" and item.base_url and item.model and item.credential_ref),
+        None,
+    )
+    if api_provider:
+        available_agents = ["llm-api", *available_agents]
     print(_message(locale, "agents") + (", ".join(available_agents) or _message(locale, "no_agents")))
     if not available_agents:
         raise RuntimeError("no supported scope agent is installed (codex, claude, gemini, or cursor)")
@@ -283,7 +305,7 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
     while selected_agent not in available_agents:
         print("  " + _message(locale, "choose_agent"))
         selected_agent = _ask(_message(locale, "agent"), selected_default, gap=False)
-    proposal: ScopeProposal = propose_project_scope(root, selected_agent, sources, locale=locale)
+    proposal: ScopeProposal = propose_project_scope(root, selected_agent, sources, locale=locale, provider=api_provider)
     print("\n" + _message(locale, "proposal"))
     print(proposal.render(locale=locale))
     if existing:
@@ -321,7 +343,6 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
                 capabilities.append(name)
                 capability_domains[name] = domain
 
-    providers = _collect_providers(locale, existing)
     print("\n" + _message(locale, "summary_help"))
     scope_summary = _ask(_message(locale, "summary"), existing.scope_summary if existing and existing.scope_summary else proposal.summary, gap=False) or None
     return ScopeConversation(project_name, sources, missing, domains, capabilities, capability_domains, available_agents, selected_agent, providers, scope_summary)

@@ -61,9 +61,9 @@ def test_load_required_reading_rejects_traversal_and_symlink_escape(tmp_path: Pa
 def test_ptbr_interview_guides_provider_and_retries_invalid_role(tmp_path: Path, monkeypatch, capsys) -> None:
     _seed_sources(tmp_path)
     answers = iter([
-        "Bridge Mobile", "openai-agents", "", "",  # project, agent, domains, capabilities
-        "",  # configure providers
-        "openai", "general", "general", "primary", "env", "OPENAI_API_KEY", "n",  # provider
+        "Bridge Mobile", "",  # project, configure providers
+        "openai", "general", "general", "primary", "env", "OPENAI_API_KEY", "", "", "n",  # provider
+        "openai-agents", "", "",  # agent, domains, capabilities
         "Companion for remote work.",
     ])
     def fake_input(prompt: str) -> str:

@@ -42,6 +42,10 @@ operador entende e decide cada alteração proposta para o modelo do projeto.
 - Detectar o idioma operacional e manter prompts, proposta, confirmações e erros
   nesse idioma; PT-BR é a expectativa quando essa for a configuração local.
 - Escolher explicitamente agente e provedor antes da análise, sem revelar segredo.
+- Apresentar alternativas de LLM por faixa de custo e profundidade, orientar o
+  cadastro/API e coletar apenas referências seguras de credenciais já exportadas.
+- Oferecer `llm-api` como agente de análise quando houver provider compatível
+  configurado, sem excluir os agentes locais autenticados.
 - Restringir a leitura a fontes aprovadas dentro do root do projeto.
 - Validar a proposta do modelo por schema estrito e evidência rastreável.
 - Substituir a entrada CSV ambígua por diálogo de revisão por domínio e

@@ -25,6 +25,7 @@ conversa em uma coleta de CSV.
 5. `005-install-upgrade-and-documentation-parity-[draft].md`
 6. `006-unicode-safe-issue-slugs-[draft].md`
 7. `007-guided-input-and-recoverable-validation-[draft].md`
+8. `008-llm-first-provider-selection-[draft].md`
 
 Nenhuma task pode ser marcada concluída sem testes automatizados e revisão
 adversarial de segurança, contrato e experiência conversacional.
