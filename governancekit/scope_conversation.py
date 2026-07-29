@@ -231,12 +231,33 @@ def _pending_or_applied_config(root: Path) -> ProjectConfig | None:
     return _config_from_existing(config) if isinstance(config, dict) else None
 
 
+def _print_provider_help(locale: str) -> None:
+    if locale == "pt-BR":
+        print("Esta configuração define qual LLM pode analisar o escopo.")
+        print("Nunca digite uma chave aqui; informe apenas a variável ou arquivo que já a guarda.")
+        print("Papéis de roteamento:")
+        print("  primary  - escolha padrão para análise.")
+        print("  fallback - usada se a primary falhar.")
+        print("  optional - disponível, mas fora do caminho padrão.")
+        return
+    print("This configuration determines which LLM can analyze the project scope.")
+    print("Never paste an API key here; provide only its existing environment-variable or file reference.")
+    print("Routing roles:")
+    print("  primary  - default choice for analysis.")
+    print("  fallback - used when the primary fails.")
+    print("  optional - available, but outside the default route.")
+
+
 def _collect_providers(locale: str, existing: ProjectConfig | None) -> list[ProviderConfig]:
     print("\n" + _message(locale, "providers_title"))
-    print(_message(locale, "providers_help"))
+    _print_provider_help(locale)
     if locale == "pt-BR":
         print(_message(locale, "llm_advice"))
-    if existing and existing.providers and _yes_no("Keep the saved provider configuration" if locale == "en" else "Manter a configuração de provedores já salva", gap=False):
+    if existing and existing.providers:
+        print("\nSaved provider configuration:" if locale == "en" else "\nConfiguração de provedores já salva:")
+        for provider in existing.providers:
+            print(f"  - {provider.name}: {provider.purpose or 'general'}, {provider.role}, {provider.model or 'model not set'}")
+    if existing and existing.providers and _yes_no("Keep this provider configuration" if locale == "en" else "Manter esta configuração de provedores", gap=False):
         return existing.providers
     if not _yes_no(_message(locale, "configure_providers"), gap=False):
         return [ProviderConfig(name="manual", mode="manual")]

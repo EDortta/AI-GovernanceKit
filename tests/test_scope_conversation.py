@@ -88,7 +88,7 @@ def test_ptbr_interview_guides_provider_and_retries_invalid_role(tmp_path: Path,
     assert conversation.providers[0].role == "primary"
     output = capsys.readouterr().out
     assert "Papel inválido" in output
-    assert "primary é o padrão" in output
+    assert "escolha padrão para análise" in output
     assert "── Provedores LLM" in output
     assert "\n\n" in output
     assert "── Projeto e agente" in output
