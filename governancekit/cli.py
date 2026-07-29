@@ -178,6 +178,44 @@ def build_parser() -> argparse.ArgumentParser:
     identity_group.add_argument("--assigned-ports", dest="assigned_ports", metavar="PORTS")
     identity_group.add_argument("--branch-ownership", dest="branch_ownership", metavar="BRANCH")
 
+    project_parser = subparsers.add_parser(
+        "configure-project",
+        help="Plan or apply a shareable project adoption/configuration state.",
+    )
+    project_commands = project_parser.add_subparsers(dest="project_command", required=True)
+    for name in ("plan", "apply"):
+        sub = project_commands.add_parser(name)
+        sub.add_argument("--project-name")
+        sub.add_argument("--domain", dest="domains", action="append", default=[])
+        sub.add_argument("--capability", dest="capabilities", action="append", default=[])
+        sub.add_argument("--agent", dest="agents", action="append", default=[])
+        sub.add_argument("--provider", dest="providers", action="append", default=[])
+        sub.add_argument("--json", dest="as_json", action="store_true")
+    project_commands.add_parser("show").add_argument(
+        "--json", dest="as_json", action="store_true"
+    )
+
+    classify_parser = subparsers.add_parser(
+        "classify-change",
+        help="Record the required classification for an architectural or structural change.",
+    )
+    classify_commands = classify_parser.add_subparsers(
+        dest="classification_command", required=True
+    )
+    for name in ("plan", "apply"):
+        sub = classify_commands.add_parser(name)
+        sub.add_argument("--summary", required=True)
+        sub.add_argument("--label", dest="labels", action="append", default=[])
+        sub.add_argument("--rationale", required=True)
+        sub.add_argument("--domain", dest="domains", action="append", default=[])
+        sub.add_argument("--capability", dest="capabilities", action="append", default=[])
+        sub.add_argument("--compatibility", required=True)
+        sub.add_argument("--residual-risk", default="not declared")
+        sub.add_argument("--json", dest="as_json", action="store_true")
+    classify_commands.add_parser("show").add_argument(
+        "--json", dest="as_json", action="store_true"
+    )
+
     return parser
 
 
@@ -211,6 +249,10 @@ def format_doctor_json(result: DoctorResult) -> str:
 
 
 def format_discovery_json(result) -> str:
+    return json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False)
+
+
+def format_project_config_json(result) -> str:
     return json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False)
 
 
@@ -458,6 +500,87 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         placeholders_ok = not result.unfilled
         return 0 if placeholders_ok else 1
+
+    if args.command == "configure-project":
+        from .project_config import (
+            apply_project_config_plan,
+            build_project_config_plan,
+            format_project_config_plan,
+            load_project_config,
+            render_project_config_markdown,
+        )
+
+        if args.project_command == "show":
+            current = load_project_config(args.root)
+            if current is None:
+                print("No project configuration found.")
+                return 1
+            if getattr(args, "as_json", False):
+                print(json.dumps(current.as_dict(), sort_keys=True, ensure_ascii=False))
+            else:
+                print(render_project_config_markdown(current).rstrip())
+            return 0
+
+        plan = build_project_config_plan(
+            args.root,
+            project_name=args.project_name,
+            domains=args.domains,
+            capabilities=args.capabilities,
+            agents=args.agents,
+            provider_names=args.providers,
+        )
+        if args.project_command == "plan":
+            if getattr(args, "as_json", False):
+                print(format_project_config_json(plan))
+            else:
+                print(format_project_config_plan(plan))
+            return 0
+
+        written = apply_project_config_plan(plan)
+        print("AI GovernanceKit configure-project apply")
+        for rel in written:
+            print(f"  wrote: {rel}")
+        return 0
+
+    if args.command == "classify-change":
+        from .classification import (
+            build_change_classification,
+            format_change_classification,
+            load_change_classification,
+            save_change_classification,
+        )
+
+        if args.classification_command == "show":
+            current = load_change_classification(args.root)
+            if current is None:
+                print("No change classification found.")
+                return 1
+            if getattr(args, "as_json", False):
+                print(json.dumps(current.as_dict(), sort_keys=True, ensure_ascii=False))
+            else:
+                print(format_change_classification(current))
+            return 0
+
+        classification = build_change_classification(
+            summary=args.summary,
+            labels=args.labels,
+            rationale=args.rationale,
+            affected_domains=args.domains,
+            affected_capabilities=args.capabilities,
+            compatibility=args.compatibility,
+            residual_risk=args.residual_risk,
+        )
+        if args.classification_command == "plan":
+            if getattr(args, "as_json", False):
+                print(json.dumps(classification.as_dict(), sort_keys=True, ensure_ascii=False))
+            else:
+                print(format_change_classification(classification))
+            return 0
+
+        rel = save_change_classification(args.root, classification)
+        print("AI GovernanceKit classify-change apply")
+        print(f"  wrote: {rel}")
+        return 0
 
     parser.error(f"unknown command: {args.command}")
     return 2

@@ -15,7 +15,8 @@ The project turns repository governance rules into executable workflows that can
 ## Product Shape
 
 - Policy pack: human-readable contracts such as `AGENTS.md`, role guides, limits, and project overview.
-- CLI: commands for doctor checks, resume, start-work, validation, and session-close.
+- CLI: commands for doctor checks, resume, start-work, validation, session-close,
+  read-only discovery, project adoption planning, and architecture classification.
 - Runtime core: orchestration logic that loads policy, evaluates gates, and records audit evidence.
 - Integrations: optional MCP server, IDE extension, GitHub/Jira helpers, and CI hooks.
 
@@ -48,6 +49,19 @@ Three CLI commands are available:
 - **`governancekit doctor`** — validates the governance scaffold (required files, readiness flags, active issue, secret tracking). Fix every `[FAIL]` before starting work. `[HINT]` lines are advisory — address when convenient. Use `--json` for CI integration: `governancekit doctor --json | jq '.ok'`
 
 - **`governancekit map`** — generates `docs/codemap.md`: a Markdown index of the project's file tree, entry points, and Python symbol index. AI agents read this file at session start instead of re-scanning the codebase. Run after significant changes and commit the result.
+
+- **`governancekit discover`** — inspects a repository read-only and reports whether
+  it looks like a new governed project or an existing one that must be adopted
+  carefully before writes.
+
+- **`governancekit configure-project`** — builds or applies a shareable
+  `.gk/project-config.json` plus `docs/project-configuration.md`, based on
+  discovery and explicit operator selections for domains, capabilities, agents,
+  and provider modes.
+
+- **`governancekit classify-change`** — records the required classification for a
+  structural change before implementation (`additive`, `migration`,
+  `contract-change`, `security-sensitive`, etc.).
 
   **Why map matters:** every time an AI agent starts a fresh session it re-reads source files to orient itself — burning tokens and adding latency with no persistent benefit. A committed `codemap.md` replaces that repeated traversal with a single, cheap document read. The map lives in the repository so it is always available immediately, survives context resets, and is readable by humans too.
 
@@ -95,6 +109,7 @@ Run commands directly from the repository:
 python3 -m governancekit resume   # print active session context
 python3 -m governancekit doctor   # validate governance scaffold
 python3 -m governancekit map      # generate docs/codemap.md
+python3 -m governancekit discover # inspect whether this looks new or existing
 python3 -m governancekit configure --set OPERATOR_NAME=Ann  # fill kit variables across docs
 ```
 
@@ -123,6 +138,11 @@ governancekit doctor --json       # machine-readable output for CI
 governancekit map
 governancekit map --output path/to/custom.md   # custom output path
 governancekit map --all                         # include private symbols
+governancekit discover --json                   # read-only adoption report
+governancekit configure-project plan            # preview shareable project-config state
+governancekit configure-project apply           # write .gk/project-config.json + docs summary
+governancekit classify-change plan              # preview required architecture classification
+governancekit classify-change apply             # persist .gk/change-classification.json
 ```
 
 `resume` reads the active epic's RESUME.md and handoff.md, and prints a compact session-start summary. Use it in agent prompt starters: *"Run `governancekit resume` and use the output to orient yourself before planning."*
