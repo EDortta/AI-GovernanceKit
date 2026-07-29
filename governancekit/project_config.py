@@ -230,7 +230,9 @@ def build_project_config_plan(
     selected_capabilities = _dedupe(
         capabilities if capabilities else existing_capabilities
     ) or _default_capabilities(discovery)
-    selected_agents = _dedupe(agents if agents else existing_agents) or _default_agents()
+    selected_agents = _dedupe(agents if agents else existing_agents) or (
+        discovery.agents if discovery.agents else _default_agents()
+    )
 
     providers: list[ProviderConfig]
     if provider_names:

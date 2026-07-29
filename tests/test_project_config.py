@@ -33,6 +33,9 @@ def _seed_contract(root: Path) -> None:
 
 def test_build_plan_uses_discovery_defaults(tmp_path: Path) -> None:
     _seed_contract(tmp_path)
+    (tmp_path / "AGENTS.md").write_text("kit\n", encoding="utf-8")
+    (tmp_path / ".docs" / "agents").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".docs" / "agents" / "programmer.md").write_text("# programmer\n", encoding="utf-8")
     (tmp_path / "package.json").write_text(
         json.dumps({"dependencies": {"react": "^19.0.0"}, "scripts": {"test": "vitest"}}),
         encoding="utf-8",
@@ -44,6 +47,7 @@ def test_build_plan_uses_discovery_defaults(tmp_path: Path) -> None:
     assert plan.config.project_state == "existing"
     assert "react" in plan.config.domains
     assert "react-runtime" in plan.config.capabilities
+    assert "openai-agents" in plan.config.agents
     assert any(action.target == _PROJECT_CONFIG_FILE for action in plan.actions)
 
 

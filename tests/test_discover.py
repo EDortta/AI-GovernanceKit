@@ -56,6 +56,21 @@ def test_detects_node_frameworks_and_scripts(tmp_path: Path) -> None:
     assert report.languages["typescript"] == 1
 
 
+def test_detects_available_agents(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("kit\n", encoding="utf-8")
+    (tmp_path / "CLAUDE.md").write_text("claude\n", encoding="utf-8")
+    (tmp_path / ".docs" / "agents").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".docs" / "agents" / "programmer.md").write_text("# programmer\n", encoding="utf-8")
+    (tmp_path / ".docs" / "agents" / "reviewer.md").write_text("# reviewer\n", encoding="utf-8")
+
+    report = run_discover(tmp_path)
+
+    assert "openai-agents" in report.agents
+    assert "claude" in report.agents
+    assert "policy:programmer" in report.agents
+    assert "policy:reviewer" in report.agents
+
+
 def test_human_format_is_stable(tmp_path: Path) -> None:
     (tmp_path / "main.go").write_text("package main\n", encoding="utf-8")
 
