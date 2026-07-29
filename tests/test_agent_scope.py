@@ -4,7 +4,7 @@ from pathlib import Path
 from subprocess import CompletedProcess
 import json
 
-from governancekit.agent_scope import _command, propose_project_scope
+from governancekit.agent_scope import _command, _provider_failure_detail, propose_project_scope
 from governancekit.project_config import ProviderConfig
 import pytest
 
@@ -72,6 +72,18 @@ def test_scope_proposal_labels_domains_capabilities_and_open_questions() -> None
     assert "Each entry follows `domain: capabilities`." in rendered
     assert "evidence gaps to resolve before implementation" in rendered
     assert "not saved answers or required fields" in rendered
+
+
+def test_provider_failure_detail_does_not_expose_response_data() -> None:
+    import io
+    import urllib.error
+
+    error = urllib.error.HTTPError("https://example.test", 401, "Unauthorized", {}, io.BytesIO(b"secret response"))
+
+    detail = _provider_failure_detail(error)
+
+    assert detail == "HTTP 401: provider rejected the credential; verify the API key and account access"
+    assert "secret" not in detail
 
 
 def test_llm_scope_adapter_reads_a_project_local_protected_credential_file(tmp_path: Path, monkeypatch) -> None:

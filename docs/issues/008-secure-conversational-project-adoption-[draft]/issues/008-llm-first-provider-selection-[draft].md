@@ -22,6 +22,9 @@ ou gravar segredos na configuração versionável.
 - Credenciais conhecidas já presentes em `.credentials/llm/` (incluindo NVIDIA
   NIM) são detectadas sem abrir ou exibir o segredo; o operador pode aceitar o
   preset de URL/modelo correspondente antes de cadastrar outro provedor.
+- Antes da análise, a entrevista informa que o agente está lendo fontes
+  aprovadas e pode levar até 90 segundos. Falhas de API classificam o status
+  HTTP com orientação segura, sem imprimir a chave nem o corpo da resposta.
 - `llm-api` aparece entre os agentes apenas com provider API completo e usa uma
   chamada OpenAI-compatible confinada às fontes aprovadas.
 - Cursor com resumo multilinha válido não falha por limite artificial de uma

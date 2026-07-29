@@ -384,6 +384,26 @@ def _print_summary_help(locale: str) -> None:
     print("The summary records the product's purpose, users, and boundaries in one sentence.")
 
 
+def _print_analysis_notice(locale: str, agent: str, sources: list[str], provider: ProviderConfig | None) -> None:
+    if provider:
+        identity = f"{provider.name} ({provider.model})"
+    else:
+        identity = agent
+    if locale == "pt-BR":
+        print("\n── Analisar escopo ────────────────────────────────────────────────")
+        print(f"O agente {identity} está lendo {len(sources)} fonte(s) aprovada(s) para propor o escopo.")
+        print("A análise é somente leitura e pode levar até 90 segundos. Aguarde o resultado abaixo.")
+        return
+    if locale == "es":
+        print("\n── Analizar alcance ───────────────────────────────────────────────")
+        print(f"El agente {identity} está leyendo {len(sources)} fuente(s) aprobada(s) para proponer el alcance.")
+        print("El análisis es de solo lectura y puede tardar hasta 90 segundos. Espere el resultado a continuación.")
+        return
+    print("\n── Analyze project scope ──────────────────────────────────────────")
+    print(f"{identity} is reading {len(sources)} approved source(s) to propose the project scope.")
+    print("The analysis is read-only and can take up to 90 seconds. Wait for the result below.")
+
+
 def _saved_providers(existing: ProjectConfig | None) -> list[ProviderConfig]:
     """A manual placeholder means no API provider was configured."""
     if existing is None:
@@ -619,6 +639,7 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
     while selected_agent not in available_agents:
         print("  " + _message(locale, "choose_agent"))
         selected_agent = _ask(_message(locale, "agent"), selected_default, gap=False)
+    _print_analysis_notice(locale, selected_agent, sources, api_provider if selected_agent == "llm-api" else None)
     proposal: ScopeProposal = propose_project_scope(root, selected_agent, sources, locale=locale, provider=api_provider)
     print("\n" + _message(locale, "proposal"))
     print(proposal.render(locale=locale))

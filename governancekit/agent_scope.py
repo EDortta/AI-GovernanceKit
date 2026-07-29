@@ -139,6 +139,23 @@ def _copy_selected_sources(root: Path, destination: Path, sources: list[str]) ->
         target.write_text(source.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
 
 
+def _provider_failure_detail(error: urllib.error.HTTPError) -> str:
+    """Explain provider failures without reading a response body that could contain sensitive data."""
+    reasons = {
+        400: "provider rejected the request; verify the model and request compatibility",
+        401: "provider rejected the credential; verify the API key and account access",
+        403: "provider denied access; verify the API key permissions and model entitlement",
+        404: "provider endpoint or model was not found",
+        408: "provider timed out while receiving the request",
+        429: "provider rate limit or credit quota was reached",
+    }
+    if error.code >= 500:
+        reason = "provider service is temporarily unavailable"
+    else:
+        reason = reasons.get(error.code, "provider returned an unexpected HTTP error")
+    return f"HTTP {error.code}: {reason}"
+
+
 def _propose_via_llm(provider: ProviderConfig, root: Path, sources: list[str], locale: str) -> ScopeProposal:
     if provider.mode not in {"env", "file-ref"} or not provider.credential_ref:
         raise RuntimeError("LLM API analysis requires an environment-variable or protected-file credential reference")
@@ -188,8 +205,14 @@ def _propose_via_llm(provider: ProviderConfig, root: Path, sources: list[str], l
     try:
         with urllib.request.urlopen(request, timeout=90) as response:
             response_data = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-        raise RuntimeError("LLM API scope analysis failed; verify provider URL, model, and credential reference") from exc
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"LLM API scope analysis failed ({_provider_failure_detail(exc)})") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError("LLM API scope analysis failed: could not reach the provider endpoint") from exc
+    except TimeoutError as exc:
+        raise RuntimeError("LLM API scope analysis timed out after 90 seconds; retry or choose another analysis agent") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("LLM API scope analysis returned an invalid response") from exc
     try:
         raw = response_data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:

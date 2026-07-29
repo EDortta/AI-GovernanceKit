@@ -4,7 +4,7 @@ from pathlib import Path
 
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
 from governancekit.project_config import ProviderConfig, apply_project_config_plan, build_project_config_plan
-from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _detected_providers, _domain_answer, _print_domain_help, _print_domain_selection_help, _print_provider_catalog, _print_provider_help, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
+from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _detected_providers, _domain_answer, _print_analysis_notice, _print_domain_help, _print_domain_selection_help, _print_provider_catalog, _print_provider_help, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
 
 
 def _proposal() -> ScopeProposal:
@@ -87,6 +87,16 @@ def test_domain_selection_can_accept_the_complete_agent_proposal(capsys) -> None
     output = capsys.readouterr().out
     assert "Type `proposal` to accept every domain" in output
     assert "replaces the whole list" in output
+
+
+def test_analysis_notice_explains_the_delay_and_read_only_boundary(capsys) -> None:
+    _print_analysis_notice("en", "llm-api", ["docs/product.md"], ProviderConfig(name="nvidia", model="nemotron"))
+
+    output = capsys.readouterr().out
+    assert "Analyze project scope" in output
+    assert "reading 1 approved source" in output
+    assert "read-only" in output
+    assert "up to 90 seconds" in output
 
 
 def test_created_credential_file_is_private_and_not_part_of_provider_config(tmp_path: Path) -> None:
