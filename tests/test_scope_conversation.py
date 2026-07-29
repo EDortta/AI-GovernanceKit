@@ -4,7 +4,7 @@ from pathlib import Path
 
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
 from governancekit.project_config import ProviderConfig, apply_project_config_plan, build_project_config_plan
-from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _print_provider_catalog, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
+from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _print_domain_help, _print_provider_catalog, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
 
 
 def _proposal() -> ScopeProposal:
@@ -65,6 +65,16 @@ def test_provider_help_limits_llm_use_to_the_scope_interview(capsys) -> None:
     _print_provider_help("en")
 
     assert "not for development tasks or project implementation" in capsys.readouterr().out
+
+
+def test_domain_help_defines_the_concept_and_lists_agent_candidates(capsys) -> None:
+    _print_domain_help("en", _proposal())
+
+    output = capsys.readouterr().out
+    assert "stable product-responsibility area" in output
+    assert "Candidates found by the agent" in output
+    assert "sessions: manage-sessions" in output
+    assert "docs/advanced-usage.html" in output
 
 
 def test_created_credential_file_is_private_and_not_part_of_provider_config(tmp_path: Path) -> None:

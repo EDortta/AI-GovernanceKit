@@ -273,6 +273,67 @@ def _print_provider_catalog(locale: str) -> None:
     print("  other  - any compatible endpoint; provide its URL, model, and credential reference.")
 
 
+def _print_project_agent_help(locale: str) -> None:
+    if locale == "pt-BR":
+        print("O nome identifica esta configuração compartilhável do projeto.")
+        print("O agente somente lê as fontes listadas e propõe o escopo; ele não implementa nem altera o projeto nesta etapa.")
+        return
+    if locale == "es":
+        print("El nombre identifica esta configuración compartible del proyecto.")
+        print("El agente solo lee las fuentes listadas y propone el alcance; no implementa ni modifica el proyecto en esta etapa.")
+        return
+    print("The project name identifies this shareable project configuration.")
+    print("The agent only reads the listed sources and proposes scope; it does not implement or modify the project at this stage.")
+
+
+def _print_domain_help(locale: str, proposal: ScopeProposal) -> None:
+    if locale == "pt-BR":
+        print("Um domínio é uma área estável de responsabilidade do produto, não uma pasta nem uma camada técnica.")
+        print("Cada domínio agrupa capacidades que pertencem à mesma área e orienta futuras decisões de escopo.")
+        print("Candidatos encontrados pelo agente:")
+        for domain in proposal.domains:
+            print(f"  - {domain.name}: {', '.join(domain.capabilities)}")
+        print("Mais contexto: docs/advanced-usage-ptbr.html (configure-project).")
+        return
+    if locale == "es":
+        print("Un dominio es un área estable de responsabilidad del producto, no una carpeta ni una capa técnica.")
+        print("Cada dominio agrupa capacidades de la misma área y orienta futuras decisiones de alcance.")
+        print("Candidatos encontrados por el agente:")
+        for domain in proposal.domains:
+            print(f"  - {domain.name}: {', '.join(domain.capabilities)}")
+        print("Más contexto: docs/advanced-usage-es.html (configure-project).")
+        return
+    print("A domain is a stable product-responsibility area, not a folder or technical layer.")
+    print("Each domain groups capabilities from the same area and guides future scope decisions.")
+    print("Candidates found by the agent:")
+    for domain in proposal.domains:
+        print(f"  - {domain.name}: {', '.join(domain.capabilities)}")
+    print("More context: docs/advanced-usage.html (configure-project).")
+
+
+def _print_capability_help(locale: str) -> None:
+    if locale == "pt-BR":
+        print("Uma capacidade é uma ação ou resultado observável que o domínio assume como responsabilidade.")
+        print("Ela deve pertencer a exatamente um domínio nesta configuração.")
+        return
+    if locale == "es":
+        print("Una capacidad es una acción o resultado observable que el dominio asume como responsabilidad.")
+        print("Debe pertenecer a exactamente un dominio en esta configuración.")
+        return
+    print("A capability is an observable action or outcome owned by a domain.")
+    print("It must belong to exactly one domain in this configuration.")
+
+
+def _print_summary_help(locale: str) -> None:
+    if locale == "pt-BR":
+        print("O resumo registra, em uma frase, a finalidade, os usuários e os limites do produto.")
+        return
+    if locale == "es":
+        print("El resumen registra, en una frase, la finalidad, los usuarios y los límites del producto.")
+        return
+    print("The summary records the product's purpose, users, and boundaries in one sentence.")
+
+
 def _saved_providers(existing: ProjectConfig | None) -> list[ProviderConfig]:
     """A manual placeholder means no API provider was configured."""
     if existing is None:
@@ -415,6 +476,7 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
         for source in missing:
             print(f"  - {source}")
     print("\n" + _message(locale, "project_agent_title"))
+    _print_project_agent_help(locale)
     project_name = _ask(_message(locale, "project"), existing.project_name if existing else root.name, gap=False)
     if locale == "pt-BR":
         print("\n" + _message(locale, "llm_title"))
@@ -440,6 +502,7 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
         print(_message(locale, "saved_defaults"))
 
     print("\n" + _message(locale, "domains_help"))
+    _print_domain_help(locale, proposal)
     proposal_default = ", ".join(existing.domains) if existing else ", ".join(proposal.domain_names)
     domains = _clean_csv(_ask(_message(locale, "domains"), proposal_default, gap=False))
     while not domains:
@@ -447,6 +510,7 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
         domains = _clean_csv(_ask(_message(locale, "domains"), proposal_default, gap=False))
 
     print("\n" + _message(locale, "capabilities_help"))
+    _print_capability_help(locale)
     capabilities: list[str] = []
     capability_domains: dict[str, str] = {}
     for domain in domains:
@@ -472,5 +536,6 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
                 capability_domains[name] = domain
 
     print("\n" + _message(locale, "summary_help"))
+    _print_summary_help(locale)
     scope_summary = _ask(_message(locale, "summary"), existing.scope_summary if existing and existing.scope_summary else proposal.summary, gap=False) or None
     return ScopeConversation(project_name, sources, missing, domains, capabilities, capability_domains, available_agents, selected_agent, providers, scope_summary)

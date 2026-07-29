@@ -19,6 +19,9 @@ mudança proposta sem apagar silenciosamente configuração anterior.
 - Migração compatível do formato atual e preview de delta.
 - Confirmação por domínio/capacidade, incluindo proposta vazia, duplicada ou
   conflitante.
+- Explicação contextual de domínio, capacidade e resumo antes de cada decisão;
+  a confirmação de domínio reapresenta os candidatos que o agente encontrou e
+  uma referência à documentação de configuração.
 - Estado de entrevista serializável, sem segredos, para retomar após erro de
   validação sem descartar decisões já confirmadas.
 - Garantia de que uma capability possui exatamente um domínio primário.
