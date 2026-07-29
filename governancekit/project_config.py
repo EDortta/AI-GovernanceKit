@@ -11,6 +11,7 @@ from .integration import inspect_integration_contract
 
 _PROJECT_CONFIG_FILE = ".gk/project-config.json"
 _CONFIG_VERSION = 1
+_PROVIDER_MODES = {"manual", "env", "file-ref"}
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class ProviderConfig:
     name: str
     mode: str = "manual"
     credential_ref: str | None = None
+    validation: str = "manual"
 
 
 @dataclass(frozen=True)
@@ -103,6 +105,42 @@ def _default_providers(existing: ProjectConfig | None) -> list[ProviderConfig]:
     return [ProviderConfig(name="manual", mode="manual")]
 
 
+def parse_provider_specs(specs: list[str]) -> list[ProviderConfig]:
+    providers: list[ProviderConfig] = []
+    for raw in specs:
+        parts = [part.strip() for part in raw.split(":", 2)]
+        if not parts or not parts[0]:
+            raise ValueError(f"invalid provider spec: {raw!r}")
+        name = parts[0]
+        mode = parts[1] if len(parts) >= 2 and parts[1] else "manual"
+        credential_ref = parts[2] if len(parts) == 3 and parts[2] else None
+        if mode not in _PROVIDER_MODES:
+            raise ValueError(
+                f"invalid provider mode for {name!r}: {mode!r} "
+                f"(expected one of {', '.join(sorted(_PROVIDER_MODES))})"
+            )
+        validation = "manual" if mode == "manual" else "reference-required"
+        providers.append(
+            ProviderConfig(
+                name=name,
+                mode=mode,
+                credential_ref=credential_ref,
+                validation=validation,
+            )
+        )
+    return providers
+
+
+def provider_warnings(providers: list[ProviderConfig]) -> list[str]:
+    warnings: list[str] = []
+    for provider in providers:
+        if provider.mode != "manual" and not provider.credential_ref:
+            warnings.append(
+                f"provider {provider.name} uses mode {provider.mode} but has no credential_ref"
+            )
+    return warnings
+
+
 def _config_from_existing(data: dict) -> ProjectConfig | None:
     if not isinstance(data, dict):
         return None
@@ -121,6 +159,11 @@ def _config_from_existing(data: dict) -> ProjectConfig | None:
                         name=name,
                         mode=str(mode) if mode else "manual",
                         credential_ref=str(credential_ref) if credential_ref else None,
+                        validation=(
+                            str(provider.get("validation"))
+                            if provider.get("validation")
+                            else ("manual" if str(mode or "manual") == "manual" else "reference-required")
+                        ),
                     )
                 )
     try:
@@ -191,9 +234,11 @@ def build_project_config_plan(
 
     providers: list[ProviderConfig]
     if provider_names:
-        providers = [ProviderConfig(name=name, mode="manual") for name in _dedupe(provider_names)]
+        providers = parse_provider_specs(provider_names)
     else:
         providers = _default_providers(existing)
+
+    warnings = provider_warnings(providers)
 
     config = ProjectConfig(
         config_version=_CONFIG_VERSION,
@@ -212,6 +257,7 @@ def build_project_config_plan(
         notes=[
             *discovery.notes,
             "provider credentials stay outside project-config.json; use credential_ref only",
+            *warnings,
         ],
     )
 
@@ -242,6 +288,8 @@ def build_project_config_plan(
                 f"resolve integration status before relying on automated adoption ({integration.status})",
             )
         )
+    for warning in warnings:
+        actions.append(PlanAction("review", "provider configuration", warning))
     return ProjectConfigPlan(root=root, config=config, actions=actions, discovery=discovery)
 
 

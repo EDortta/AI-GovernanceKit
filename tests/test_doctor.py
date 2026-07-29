@@ -141,6 +141,27 @@ class DoctorTests(unittest.TestCase):
             self.assertTrue(check.passed)
             self.assertTrue(check.advisory)
 
+    def test_provider_without_credential_ref_is_advisory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / ".gk").mkdir(parents=True, exist_ok=True)
+            (root / ".gk" / "project-config.json").write_text(
+                '{"config_version":1,"project_name":"Demo","project_state":"existing","languages":["python"],'
+                '"frameworks":[],"package_managers":[],"automation_commands":[],"domains":["backend"],'
+                '"capabilities":["api"],"agents":["programmer"],'
+                '"providers":[{"name":"openai","mode":"env","validation":"reference-required"}],'
+                '"governance_files":[],"integration_status":"ok","notes":[]}\n',
+                encoding="utf-8",
+            )
+
+            result = run_doctor(root)
+
+            check = next(c for c in result.checks if c.name == "project configuration")
+            self.assertFalse(check.passed)
+            self.assertTrue(check.advisory)
+            self.assertIn("credential_ref", check.message)
+
 
     def test_security_advisories_flag_antipatterns_without_failing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
