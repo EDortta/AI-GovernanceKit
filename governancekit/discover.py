@@ -39,6 +39,14 @@ _GOVERNANCE_PATHS: tuple[str, ...] = (
     "docs/issues",
     "handoff.md",
 )
+_AGENT_FILES: tuple[tuple[str, str], ...] = (
+    ("AGENTS.md", "openai-agents"),
+    ("CLAUDE.md", "claude"),
+    ("GEMINI.md", "gemini"),
+    (".cursorrules", "cursor"),
+    (".windsurfrules", "windsurf"),
+    (".amazonq/rules/ai-agents.md", "amazonq"),
+)
 
 
 @dataclass(frozen=True)
@@ -49,6 +57,7 @@ class DiscoveryReport:
     frameworks: list[str]
     package_managers: list[str]
     automation_commands: list[str]
+    agents: list[str]
     governance_files: list[str]
     notes: list[str] = field(default_factory=list)
 
@@ -169,6 +178,21 @@ def _governance_files(root: Path) -> list[str]:
     return found
 
 
+def _detect_agents(root: Path) -> list[str]:
+    found: list[str] = []
+    for rel, label in _AGENT_FILES:
+        if (root / rel).is_file():
+            found.append(label)
+    agent_docs = root / ".docs" / "agents"
+    if agent_docs.is_dir():
+        for path in sorted(agent_docs.glob("*.md")):
+            stem = path.stem
+            if stem.startswith("_") or stem == "README":
+                continue
+            found.append(f"policy:{stem}")
+    return sorted(dict.fromkeys(found))
+
+
 def _project_state(root: Path, governance_files: list[str]) -> tuple[str, list[str]]:
     notes: list[str] = []
     all_files = list(_iter_project_files(root))
@@ -201,6 +225,7 @@ def run_discover(root: Path) -> DiscoveryReport:
         frameworks=_detect_frameworks(root),
         package_managers=_detect_package_managers(root),
         automation_commands=_detect_commands(root),
+        agents=_detect_agents(root),
         governance_files=governance_files,
         notes=notes,
     )
@@ -217,6 +242,7 @@ def format_discovery(report: DiscoveryReport) -> str:
     lines.append("frameworks: " + (", ".join(report.frameworks) or "(none)"))
     lines.append("package managers: " + (", ".join(report.package_managers) or "(none)"))
     lines.append("automation: " + (", ".join(report.automation_commands) or "(none)"))
+    lines.append("agents: " + (", ".join(report.agents) or "(none)"))
     lines.append("governance files: " + (", ".join(report.governance_files) or "(none)"))
     if report.notes:
         lines.append("notes:")
