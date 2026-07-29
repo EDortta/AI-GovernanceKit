@@ -135,26 +135,26 @@ class ConfigureIdentityTests(unittest.TestCase):
 
             self.assertEqual(code, 1)
 
-    def test_fills_legacy_and_current_placeholder_syntax(self) -> None:
+    def test_bracketed_policy_markers_are_not_treated_as_placeholders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             (root / "AGENTS.md").write_text(
-                "owner [OPERATOR_NAME] smtp {{SMTP_ACCOUNT}}\n", encoding="utf-8"
+                "[DEFAULT] [MANDATORY] [PROHIBITED] {{SMTP_ACCOUNT}}\n", encoding="utf-8"
             )
 
             result = run_configure(
                 root,
-                preset={"OPERATOR_NAME": "Ann", "SMTP_ACCOUNT": "ann@example.com"},
+                preset={"SMTP_ACCOUNT": "ann@example.com"},
                 interactive=False,
             )
 
             self.assertEqual(
                 (root / "AGENTS.md").read_text(encoding="utf-8"),
-                "owner Ann smtp ann@example.com\n",
+                "[DEFAULT] [MANDATORY] [PROHIBITED] ann@example.com\n",
             )
             self.assertEqual(
                 result.values,
-                {"OPERATOR_NAME": "Ann", "SMTP_ACCOUNT": "ann@example.com"},
+                {"SMTP_ACCOUNT": "ann@example.com"},
             )
 
 

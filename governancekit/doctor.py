@@ -5,7 +5,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_PLACEHOLDER_RE = re.compile(r"(?:\{\{|\[)([A-Z][A-Z0-9_]{2,})(?:\}\}|\])")
+_PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]{2,})\}\}")
 
 
 @dataclass(frozen=True)

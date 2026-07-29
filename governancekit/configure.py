@@ -159,8 +159,8 @@ def run_configure(
     """Fill kit placeholder variables across all text files under *root*.
 
     ``preset`` supplies non-interactive ``KEY=VALUE`` answers. Remaining tokens are
-    prompted for when a TTY is available (override with ``interactive``). Supports
-    both legacy ``[TOKEN]`` and current ``{{TOKEN}}`` placeholders.
+    prompted for when a TTY is available (override with ``interactive``). Only
+    canonical ``{{TOKEN}}`` placeholders are filled.
     """
     root = root.resolve()
     preset = dict(preset or {})
@@ -207,7 +207,6 @@ def run_configure(
             continue
         new_text = text
         for token, val in values.items():
-            new_text = new_text.replace(f"[{token}]", val)
             new_text = new_text.replace(f"{{{{{token}}}}}", val)
         if new_text != text:
             path.write_text(new_text, encoding="utf-8")
