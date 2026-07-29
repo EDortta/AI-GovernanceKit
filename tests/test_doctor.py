@@ -110,6 +110,20 @@ class DoctorTests(unittest.TestCase):
 
             self.assertNotIn("host identity", failed_check_names(result))
 
+    def test_policy_markers_do_not_fail_placeholder_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "AGENTS.md").write_text(
+                "# AGENTS.md\n[DEFAULT] [MANDATORY] [PROHIBITED]\n",
+                encoding="utf-8",
+            )
+
+            result = run_doctor(root)
+
+            check = next(c for c in result.checks if c.name == "unfilled placeholders")
+            self.assertTrue(check.passed)
+
     def test_missing_project_config_is_advisory_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

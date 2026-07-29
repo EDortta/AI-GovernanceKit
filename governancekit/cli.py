@@ -9,10 +9,59 @@ from .doctor import DoctorResult, run_doctor
 from .context import ContextError, build_context, format_context
 
 
+_ROOT_HELP_EPILOG = """Common command options:
+  doctor
+    --json
+  discover
+    --json
+  map
+    --output PATH, --all
+  context inspect
+    --task TASK, --risk RISK, --issue PATH, --manifest PATH, --json
+  context build
+    --task TASK, --risk RISK, --issue PATH, --manifest PATH, --json, --telemetry
+  context telemetry prune
+    --manifest PATH
+  install-agents
+    --upgrade, --docs-only, --force, --ref REF, --repo OWNER/REPO,
+    --install-awt, --track, --no-track
+  configure
+    --set KEY=VALUE, --operator-name NAME, --host-id ID, --instance-path PATH,
+    --sibling-path PATH, --assigned-ports PORTS, --branch-ownership BRANCH
+  configure-project plan|apply
+    --project-name NAME, --domain NAME, --capability NAME, --agent NAME,
+    --provider NAME[:MODE[:CREDENTIAL_REF]], --json
+  configure-project show
+    --json
+  classify-change plan|apply
+    --summary TEXT, --label LABEL, --rationale TEXT, --domain NAME,
+    --capability NAME, --compatibility TEXT, --residual-risk TEXT, --json
+  classify-change show
+    --json
+  bootstrap-issue
+    --epic-number NNN, --epic-title TEXT, --task-title TEXT, --owner NAME,
+    --related-commit REF
+  config-session start
+    --project-name NAME, --domain NAME, --capability NAME, --agent NAME,
+    --provider NAME[:MODE[:CREDENTIAL_REF]], --json
+  config-session approve
+    --approval TOKEN, --json
+  config-session show
+    --json
+  install-hooks
+    --hook-type NAME, --force, --json
+  voice-integration detect
+    --json
+
+Use `governancekit <command> -h` for full command-specific help."""
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="governancekit",
         description="Validate and orchestrate AI GovernanceKit workflows.",
+        epilog=_ROOT_HELP_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--root",
@@ -374,7 +423,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(format_version(get_version_info(args.root)))
         return 0
     if args.command is None:
-        parser.error("a command is required")
+        parser.print_help()
+        print("\ngovernancekit: error: a command is required")
+        return 2
 
     if args.command == "context":
         if args.context_command == "telemetry":
