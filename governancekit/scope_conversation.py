@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import getpass
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,7 +22,6 @@ _MANDATORY_SOURCES = (
 _BACKTICK_PATH_RE = re.compile(r"`((?:\.docs|docs)/[^`]+|AGENTS\.md)`")
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _ROLES = ("primary", "fallback", "optional")
-_MODES = ("env", "file-ref", "manual")
 _LLM_PRESETS = {
     "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash-lite", "GEMINI_API_KEY"),
     "openai": ("https://api.openai.com/v1", "gpt-5-mini", "OPENAI_API_KEY"),
@@ -187,7 +187,7 @@ def _message(locale: str, key: str) -> str:
             "provider_ref": "Referência da credencial (nome da variável ou caminho local, nunca o segredo)",
             "provider_url": "URL base compatível com OpenAI",
             "provider_model": "Nome do modelo",
-            "llm_advice": "Sugestões: Gemini Flash-Lite costuma oferecer faixa grátis/baixo custo para uso básico a amplo; NVIDIA NIM/Nemotron é OpenAI-compatible e tem afinidade técnica ampla; OpenAI GPT-5 mini tende a ser barato e tecnicamente amplo. Preços, créditos e franquias variam: confirme no portal do provedor. Crie a chave no portal e exporte-a no shell; informe abaixo somente o nome da variável, nunca a chave.",
+            "llm_advice": "Sugestões: Gemini Flash-Lite costuma oferecer faixa grátis/baixo custo para uso básico a amplo; NVIDIA NIM/Nemotron é OpenAI-compatible e tem afinidade técnica ampla; OpenAI GPT-5 mini tende a ser barato e tecnicamente amplo. Preços, créditos e franquias variam: confirme no portal do provedor. Crie a chave no portal e, abaixo, escolha se ela já está no shell ou se deseja criar um arquivo local protegido para colá-la.",
             "another_provider": "Adicionar outro provedor",
             "invalid_role": "Papel inválido. Use primary, fallback ou optional.",
             "primary_taken": "Já existe um provider primary. Escolha fallback ou optional.",
@@ -205,13 +205,13 @@ def _message(locale: str, key: str) -> str:
         "es": {
             "title": "── Definir alcance del proyecto ───────────────────────────────────",
             "reading": "Fuentes que el agente leyó antes de la entrevista:", "missing": "Fuentes ausentes o rechazadas:", "agents": "Agentes disponibles: ", "project_agent_title": "── Proyecto y agente ──────────────────────────────────────────────", "project": "Nombre del proyecto", "agent": "Agente que analizará el proyecto", "proposal": "── Propuesta del agente ───────────────────────────────────────────",
-            "saved_defaults": "Hay una configuración guardada o pendiente. Enter conserva los valores entre corchetes.",
-            "domains_help": "Revise los dominios. Enter acepta la propuesta; para cambiarla, escriba la lista completa separada por comas.", "domains": "Dominios a guardar", "capabilities_help": "Confirme las capacidades de cada dominio. Enter acepta la propuesta.", "capabilities": "Capacidades de '{domain}'", "providers_title": "── Proveedores LLM ───────────────────────────────────────────────", "providers_help": "La finalidad describe el uso. primary es predeterminado, fallback se usa si falla y optional no participa por defecto. No se solicitarán secretos.", "configure_providers": "Configurar proveedores LLM ahora", "provider_name": "Nombre del proveedor (Enter termina la lista)", "provider_purpose": "Finalidad (ejemplo: general, razonamiento, rápido)", "provider_role": "Rol (primary, fallback u optional)", "provider_mode": "Referencia de credencial (env, file-ref o manual)", "provider_ref": "Referencia de credencial, nunca el secreto", "another_provider": "Agregar otro proveedor", "invalid_role": "Rol inválido. Use primary, fallback u optional.", "primary_taken": "Ya existe un proveedor primary. Elija fallback u optional.", "invalid_mode": "Modo inválido. Use env, file-ref o manual.", "missing_ref": "Este modo requiere una referencia de credencial.", "summary_help": "Describa finalidad, usuarios y límites. Enter acepta el resumen.", "summary": "Resumen del alcance", "no_agents": "ninguno detectado", "choose_agent": "Elija un agente detectado.", "domain_required": "Se requiere un dominio.", "capability_required": "Se requiere una capacidad.", "primary_domain": "Dominio primario", "use_domain": "Use un dominio declarado.",
+            "saved_defaults": "Hay una configuración guardada o pendiente. Enter conserva los valores entre corchetes.", "llm_title": "── Acceso LLM para el análisis ───────────────────────────────────",
+            "domains_help": "Revise los dominios. Enter acepta la propuesta; para cambiarla, escriba la lista completa separada por comas.", "domains": "Dominios a guardar", "capabilities_help": "Confirme las capacidades de cada dominio. Enter acepta la propuesta.", "capabilities": "Capacidades de '{domain}'", "providers_title": "── Proveedores LLM ───────────────────────────────────────────────", "providers_help": "La finalidad describe el uso. primary es predeterminado, fallback se usa si falla y optional no participa por defecto. No se solicitarán secretos.", "configure_providers": "Configurar proveedores LLM ahora", "provider_name": "Nombre del proveedor (Enter termina la lista)", "provider_purpose": "Finalidad (ejemplo: general, razonamiento, rápido)", "provider_role": "Rol (primary, fallback u optional)", "provider_mode": "Referencia de credencial (env, file-ref o manual)", "provider_ref": "Referencia de credencial, nunca el secreto", "provider_url": "URL base compatible con OpenAI", "provider_model": "Nombre del modelo", "another_provider": "Agregar otro proveedor", "invalid_role": "Rol inválido. Use primary, fallback u optional.", "primary_taken": "Ya existe un proveedor primary. Elija fallback u optional.", "invalid_mode": "Modo inválido. Use env, file-ref o manual.", "missing_ref": "Este modo requiere una referencia de credencial.", "summary_help": "Describa finalidad, usuarios y límites. Enter acepta el resumen.", "summary": "Resumen del alcance", "no_agents": "ninguno detectado", "choose_agent": "Elija un agente detectado.", "domain_required": "Se requiere un dominio.", "capability_required": "Se requiere una capacidad.", "primary_domain": "Dominio primario", "use_domain": "Use un dominio declarado.",
         },
         "en": {
-            "title": "── Define project scope ───────────────────────────────────────────", "reading": "Sources the agent read before this interview:", "missing": "Missing or rejected sources (complete/fix before implementation):", "agents": "Available scope agents: ", "project_agent_title": "── Project and agent ──────────────────────────────────────────────", "project": "Project name", "agent": "Agent that will analyze the project", "proposal": "── Agent proposal ─────────────────────────────────────────────────",
+            "title": "── Define project scope ───────────────────────────────────────────", "reading": "Sources the agent read before this interview:", "missing": "Missing or rejected sources (complete/fix before implementation):", "agents": "Available scope agents: ", "llm_title": "── LLM access for analysis ───────────────────────────────────────", "project_agent_title": "── Project and agent ──────────────────────────────────────────────", "project": "Project name", "agent": "Agent that will analyze the project", "proposal": "── Agent proposal ─────────────────────────────────────────────────",
             "saved_defaults": "A saved or pending configuration exists. Enter keeps the values in brackets.",
-            "domains_help": "Review the domains to save. Enter accepts the proposal; to change it, enter the complete comma-separated list. Example: projects, missions, conversations.", "domains": "Domains to save", "capabilities_help": "Confirm each domain's capabilities. Enter accepts the proposal; a comma-separated list replaces only this domain's capabilities.", "capabilities": "Capabilities for '{domain}'", "providers_title": "── LLM providers ─────────────────────────────────────────────────", "providers_help": "Purpose describes human use (for example general or reasoning). Role controls routing: primary is default, fallback is used if primary fails, and optional is not used by default. No secret will be requested or stored.", "configure_providers": "Configure LLM providers now", "provider_name": "Provider name (Enter ends the list)", "provider_purpose": "Provider purpose (example: general, reasoning, fast)", "provider_role": "Routing role (primary, fallback, or optional)", "provider_mode": "Credential reference mode (env, file-ref, or manual)", "provider_ref": "Credential reference (environment variable or local path, never the secret)", "another_provider": "Add another provider", "invalid_role": "Invalid role. Use primary, fallback, or optional.", "primary_taken": "A primary provider already exists. Choose fallback or optional.", "invalid_mode": "Invalid mode. Use env, file-ref, or manual.", "missing_ref": "This mode requires a credential reference; do not enter the secret.", "summary_help": "Describe the purpose, users, and boundaries in one sentence. Enter accepts the proposed summary.", "summary": "Scope summary", "no_agents": "none detected", "choose_agent": "Choose one of the detected agents.", "domain_required": "At least one domain is required.", "capability_required": "At least one observable capability is required.", "primary_domain": "Primary domain for the capability", "use_domain": "Use one of the declared domains.",
+            "domains_help": "Review the domains to save. Enter accepts the proposal; to change it, enter the complete comma-separated list. Example: projects, missions, conversations.", "domains": "Domains to save", "capabilities_help": "Confirm each domain's capabilities. Enter accepts the proposal; a comma-separated list replaces only this domain's capabilities.", "capabilities": "Capabilities for '{domain}'", "providers_title": "── LLM providers ─────────────────────────────────────────────────", "providers_help": "Purpose describes human use (for example general or reasoning). Role controls routing: primary is default, fallback is used if primary fails, and optional is not used by default. No secret will be requested or stored.", "configure_providers": "Configure LLM providers now", "provider_name": "Provider name (Enter ends the list)", "provider_purpose": "Provider purpose (example: general, reasoning, fast)", "provider_role": "Routing role (primary, fallback, or optional)", "provider_mode": "Credential reference mode (env, file-ref, or manual)", "provider_ref": "Credential reference (environment variable or local path, never the secret)", "provider_url": "OpenAI-compatible base URL", "provider_model": "Model name", "another_provider": "Add another provider", "invalid_role": "Invalid role. Use primary, fallback, or optional.", "primary_taken": "A primary provider already exists. Choose fallback or optional.", "invalid_mode": "Invalid mode. Use env, file-ref, or manual.", "missing_ref": "This mode requires a credential reference; do not enter the secret.", "summary_help": "Describe the purpose, users, and boundaries in one sentence. Enter accepts the proposed summary.", "summary": "Scope summary", "no_agents": "none detected", "choose_agent": "Choose one of the detected agents.", "domain_required": "At least one domain is required.", "capability_required": "At least one observable capability is required.", "primary_domain": "Primary domain for the capability", "use_domain": "Use one of the declared domains.",
         },
     }
     return messages[locale][key]
@@ -234,31 +234,91 @@ def _pending_or_applied_config(root: Path) -> ProjectConfig | None:
 def _print_provider_help(locale: str) -> None:
     if locale == "pt-BR":
         print("Esta configuração define qual LLM pode analisar o escopo.")
-        print("Nunca digite uma chave aqui; informe apenas a variável ou arquivo que já a guarda.")
+        print("Você pode usar uma variável de ambiente, apontar um arquivo existente ou criar um arquivo local protegido.")
+        print("Ao criar o arquivo, a chave pode ser colada com a entrada oculta; ela não aparece na tela nem na configuração.")
         print("Papéis de roteamento:")
         print("  primary  - escolha padrão para análise.")
         print("  fallback - usada se a primary falhar.")
         print("  optional - disponível, mas fora do caminho padrão.")
         return
     print("This configuration determines which LLM can analyze the project scope.")
-    print("Never paste an API key here; provide only its existing environment-variable or file reference.")
+    print("Use an environment variable, reference an existing file, or create a protected local credential file.")
+    print("When creating the file, the API key can be pasted into hidden input; it is not shown or stored in configuration.")
     print("Routing roles:")
     print("  primary  - default choice for analysis.")
     print("  fallback - used when the primary fails.")
     print("  optional - available, but outside the default route.")
 
 
-def _collect_providers(locale: str, existing: ProjectConfig | None) -> list[ProviderConfig]:
+def _saved_providers(existing: ProjectConfig | None) -> list[ProviderConfig]:
+    """A manual placeholder means no API provider was configured."""
+    if existing is None:
+        return []
+    return [provider for provider in existing.providers if provider.mode != "manual"]
+
+
+def _write_credential_file(root: Path, provider_name: str, secret: str) -> str:
+    """Store a pasted secret outside project configuration with owner-only permissions."""
+    root = root.resolve()
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]+", "-", provider_name).strip(".-") or "llm"
+    directory = root / ".credentials" / "llm"
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        directory.resolve().relative_to(root)
+    except ValueError as exc:
+        raise RuntimeError("credential directory escaped the project root") from exc
+    directory.chmod(0o700)
+    target = directory / f"{safe_name}.key"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(target, flags, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(secret.strip() + "\n")
+    target.chmod(0o600)
+    return target.relative_to(root).as_posix()
+
+
+def _credential_method(locale: str) -> str:
+    if locale == "pt-BR":
+        print("Como a chave de API será fornecida?")
+        print("  env      - a chave já está em uma variável de ambiente.")
+        print("  arquivo  - a chave já está em um arquivo local protegido.")
+        print("  criar    - criar `.credentials/llm/<provedor>.key` e colar a chave com entrada oculta.")
+        print("  ajuda    - explicar como obter uma chave no portal do provedor.")
+        return _ask("Método da credencial (env, arquivo, criar ou ajuda)", "env", gap=False).lower()
+    print("How will the API key be provided?")
+    print("  env    - the key is already in an environment variable.")
+    print("  file   - the key is already in a protected local file.")
+    print("  create - create `.credentials/llm/<provider>.key` and paste the key into hidden input.")
+    print("  help   - explain how to obtain a key from the provider portal.")
+    return _ask("Credential method (env, file, create, or help)", "env", gap=False).lower()
+
+
+def _print_credential_help(locale: str, provider_name: str) -> None:
+    if locale == "pt-BR":
+        print(f"  Para usar {provider_name}, crie uma conta no portal do provedor, gere uma API key e retorne a esta pergunta.")
+        print("  Depois escolha `env` se a chave estiver exportada no shell, ou `criar` para guardá-la apenas neste checkout.")
+        return
+    print(f"  Create an account in the {provider_name} provider portal, generate an API key, then return to this prompt.")
+    print("  Choose `env` when it is exported in the shell, or `create` to store it only in this checkout.")
+
+
+def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) -> list[ProviderConfig]:
     print("\n" + _message(locale, "providers_title"))
     _print_provider_help(locale)
     if locale == "pt-BR":
         print(_message(locale, "llm_advice"))
-    if existing and existing.providers:
-        print("\nSaved provider configuration:" if locale == "en" else "\nConfiguração de provedores já salva:")
-        for provider in existing.providers:
-            print(f"  - {provider.name}: {provider.purpose or 'general'}, {provider.role}, {provider.model or 'model not set'}")
-    if existing and existing.providers and _yes_no("Keep this provider configuration" if locale == "en" else "Manter esta configuração de provedores", gap=False):
-        return existing.providers
+    saved = _saved_providers(existing)
+    if saved:
+        print("\nConfiguração LLM já salva:" if locale == "pt-BR" else "\nSaved LLM configuration:")
+        for provider in saved:
+            details = [provider.purpose or "general", provider.role or "primary"]
+            if provider.model:
+                details.append(provider.model)
+            print(f"  - {provider.name}: {', '.join(details)}")
+        if _yes_no("Manter esta configuração LLM" if locale == "pt-BR" else "Keep this LLM configuration", gap=False):
+            return saved
     if not _yes_no(_message(locale, "configure_providers"), gap=False):
         return [ProviderConfig(name="manual", mode="manual")]
     providers: list[ProviderConfig] = []
@@ -274,19 +334,41 @@ def _collect_providers(locale: str, existing: ProjectConfig | None) -> list[Prov
                 break
             print("  " + _message(locale, "primary_taken" if role == "primary" else "invalid_role"))
         while True:
-            mode = _ask(_message(locale, "provider_mode"), "env", gap=False)
-            if mode in _MODES:
+            method = _credential_method(locale)
+            aliases = {"arquivo": "file", "criar": "create", "ajuda": "help"}
+            method = aliases.get(method, method)
+            if method == "help":
+                _print_credential_help(locale, name)
+                continue
+            if method in {"env", "file", "create"}:
                 break
-            print("  " + _message(locale, "invalid_mode"))
-        credential_ref = None
-        if mode != "manual":
+            print("  Escolha env, arquivo, criar ou ajuda." if locale == "pt-BR" else "  Choose env, file, create, or help.")
+        if method == "create":
+            prompt = "Cole a chave de API (a entrada não será exibida)" if locale == "pt-BR" else "Paste the API key (input is hidden)"
+            secret = getpass.getpass(f"  {prompt}: ").strip()
+            while not secret:
+                print("  A chave não pode ficar vazia." if locale == "pt-BR" else "  The API key cannot be empty.")
+                secret = getpass.getpass(f"  {prompt}: ").strip()
+            mode = "file-ref"
+            credential_ref = _write_credential_file(root, name, secret)
+        else:
+            mode = "env" if method == "env" else "file-ref"
+            default_ref = preset[2] if mode == "env" and preset else ""
+            credential_ref = ""
             while not credential_ref:
-                credential_ref = _ask(_message(locale, "provider_ref"), preset[2] if preset else "", gap=False)
+                label = "Nome da variável de ambiente" if mode == "env" and locale == "pt-BR" else _message(locale, "provider_ref")
+                credential_ref = _ask(label, default_ref, gap=False)
                 if not credential_ref:
                     print("  " + _message(locale, "missing_ref"))
-        base_url = _ask(_message(locale, "provider_url"), preset[0] if preset else "", gap=False) if mode == "env" else ""
-        model = _ask(_message(locale, "provider_model"), preset[1] if preset else "", gap=False) if mode == "env" else ""
-        providers.append(ProviderConfig(name=name, purpose=purpose or None, base_url=base_url or None, model=model or None, mode=mode, credential_ref=credential_ref, validation="manual" if mode == "manual" else "reference-required", role=role))
+        base_url = _ask(_message(locale, "provider_url"), preset[0] if preset else "", gap=False)
+        while not base_url:
+            print("  Informe a URL base para que este provedor possa ser usado." if locale == "pt-BR" else "  Enter a base URL so this provider can be used.")
+            base_url = _ask(_message(locale, "provider_url"), gap=False)
+        model = _ask(_message(locale, "provider_model"), preset[1] if preset else "", gap=False)
+        while not model:
+            print("  Informe o modelo para que este provedor possa ser usado." if locale == "pt-BR" else "  Enter a model so this provider can be used.")
+            model = _ask(_message(locale, "provider_model"), gap=False)
+        providers.append(ProviderConfig(name=name, purpose=purpose or None, base_url=base_url or None, model=model or None, mode=mode, credential_ref=credential_ref, validation="reference-required", role=role))
         if not _yes_no(_message(locale, "another_provider"), default=False, gap=False):
             break
     return providers or [ProviderConfig(name="manual", mode="manual")]
@@ -312,9 +394,9 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
     project_name = _ask(_message(locale, "project"), existing.project_name if existing else root.name, gap=False)
     if locale == "pt-BR":
         print("\n" + _message(locale, "llm_title"))
-    providers = _collect_providers(locale, existing)
+    providers = _collect_providers(root, locale, existing)
     api_provider = next(
-        (item for item in providers if item.role == "primary" and item.mode == "env" and item.base_url and item.model and item.credential_ref),
+        (item for item in providers if item.role == "primary" and item.mode in {"env", "file-ref"} and item.base_url and item.model and item.credential_ref),
         None,
     )
     if api_provider:

@@ -119,15 +119,28 @@ def _copy_selected_sources(root: Path, destination: Path, sources: list[str]) ->
 
 
 def _propose_via_llm(provider: ProviderConfig, root: Path, sources: list[str], locale: str) -> ScopeProposal:
-    if provider.mode != "env" or not provider.credential_ref:
-        raise RuntimeError("LLM API analysis requires an environment-variable credential reference")
+    if provider.mode not in {"env", "file-ref"} or not provider.credential_ref:
+        raise RuntimeError("LLM API analysis requires an environment-variable or protected-file credential reference")
     if not provider.base_url or not provider.model:
         raise RuntimeError("LLM API analysis requires a base URL and model")
-    secret = os.environ.get(provider.credential_ref)
+    if provider.mode == "env":
+        secret = os.environ.get(provider.credential_ref)
+    else:
+        credential_path = Path(provider.credential_ref)
+        if credential_path.is_absolute() or ".." in credential_path.parts:
+            raise RuntimeError("LLM credential file must stay inside the project root")
+        credential_path = (root / credential_path).resolve()
+        try:
+            credential_path.relative_to(root.resolve())
+        except ValueError as exc:
+            raise RuntimeError("LLM credential file escaped the project root") from exc
+        try:
+            secret = credential_path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise RuntimeError("LLM credential file is not available; create it again or choose an environment variable") from exc
     if not secret:
-        raise RuntimeError(
-            f"LLM credential {provider.credential_ref!r} is not available in this shell; set it without printing it and retry"
-        )
+        location = "shell" if provider.mode == "env" else "credential file"
+        raise RuntimeError(f"LLM credential {provider.credential_ref!r} is not available in the {location}; configure it and retry")
     source_text: list[str] = []
     for rel in sources:
         path = (root / rel).resolve()

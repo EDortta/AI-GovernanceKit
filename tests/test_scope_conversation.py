@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
-from governancekit.project_config import apply_project_config_plan, build_project_config_plan
-from governancekit.scope_conversation import _LLM_PRESETS, load_required_reading, resolve_locale, run_scope_conversation
+from governancekit.project_config import ProviderConfig, apply_project_config_plan, build_project_config_plan
+from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
 
 
 def _proposal() -> ScopeProposal:
@@ -48,6 +48,36 @@ def test_nvidia_preset_uses_its_openai_compatible_endpoint() -> None:
         "nvidia/nemotron-3-super-120b-a12b",
         "NVIDIA_API_KEY",
     )
+
+
+def test_created_credential_file_is_private_and_not_part_of_provider_config(tmp_path: Path) -> None:
+    reference = _write_credential_file(tmp_path, "OpenAI", "secret-value")
+    credential = tmp_path / reference
+
+    assert reference == ".credentials/llm/OpenAI.key"
+    assert credential.read_text(encoding="utf-8") == "secret-value\n"
+    assert credential.stat().st_mode & 0o777 == 0o600
+
+
+def test_manual_placeholder_is_not_presented_as_a_saved_llm_provider() -> None:
+    manual = ProviderConfig(name="manual", mode="manual")
+    assert _saved_providers(None) == []
+    assert _saved_providers(type("Config", (), {"providers": [manual]})()) == []
+
+
+def test_provider_interview_can_create_a_hidden_local_credential_file(tmp_path: Path, monkeypatch, capsys) -> None:
+    answers = iter(["", "openai", "", "", "criar", "", "", "n"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    monkeypatch.setattr("governancekit.scope_conversation.getpass.getpass", lambda _prompt: "pasted-secret")
+
+    providers = _collect_providers(tmp_path, "pt-BR", None)
+
+    assert providers[0].mode == "file-ref"
+    assert providers[0].credential_ref == ".credentials/llm/openai.key"
+    assert (tmp_path / providers[0].credential_ref).read_text(encoding="utf-8") == "pasted-secret\n"
+    output = capsys.readouterr().out
+    assert "entrada oculta" in output
+    assert "pasted-secret" not in output
 
 
 def test_load_required_reading_rejects_traversal_and_symlink_escape(tmp_path: Path) -> None:
@@ -107,7 +137,7 @@ def test_scope_conversation_reuses_pending_configuration_as_defaults(tmp_path: P
     session_path = tmp_path / ".gk/config-session.json"
     session_path.parent.mkdir()
     session_path.write_text('{"plan": ' + __import__("json").dumps(plan.as_dict()) + '}', encoding="utf-8")
-    answers = iter(["", "", "", "", "", ""])
+    answers = iter(["", "", "", "", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
     monkeypatch.setattr("governancekit.scope_conversation.supported_scope_agents", lambda _agents: ["openai-agents"])
     monkeypatch.setattr("governancekit.scope_conversation.propose_project_scope", lambda *_args, **_kwargs: _proposal())

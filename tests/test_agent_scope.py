@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from subprocess import CompletedProcess
+import json
 
 from governancekit.agent_scope import _command, propose_project_scope
+from governancekit.project_config import ProviderConfig
 import pytest
 
 
@@ -55,3 +57,42 @@ def test_cursor_scope_adapter_trusts_only_the_generated_workspace(tmp_path: Path
     command = _command("cursor", tmp_path, "prompt", tmp_path / "output.json")
 
     assert command[:7] == ["cursor", "agent", "--print", "--mode", "ask", "--trust", "--workspace"]
+
+
+def test_llm_scope_adapter_reads_a_project_local_protected_credential_file(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "docs/product.md"
+    source.parent.mkdir()
+    source.write_text("product\n", encoding="utf-8")
+    credential = tmp_path / ".credentials/llm/openai.key"
+    credential.parent.mkdir(parents=True)
+    credential.write_text("file-secret\n", encoding="utf-8")
+    captured: dict[str, str] = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": '{"summary":"Product","domains":[{"name":"sessions","capabilities":["manage"],"evidence":["docs/product.md: flow"]}],"questions":[]}'}}]}).encode()
+
+    def fake_urlopen(request, timeout):
+        captured["authorization"] = request.headers["Authorization"]
+        assert timeout == 90
+        return Response()
+
+    monkeypatch.setattr("governancekit.agent_scope.urllib.request.urlopen", fake_urlopen)
+    provider = ProviderConfig(
+        name="openai",
+        base_url="https://example.test/v1",
+        model="test-model",
+        mode="file-ref",
+        credential_ref=".credentials/llm/openai.key",
+    )
+
+    proposal = propose_project_scope(tmp_path, "llm-api", ["docs/product.md"], provider=provider)
+
+    assert proposal.domain_names == ["sessions"]
+    assert captured["authorization"] == "Bearer file-secret"
