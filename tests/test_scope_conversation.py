@@ -83,6 +83,7 @@ def test_ptbr_interview_guides_provider_and_retries_invalid_role(tmp_path: Path,
     assert "primary é o padrão" in output
     assert "── Provedores LLM" in output
     assert "\n\n" in output
+    assert "── Projeto e agente" in output
     assert output.index("Nome do projeto") < output.index("Agentes de escopo disponíveis")
 
 
