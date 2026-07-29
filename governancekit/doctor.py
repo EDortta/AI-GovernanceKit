@@ -48,6 +48,7 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_file(repo_root, "AGENTS.md"),
         _check_file(repo_root, "README.md"),
         _check_file(repo_root, "handoff.md"),
+        _check_agents_integration_contract(repo_root),
         _check_ready_flag(
             repo_root,
             ".docs/software-overview.md",
@@ -201,6 +202,17 @@ def _check_security_advisories(root: Path) -> CheckResult:
             advisory=True,
         )
     return CheckResult(name, True, "no security anti-patterns detected", advisory=True)
+
+
+def _check_agents_integration_contract(root: Path) -> CheckResult:
+    from .integration import inspect_integration_contract
+
+    result = inspect_integration_contract(root)
+    if result.status == "ok":
+        return CheckResult("AI-Agents integration contract", True, result.message)
+    if result.status == "custom-repo":
+        return CheckResult("AI-Agents integration contract", True, result.message, advisory=True)
+    return CheckResult("AI-Agents integration contract", False, result.message, advisory=True)
 
 
 def _check_host_identity(root: Path) -> CheckResult:

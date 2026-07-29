@@ -20,16 +20,33 @@ def test_reports_runtime_and_default_without_project(tmp_path: Path) -> None:
     assert info.agents_default == DEFAULT_REF
     assert info.agents_project is None
     assert "not detected" in info.status
+    assert info.integration_status == "missing"
 
 
 def test_finds_project_manifest_from_nested_directory(tmp_path: Path) -> None:
     write_manifest(tmp_path, DEFAULT_REF)
+    contract = tmp_path / ".docs" / "governancekit-integration.json"
+    contract.parent.mkdir(parents=True)
+    contract.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "ai_agents": {"repo": REPO, "ref": DEFAULT_REF},
+                "governancekit": {
+                    "version_range": ">=0.2.2,<0.3.0",
+                    "required_features": ["version-reporting"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     nested = tmp_path / "src/module"
     nested.mkdir(parents=True)
     info = get_version_info(nested)
     assert info.project_root == tmp_path
     assert info.agents_project == DEFAULT_REF
     assert info.status == "up to date"
+    assert info.integration_status == "ok"
 
 
 def test_reports_upgrade_when_project_ref_is_older(tmp_path: Path) -> None:
@@ -46,7 +63,23 @@ def test_custom_repository_is_not_compared_as_an_upgrade(tmp_path: Path) -> None
 
 def test_human_format_contains_all_versions(tmp_path: Path) -> None:
     write_manifest(tmp_path, DEFAULT_REF)
+    contract = tmp_path / ".docs" / "governancekit-integration.json"
+    contract.parent.mkdir(parents=True)
+    contract.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "ai_agents": {"repo": REPO, "ref": DEFAULT_REF},
+                "governancekit": {
+                    "version_range": ">=0.2.2,<0.3.0",
+                    "required_features": ["version-reporting"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     output = format_version(get_version_info(tmp_path))
     assert f"AI-GovernanceKit: {__version__}" in output
     assert f"AI-Agents default: {DEFAULT_REF}" in output
     assert f"AI-Agents project: {DEFAULT_REF}" in output
+    assert "Integration: ok" in output

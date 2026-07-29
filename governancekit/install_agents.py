@@ -50,6 +50,7 @@ _KIT_DOC_PATHS: list[str] = [
     "docs/workflows",
     "docs/articles",
     "docs/icons",
+    "docs/governancekit-integration.json",
     "docs/context-manifest.yaml",
     "docs/context-optimization.md",
     "docs/schemas",
@@ -139,6 +140,7 @@ _LEGACY_KIT_DOC_NAMES: list[str] = [
     "workflows",
     "articles",
     "icons",
+    "governancekit-integration.json",
     "software-overview.md",
     "limits.md",
 ]

@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .integration import inspect_integration_contract
 from . import __version__
 from .install_agents import DEFAULT_REF, REPO
 
@@ -19,6 +20,8 @@ class VersionInfo:
     agents_repo: str | None
     project_root: Path | None
     status: str
+    integration_status: str
+    integration_message: str
 
 
 def _version_tuple(ref: str) -> tuple[int, ...] | None:
@@ -47,8 +50,11 @@ def get_version_info(root: Path) -> VersionInfo:
             agents_repo=None,
             project_root=None,
             status="AI-Agents installation not detected",
+            integration_status="missing",
+            integration_message="AI-Agents integration contract not found under .docs/",
         )
     project_root, manifest_path = found
+    integration = inspect_integration_contract(project_root)
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -59,6 +65,8 @@ def get_version_info(root: Path) -> VersionInfo:
             agents_repo=None,
             project_root=project_root,
             status="AI-Agents manifest is unreadable",
+            integration_status=integration.status,
+            integration_message=integration.message,
         )
     project_ref = manifest.get("ref") if isinstance(manifest.get("ref"), str) else None
     project_repo = manifest.get("repo") if isinstance(manifest.get("repo"), str) else None
@@ -84,6 +92,8 @@ def get_version_info(root: Path) -> VersionInfo:
         agents_repo=project_repo,
         project_root=project_root,
         status=status,
+        integration_status=integration.status,
+        integration_message=integration.message,
     )
 
 
@@ -97,4 +107,5 @@ def format_version(info: VersionInfo) -> str:
     if info.project_root:
         lines.append(f"Project root: {info.project_root}")
     lines.append(f"Status: {info.status}")
+    lines.append(f"Integration: {info.integration_status} — {info.integration_message}")
     return "\n".join(lines)
