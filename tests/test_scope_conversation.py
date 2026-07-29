@@ -59,6 +59,14 @@ def test_provider_catalog_lists_nvidia_nim_as_openai_compatible(capsys) -> None:
     assert "NVIDIA_API_KEY" in output
 
 
+def test_provider_help_limits_llm_use_to_the_scope_interview(capsys) -> None:
+    from governancekit.scope_conversation import _print_provider_help
+
+    _print_provider_help("en")
+
+    assert "not for development tasks or project implementation" in capsys.readouterr().out
+
+
 def test_created_credential_file_is_private_and_not_part_of_provider_config(tmp_path: Path) -> None:
     reference = _write_credential_file(tmp_path, "OpenAI", "secret-value")
     credential = tmp_path / reference

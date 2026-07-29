@@ -242,6 +242,7 @@ def _print_provider_help(locale: str) -> None:
         print("  optional - disponível, mas fora do caminho padrão.")
         return
     print("This configuration determines which LLM can analyze the project scope.")
+    print("It is used only for this scope interview, not for development tasks or project implementation.")
     print("Use an environment variable, reference an existing file, or create a protected local credential file.")
     print("When creating the file, the API key can be pasted into hidden input; it is not shown or stored in configuration.")
     print("Routing roles:")
