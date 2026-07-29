@@ -591,7 +591,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     except ValueError as exc:
                         print(f"ERROR: {exc}")
                         return 1
-                    print(format_config_session(session))
+                    print(format_config_session(session, args.root))
             else:
                 print("Run: governancekit config-session start --interactive to review project scope.")
         return 0
@@ -776,7 +776,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if getattr(args, "as_json", False):
                 print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
             else:
-                print(format_config_session(session))
+                print(format_config_session(session, args.root))
             return 0
 
         if args.session_command == "start":
@@ -819,7 +819,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if getattr(args, "as_json", False):
                 print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
             else:
-                print(format_config_session(session))
+                print(format_config_session(session, args.root))
             return 0
 
         if args.session_command == "approve":
@@ -831,7 +831,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if getattr(args, "as_json", False):
                 print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
             else:
-                print(format_config_session(session))
+                print(format_config_session(session, args.root))
             return 0
 
         try:

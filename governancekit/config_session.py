@@ -165,7 +165,7 @@ def apply_config_session(root: Path) -> list[str]:
     return written
 
 
-def format_config_session(session: ConfigSession) -> str:
+def format_config_session(session: ConfigSession, root: Path | None = None) -> str:
     lines = ["AI GovernanceKit config-session"]
     lines.append(f"status: {session.status}")
     lines.append(
@@ -178,4 +178,49 @@ def format_config_session(session: ConfigSession) -> str:
         lines.append("notes:")
         for note in session.notes:
             lines.append(f"  - {note}")
+    if session.status == "pending_approval":
+        prefix = f"governancekit --root {root} config-session" if root else "governancekit config-session"
+        missing = [approval for approval in session.approvals_required if approval not in session.approvals_granted]
+        lines.extend(
+            [
+                "",
+                "meaning: the configuration plan is saved but has not been applied.",
+                "Approval tokens are granted locally with the commands below; no separate tool is required.",
+                "approvals still needed:",
+            ]
+        )
+        for approval in missing:
+            if approval == "existing-project-adoption-review":
+                lines.append("  - existing-project-adoption-review: inspect the existing project before adoption.")
+            elif approval == "project-config-review":
+                lines.append("  - project-config-review: review the domains, capabilities, agents, and providers in the plan.")
+            else:
+                lines.append(f"  - {approval}: review the change required by this approval token.")
+            lines.append(f"    grant: {prefix} approve --approval {approval}")
+        lines.extend(
+            [
+                "",
+                "After every required approval is granted:",
+                f"  {prefix} show",
+                f"  {prefix} apply",
+                "The approved configuration will be written to .gk/project-config.json and docs/project-configuration.md.",
+            ]
+        )
+    elif session.status == "approved":
+        prefix = f"governancekit --root {root} config-session" if root else "governancekit config-session"
+        lines.extend(
+            [
+                "",
+                "meaning: all required approvals are granted; the plan is ready to apply.",
+                f"apply: {prefix} apply",
+            ]
+        )
+    elif session.status == "applied":
+        lines.extend(
+            [
+                "",
+                "meaning: the approved configuration has been written to the project.",
+                "inspect: governancekit configure-project show",
+            ]
+        )
     return "\n".join(lines)
