@@ -74,7 +74,7 @@ def test_domain_help_defines_the_concept_and_lists_agent_candidates(capsys) -> N
     assert "stable product-responsibility area" in output
     assert "Candidates found by the agent" in output
     assert "sessions: manage-sessions" in output
-    assert "docs/advanced-usage.html" in output
+    assert "https://edortta.github.io/AI-GovernanceKit/advanced-usage.html" in output
 
 
 def test_created_credential_file_is_private_and_not_part_of_provider_config(tmp_path: Path) -> None:

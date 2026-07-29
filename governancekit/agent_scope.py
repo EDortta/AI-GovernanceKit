@@ -49,12 +49,33 @@ class ScopeProposal:
 
     def render(self, *, locale: str = "en") -> str:
         lines = [self.summary or "No scope summary returned by the selected agent."]
+        labels = {
+            "pt-BR": (
+                "Domínios e capacidades propostos pelo agente:",
+                "Cada item segue `domínio: capacidades`.",
+                "Perguntas abertas da análise (lacunas a esclarecer antes da implementação):",
+                "Elas não são respostas já salvas nem campos obrigatórios deste formulário; use-as para revisar os domínios, capacidades e resumo abaixo.",
+            ),
+            "es": (
+                "Dominios y capacidades propuestos por el agente:",
+                "Cada elemento sigue `dominio: capacidades`.",
+                "Preguntas abiertas del análisis (vacíos por aclarar antes de implementar):",
+                "No son respuestas ya guardadas ni campos obligatorios de este formulario; úselas para revisar los dominios, capacidades y resumen a continuación.",
+            ),
+            "en": (
+                "Domains and capabilities proposed by the agent:",
+                "Each entry follows `domain: capabilities`.",
+                "Open questions from the analysis (evidence gaps to resolve before implementation):",
+                "They are not saved answers or required fields in this form; use them to review the domains, capabilities, and summary below.",
+            ),
+        }[locale]
+        lines.extend([labels[0], labels[1]])
         for domain in self.domains:
             lines.append(f"  - {domain.name}: {', '.join(domain.capabilities) or '(no capability proposed)'}")
             for evidence in domain.evidence:
                 lines.append(f"      evidence: {evidence}")
         if self.questions:
-            lines.append({"pt-BR": "Perguntas em aberto:", "es": "Preguntas abiertas:"}.get(locale, "Open questions:"))
+            lines.extend([labels[2], labels[3]])
             lines.extend(f"  - {question}" for question in self.questions)
         return "\n".join(lines)
 

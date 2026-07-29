@@ -22,6 +22,9 @@ mudança proposta sem apagar silenciosamente configuração anterior.
 - Explicação contextual de domínio, capacidade e resumo antes de cada decisão;
   a confirmação de domínio reapresenta os candidatos que o agente encontrou e
   uma referência à documentação de configuração.
+- A proposta rotula explicitamente a estrutura `domínio: capacidades` e
+  esclarece que perguntas abertas são lacunas de evidência para revisão, não
+  respostas salvas nem campos obrigatórios ocultos.
 - Estado de entrevista serializável, sem segredos, para retomar após erro de
   validação sem descartar decisões já confirmadas.
 - Garantia de que uma capability possui exatamente um domínio primário.

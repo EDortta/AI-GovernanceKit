@@ -59,6 +59,21 @@ def test_cursor_scope_adapter_trusts_only_the_generated_workspace(tmp_path: Path
     assert command[:7] == ["cursor", "agent", "--print", "--mode", "ask", "--trust", "--workspace"]
 
 
+def test_scope_proposal_labels_domains_capabilities_and_open_questions() -> None:
+    from governancekit.agent_scope import ProposedDomain, ScopeProposal
+
+    rendered = ScopeProposal(
+        summary="Product scope.",
+        domains=[ProposedDomain("approvals", ["approve"], ["docs/product.md: scope"])],
+        questions=["Which approvals need audit?"],
+    ).render()
+
+    assert "Domains and capabilities proposed by the agent:" in rendered
+    assert "Each entry follows `domain: capabilities`." in rendered
+    assert "evidence gaps to resolve before implementation" in rendered
+    assert "not saved answers or required fields" in rendered
+
+
 def test_llm_scope_adapter_reads_a_project_local_protected_credential_file(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "docs/product.md"
     source.parent.mkdir()

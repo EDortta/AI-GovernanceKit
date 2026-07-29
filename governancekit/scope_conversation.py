@@ -293,7 +293,7 @@ def _print_domain_help(locale: str, proposal: ScopeProposal) -> None:
         print("Candidatos encontrados pelo agente:")
         for domain in proposal.domains:
             print(f"  - {domain.name}: {', '.join(domain.capabilities)}")
-        print("Mais contexto: docs/advanced-usage-ptbr.html (configure-project).")
+        print("Mais contexto: https://edortta.github.io/AI-GovernanceKit/advanced-usage-ptbr.html")
         return
     if locale == "es":
         print("Un dominio es un área estable de responsabilidad del producto, no una carpeta ni una capa técnica.")
@@ -301,14 +301,14 @@ def _print_domain_help(locale: str, proposal: ScopeProposal) -> None:
         print("Candidatos encontrados por el agente:")
         for domain in proposal.domains:
             print(f"  - {domain.name}: {', '.join(domain.capabilities)}")
-        print("Más contexto: docs/advanced-usage-es.html (configure-project).")
+        print("Más contexto: https://edortta.github.io/AI-GovernanceKit/advanced-usage-es.html")
         return
     print("A domain is a stable product-responsibility area, not a folder or technical layer.")
     print("Each domain groups capabilities from the same area and guides future scope decisions.")
     print("Candidates found by the agent:")
     for domain in proposal.domains:
         print(f"  - {domain.name}: {', '.join(domain.capabilities)}")
-    print("More context: docs/advanced-usage.html (configure-project).")
+    print("More context: https://edortta.github.io/AI-GovernanceKit/advanced-usage.html")
 
 
 def _print_capability_help(locale: str) -> None:
