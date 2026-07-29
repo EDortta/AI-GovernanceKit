@@ -39,6 +39,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output results as JSON (useful for CI scripts).",
     )
 
+    discover_parser = subparsers.add_parser(
+        "discover",
+        help="Inspect a repository read-only and report whether it looks new or existing.",
+    )
+    discover_parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="Output the discovery report as JSON.",
+    )
+
     map_parser = subparsers.add_parser("map", help="Generate a Markdown code map of the project.")
     map_parser.add_argument(
         "--output",
@@ -199,6 +210,10 @@ def format_doctor_json(result: DoctorResult) -> str:
     })
 
 
+def format_discovery_json(result) -> str:
+    return json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False)
+
+
 def format_resume(result) -> str:
     from .resume import ResumeResult
     lines = ["AI GovernanceKit resume"]
@@ -306,6 +321,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             print(format_doctor(result))
         return 0 if result.ok else 1
+
+    if args.command == "discover":
+        from .discover import format_discovery, run_discover
+
+        result = run_discover(args.root)
+        if getattr(args, "as_json", False):
+            print(format_discovery_json(result))
+        else:
+            print(format_discovery(result))
+        return 0
 
     if args.command == "map":
         from .codemap import run_map
