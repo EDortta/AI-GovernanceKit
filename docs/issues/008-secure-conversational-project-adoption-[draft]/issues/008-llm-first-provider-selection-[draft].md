@@ -19,6 +19,9 @@ ou gravar segredos na configuração versionável.
   checkout, não segue links para fora e usa permissões de dono.
 - O marcador `manual` representa ausência de LLM, não aparece como configuração
   salva nem como um provedor com modelo ausente.
+- Credenciais conhecidas já presentes em `.credentials/llm/` (incluindo NVIDIA
+  NIM) são detectadas sem abrir ou exibir o segredo; o operador pode aceitar o
+  preset de URL/modelo correspondente antes de cadastrar outro provedor.
 - `llm-api` aparece entre os agentes apenas com provider API completo e usa uma
   chamada OpenAI-compatible confinada às fontes aprovadas.
 - Cursor com resumo multilinha válido não falha por limite artificial de uma

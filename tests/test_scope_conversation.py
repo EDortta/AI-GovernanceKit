@@ -4,7 +4,7 @@ from pathlib import Path
 
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
 from governancekit.project_config import ProviderConfig, apply_project_config_plan, build_project_config_plan
-from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _print_domain_help, _print_provider_catalog, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
+from governancekit.scope_conversation import _LLM_PRESETS, _collect_providers, _detected_providers, _print_domain_help, _print_provider_catalog, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
 
 
 def _proposal() -> ScopeProposal:
@@ -105,6 +105,38 @@ def test_provider_interview_can_create_a_hidden_local_credential_file(tmp_path: 
     output = capsys.readouterr().out
     assert "entrada oculta" in output
     assert "pasted-secret" not in output
+
+
+def test_detected_nvidia_credential_uses_the_nim_preset_without_reading_the_secret(tmp_path: Path, monkeypatch) -> None:
+    for env_name in ("GEMINI_API_KEY", "NVIDIA_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(env_name, raising=False)
+    credential = tmp_path / ".credentials/llm/nvidia.key"
+    credential.parent.mkdir(parents=True)
+    credential.write_text("do-not-read-this-secret\n", encoding="utf-8")
+
+    providers = _detected_providers(tmp_path)
+
+    assert len(providers) == 1
+    provider = providers[0]
+    assert provider.name == "nvidia"
+    assert provider.mode == "file-ref"
+    assert provider.credential_ref == ".credentials/llm/nvidia.key"
+    assert provider.base_url == _LLM_PRESETS["nvidia"][0]
+    assert provider.model == _LLM_PRESETS["nvidia"][1]
+
+
+def test_provider_interview_offers_a_detected_nvidia_configuration(tmp_path: Path, monkeypatch, capsys) -> None:
+    for env_name in ("GEMINI_API_KEY", "NVIDIA_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(env_name, raising=False)
+    credential = tmp_path / ".credentials/llm/nvidia.key"
+    credential.parent.mkdir(parents=True)
+    credential.write_text("secret\n", encoding="utf-8")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+
+    providers = _collect_providers(tmp_path, "en", None)
+
+    assert providers[0].name == "nvidia"
+    assert "Local LLM credentials found" in capsys.readouterr().out
 
 
 def test_load_required_reading_rejects_traversal_and_symlink_escape(tmp_path: Path) -> None:

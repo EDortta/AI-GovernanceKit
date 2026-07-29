@@ -341,6 +341,74 @@ def _saved_providers(existing: ProjectConfig | None) -> list[ProviderConfig]:
     return [provider for provider in existing.providers if provider.mode != "manual"]
 
 
+def _detected_providers(root: Path) -> list[ProviderConfig]:
+    """Discover known local credential references without opening their secrets."""
+    root = root.resolve()
+    providers: list[ProviderConfig] = []
+    for index, (name, (base_url, model, env_name)) in enumerate(_LLM_PRESETS.items()):
+        references = [Path(".credentials/llm") / f"{name}.key", Path(".credentials") / f"{name}.key"]
+        mode = ""
+        credential_ref = ""
+        for relative in references:
+            candidate = (root / relative).resolve()
+            try:
+                candidate.relative_to(root)
+            except ValueError:
+                continue
+            if candidate.is_file():
+                mode = "file-ref"
+                credential_ref = relative.as_posix()
+                break
+        if not credential_ref and os.environ.get(env_name):
+            mode = "env"
+            credential_ref = env_name
+        if credential_ref:
+            providers.append(
+                ProviderConfig(
+                    name=name,
+                    purpose="general",
+                    base_url=base_url,
+                    model=model,
+                    mode=mode,
+                    credential_ref=credential_ref,
+                    validation="reference-required",
+                    role="primary" if index == 0 else "fallback",
+                )
+            )
+    if providers:
+        primary = providers[0]
+        providers[0] = ProviderConfig(
+            name=primary.name,
+            purpose=primary.purpose,
+            base_url=primary.base_url,
+            model=primary.model,
+            mode=primary.mode,
+            credential_ref=primary.credential_ref,
+            validation=primary.validation,
+            role="primary",
+        )
+    return providers
+
+
+def _print_detected_providers(locale: str, providers: list[ProviderConfig]) -> None:
+    if locale == "pt-BR":
+        print("\nCredenciais LLM locais encontradas:")
+        print("Os arquivos não serão abertos nem exibidos nesta detecção. Os presets completarão URL e modelo.")
+        for provider in providers:
+            print(f"  - {provider.name}: {provider.credential_ref} ({provider.model})")
+        return
+    if locale == "es":
+        print("\nCredenciales LLM locales encontradas:")
+        print("Los archivos no se abrirán ni se mostrarán durante esta detección. Los presets completarán URL y modelo.")
+        for provider in providers:
+            print(f"  - {provider.name}: {provider.credential_ref} ({provider.model})")
+        return
+    print("\nLocal LLM credentials found:")
+    print("Credential files are not opened or displayed during detection. Presets supply the URL and model.")
+    for provider in providers:
+        print(f"  - {provider.name}: {provider.credential_ref} ({provider.model})")
+
+
 def _write_credential_file(root: Path, provider_name: str, secret: str) -> str:
     """Store a pasted secret outside project configuration with owner-only permissions."""
     root = root.resolve()
@@ -404,6 +472,12 @@ def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) 
             print(f"  - {provider.name}: {', '.join(details)}")
         if _yes_no("Manter esta configuração LLM" if locale == "pt-BR" else "Keep this LLM configuration", gap=False):
             return saved
+    detected = _detected_providers(root)
+    if detected:
+        _print_detected_providers(locale, detected)
+        question = "Usar esta configuração LLM detectada" if locale == "pt-BR" else "Use this detected LLM configuration"
+        if _yes_no(question, gap=False):
+            return detected
     if not _yes_no(_message(locale, "configure_providers"), gap=False):
         return [ProviderConfig(name="manual", mode="manual")]
     providers: list[ProviderConfig] = []
