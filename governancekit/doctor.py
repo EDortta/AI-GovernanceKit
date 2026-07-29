@@ -64,6 +64,7 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_resume_next_step(repo_root),
         _check_tracked_secret_files(repo_root),
         _check_gitignore_secrets(repo_root),
+        _check_project_config(repo_root),
         _check_host_identity(repo_root),
         _check_sibling_branch(repo_root),
         _check_security_advisories(repo_root),
@@ -213,6 +214,33 @@ def _check_agents_integration_contract(root: Path) -> CheckResult:
     if result.status == "custom-repo":
         return CheckResult("AI-Agents integration contract", True, result.message, advisory=True)
     return CheckResult("AI-Agents integration contract", False, result.message, advisory=True)
+
+
+def _check_project_config(root: Path) -> CheckResult:
+    from .project_config import _PROJECT_CONFIG_FILE, load_project_config
+
+    path = root / _PROJECT_CONFIG_FILE
+    if not path.exists():
+        return CheckResult(
+            "project configuration",
+            False,
+            f"{_PROJECT_CONFIG_FILE} missing — run 'governancekit configure-project plan' before structural work",
+            advisory=True,
+        )
+    config = load_project_config(root)
+    if config is None:
+        return CheckResult(
+            "project configuration",
+            False,
+            f"{_PROJECT_CONFIG_FILE} unreadable — rebuild it with 'governancekit configure-project apply'",
+            advisory=True,
+        )
+    return CheckResult(
+        "project configuration",
+        True,
+        f"{config.project_name} ({config.project_state}) with {len(config.domains)} domain(s)",
+        advisory=True,
+    )
 
 
 def _check_host_identity(root: Path) -> CheckResult:
