@@ -233,6 +233,30 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap_parser.add_argument("--owner", default="operator")
     bootstrap_parser.add_argument("--related-commit", default="planned")
 
+    session_parser = subparsers.add_parser(
+        "config-session",
+        help="Start, inspect, approve, and apply a resumable configuration session.",
+    )
+    session_commands = session_parser.add_subparsers(dest="session_command", required=True)
+    start_parser = session_commands.add_parser("start")
+    start_parser.add_argument("--project-name")
+    start_parser.add_argument("--domain", dest="domains", action="append", default=[])
+    start_parser.add_argument("--capability", dest="capabilities", action="append", default=[])
+    start_parser.add_argument("--agent", dest="agents", action="append", default=[])
+    start_parser.add_argument(
+        "--provider",
+        dest="providers",
+        action="append",
+        default=[],
+        metavar="NAME[:MODE[:CREDENTIAL_REF]]",
+    )
+    start_parser.add_argument("--json", dest="as_json", action="store_true")
+    approve_parser = session_commands.add_parser("approve")
+    approve_parser.add_argument("--approval", required=True)
+    approve_parser.add_argument("--json", dest="as_json", action="store_true")
+    session_commands.add_parser("show").add_argument("--json", dest="as_json", action="store_true")
+    session_commands.add_parser("apply")
+
     return parser
 
 
@@ -623,6 +647,68 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("AI GovernanceKit bootstrap-issue")
         print(f"  epic: {result.epic_dir}")
         for rel in result.files:
+            print(f"  wrote: {rel}")
+        return 0
+
+    if args.command == "config-session":
+        from .config_session import (
+            apply_config_session,
+            format_config_session,
+            grant_config_approval,
+            load_config_session,
+            start_config_session,
+        )
+        from .project_config import parse_provider_specs
+
+        if args.session_command == "show":
+            session = load_config_session(args.root)
+            if session is None:
+                print("No configuration session found.")
+                return 1
+            if getattr(args, "as_json", False):
+                print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
+            else:
+                print(format_config_session(session))
+            return 0
+
+        if args.session_command == "start":
+            try:
+                parse_provider_specs(args.providers)
+            except ValueError as exc:
+                parser.error(str(exc))
+            session = start_config_session(
+                args.root,
+                project_name=args.project_name,
+                domains=args.domains,
+                capabilities=args.capabilities,
+                agents=args.agents,
+                provider_names=args.providers,
+            )
+            if getattr(args, "as_json", False):
+                print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
+            else:
+                print(format_config_session(session))
+            return 0
+
+        if args.session_command == "approve":
+            try:
+                session = grant_config_approval(args.root, args.approval)
+            except RuntimeError as exc:
+                print(f"ERROR: {exc}")
+                return 1
+            if getattr(args, "as_json", False):
+                print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
+            else:
+                print(format_config_session(session))
+            return 0
+
+        try:
+            written = apply_config_session(args.root)
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        print("AI GovernanceKit config-session apply")
+        for rel in written:
             print(f"  wrote: {rel}")
         return 0
 
