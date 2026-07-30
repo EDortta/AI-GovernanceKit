@@ -6,6 +6,7 @@ from contextlib import redirect_stdout
 import pytest
 
 from governancekit import cli, install_agents
+from governancekit.doctor import CheckResult, DoctorResult
 from governancekit.install_agents import InstallResult
 
 
@@ -28,6 +29,27 @@ def test_main_without_command_prints_expanded_help() -> None:
     assert "--upgrade, --docs-only, --force" in output
     assert "--set KEY=VALUE, --operator-name NAME" in output
     assert "a command is required" in output
+
+
+def test_format_doctor_indents_multiline_messages(tmp_path) -> None:
+    result = DoctorResult(
+        root=tmp_path,
+        checks=(
+            CheckResult(
+                "security advisories",
+                False,
+                "review 2 advisory hit(s)\ncategories:\n  - shell injection risk: 1",
+                advisory=True,
+            ),
+        ),
+    )
+
+    output = cli.format_doctor(result)
+
+    assert "[HINT] security advisories:" in output
+    assert "  review 2 advisory hit(s)" in output
+    assert "  categories:" in output
+    assert "    - shell injection risk: 1" in output
 
 
 def test_install_agents_prints_identity_setup_for_unconfigured_host(monkeypatch, tmp_path) -> None:

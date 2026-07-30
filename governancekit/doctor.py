@@ -202,12 +202,12 @@ def _check_security_advisories(root: Path) -> CheckResult:
 
     if hits:
         total = sum(hits.values())
-        summary = ", ".join(f"{label} ×{count}" for label, count in sorted(hits.items()))
-        detail = "; ".join(examples)
+        summary = "\n".join(f"  - {label}: {count}" for label, count in sorted(hits.items()))
+        detail = "\n".join(f"  - {example}" for example in examples)
         return CheckResult(
             name,
             False,
-            f"review {total} advisory hit(s): {summary} — e.g. {detail}",
+            f"review {total} advisory hit(s)\ncategories:\n{summary}\nexamples:\n{detail}",
             advisory=True,
         )
     return CheckResult(name, True, "no security anti-patterns detected", advisory=True)

@@ -349,7 +349,12 @@ def format_doctor(result: DoctorResult) -> str:
             marker = "HINT"
         else:
             marker = "FAIL"
-        lines.append(f"[{marker}] {check.name}: {check.message}")
+        message_lines = check.message.splitlines() or [""]
+        if len(message_lines) == 1:
+            lines.append(f"[{marker}] {check.name}: {message_lines[0]}")
+            continue
+        lines.append(f"[{marker}] {check.name}:")
+        lines.extend(f"  {line}" if line else "" for line in message_lines)
     lines.append("Result: PASS" if result.ok else "Result: FAIL")
     return "\n".join(lines)
 
