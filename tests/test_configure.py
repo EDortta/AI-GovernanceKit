@@ -106,8 +106,37 @@ class ConfigureIdentityTests(unittest.TestCase):
             )
             self.assertFalse(result.saved)
             self.assertIn("host_id", result.missing_required)
-            self.assertIn("instance_path", result.missing_required)
+            self.assertNotIn("instance_path", result.missing_required)
             self.assertIsNone(load_identity(root))
+
+    def test_identity_prefills_existing_operator_and_checkout_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            credentials = root / ".credentials"
+            credentials.mkdir()
+            (credentials / "identity.json").write_text(
+                '{"values": {"OPERATOR_NAME": "Esteban"}}\n', encoding="utf-8"
+            )
+
+            result = run_configure_identity(root, interactive=False)
+
+            self.assertEqual(result.identity.operator_name, "Esteban")
+            self.assertEqual(result.identity.instance_path, str(root.resolve()))
+            self.assertEqual(result.missing_required, ["host_id"])
+
+    def test_identity_does_not_follow_credential_identity_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
+            root, outside = Path(temp_dir), Path(outside_dir)
+            (outside / "identity.json").write_text(
+                '{"values": {"OPERATOR_NAME": "Outside"}}\n', encoding="utf-8"
+            )
+            credentials = root / ".credentials"
+            credentials.mkdir()
+            (credentials / "identity.json").symlink_to(outside / "identity.json")
+
+            result = run_configure_identity(root, interactive=False)
+
+            self.assertEqual(result.identity.operator_name, "")
 
     def test_non_interactive_complete_saves_and_gitignores(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

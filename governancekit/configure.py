@@ -11,6 +11,7 @@ from .identity import (
     Identity,
     identity_from_values,
     load_identity,
+    read_existing_operator_name,
     save_identity,
 )
 from .install_agents import (
@@ -97,6 +98,7 @@ def run_configure_identity(
         interactive = sys.stdin.isatty()
 
     existing = load_identity(root)
+    inherited_operator = read_existing_operator_name(root) if existing is None else ""
     values: dict[str, str] = {}
     for f in ALL_FIELDS:
         if f in preset:
@@ -104,6 +106,10 @@ def run_configure_identity(
         elif existing is not None:
             cur = getattr(existing, f)
             values[f] = ",".join(cur) if isinstance(cur, list) else str(cur)
+        elif f == "operator_name":
+            values[f] = inherited_operator
+        elif f == "instance_path":
+            values[f] = str(root)
         else:
             values[f] = ""
 

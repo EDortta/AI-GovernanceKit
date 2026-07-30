@@ -17,7 +17,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .path_safety import safe_path
+from .path_safety import safe_path, safe_regular_file
 
 # Local, gitignored, per-instance identity file. Lives at the repo root.
 IDENTITY_FILENAME = ".governancekit-identity.json"
@@ -99,6 +99,29 @@ def load_identity(root: Path) -> Identity | None:
         assigned_ports=_coerce_ports(data.get("assigned_ports")),
         branch_ownership=str(data.get("branch_ownership", "") or ""),
     )
+
+
+def read_existing_operator_name(root: Path) -> str:
+    """Read an existing local operator value without following credential links."""
+    root = root.resolve()
+    candidates = (
+        (root / ".gk" / "operator.json", ("metadata", "OPERATOR_NAME")),
+        (root / ".credentials" / "identity.json", ("values", "OPERATOR_NAME")),
+    )
+    for path, keys in candidates:
+        if not safe_regular_file(root, path):
+            continue
+        try:
+            data: object = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for key in keys:
+            if not isinstance(data, dict):
+                break
+            data = data.get(key)
+        if isinstance(data, str) and data.strip():
+            return data.strip()
+    return ""
 
 
 def identity_from_values(values: dict[str, str]) -> Identity:
