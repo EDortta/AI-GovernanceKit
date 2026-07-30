@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from governancekit import install_agents as ia
+from governancekit.path_safety import UnsafePathError
 
 
 def _make_source(src: Path) -> None:
@@ -497,6 +498,17 @@ class InstallAgentsTests(unittest.TestCase):
         self.assertNotIn("docs/required-reading.md", ia._UPGRADE_PATHS)
         # And it seeds into docs/, not .docs/
         self.assertEqual(ia._dest_rel("docs/required-reading.md"), "docs/required-reading.md")
+
+    def test_upgrade_refuses_symlinked_managed_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir, tempfile.TemporaryDirectory() as outside_dir:
+            src, dst, outside = Path(source_dir), Path(target_dir), Path(outside_dir)
+            _make_source(src)
+            (dst / ".docs").symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaises(UnsafePathError):
+                ia._do_upgrade(src, dst, paths=["docs/agents"])
+
+            self.assertFalse((outside / "agents").exists())
 
     def test_fill_placeholders_ignores_doc_example_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

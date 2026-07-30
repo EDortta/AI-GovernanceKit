@@ -4,7 +4,6 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .codemap import SKIP_DIRS
 from .identity import (
     ALL_FIELDS,
     REQUIRED_FIELDS,
@@ -14,7 +13,14 @@ from .identity import (
     load_identity,
     save_identity,
 )
-from .install_agents import _PLACEHOLDER_DESCRIPTIONS, _PLACEHOLDER_RE
+from .install_agents import (
+    _FRESH_PATHS,
+    _PLACEHOLDER_DESCRIPTIONS,
+    _PLACEHOLDER_RE,
+    _PROJECT_SEED_PATHS,
+    _dest_rel,
+)
+from .path_safety import UnsafePathError, safe_path, safe_regular_file
 
 # Text file extensions worth scanning for placeholders. Kept deliberately small —
 # the kit's templates are Markdown / dotfiles / shell.
@@ -133,24 +139,34 @@ def _is_text_file(path: Path) -> bool:
 
 
 def _scan(root: Path) -> dict[str, list[Path]]:
-    """Map each known placeholder token in active, configurable files.
+    """Map each known placeholder token in active kit-owned files.
 
-    In particular, the migration backup is recovery material and may retain the
-    original templates. It must never cause an interactive prompt or be modified.
+    Project-owned documents and migration recovery material are deliberately not
+    scanned or changed by ``configure``.
     """
     found: dict[str, list[Path]] = {}
-    for path in root.rglob("*"):
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
+    for rel in _FRESH_PATHS:
+        if rel in _PROJECT_SEED_PATHS:
             continue
-        if not path.is_file() or not _is_text_file(path):
-            continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for token in _PLACEHOLDER_RE.findall(text):
-            if token in _KNOWN_TOKENS:
-                found.setdefault(token, []).append(path)
+        path = root / _dest_rel(rel)
+        if path.is_dir():
+            safe_path(root, path)
+            candidates = path.rglob("*")
+        else:
+            candidates = (path,)
+        for candidate in candidates:
+            if candidate.is_symlink():
+                raise UnsafePathError(f"refusing symlink in managed kit path: {candidate}")
+            if not safe_regular_file(root, candidate) or not _is_text_file(candidate):
+                continue
+            path = candidate
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for token in _PLACEHOLDER_RE.findall(text):
+                if token in _KNOWN_TOKENS:
+                    found.setdefault(token, []).append(path)
     return found
 
 
@@ -160,7 +176,7 @@ def run_configure(
     preset: dict[str, str] | None = None,
     interactive: bool | None = None,
 ) -> ConfigureResult:
-    """Fill kit placeholder variables across all text files under *root*.
+    """Fill kit placeholder variables only in managed kit files under *root*.
 
     ``preset`` supplies non-interactive ``KEY=VALUE`` answers. Remaining tokens are
     prompted for when a TTY is available (override with ``interactive``). Only

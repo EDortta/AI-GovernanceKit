@@ -12,6 +12,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .path_safety import UnsafePathError, safe_path
+
 REPO = "EDortta/AI-Agents"
 # Pinned to a tagged release (not the mutable "main" branch) so installs are
 # reproducible and can be checksum-verified. Bump alongside KNOWN_TARBALL_SHA256
@@ -483,7 +485,7 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
         if rel in skip:
             continue
         src_path = _resolve_src(src, rel)
-        dst_path = dst / _dest_rel(rel)
+        dst_path = safe_path(dst, dst / _dest_rel(rel))
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         if dst_path.exists():
             if dst_path.is_dir():
@@ -513,7 +515,7 @@ def _reset_readiness_flags(root: Path) -> None:
             "- limits_ready: no",
         ),
     ]:
-        path = root / rel
+        path = safe_path(root, root / rel)
         if path.is_file():
             text = path.read_text(encoding="utf-8", errors="replace")
             path.write_text(text.replace(pattern, replacement), encoding="utf-8")
@@ -534,7 +536,7 @@ def _do_upgrade(
     known = manifest if manifest is not None else {}
     for rel in (paths if paths is not None else _UPGRADE_PATHS):
         src_path = _resolve_src(src, rel)
-        dst_path = dst / _dest_rel(rel)
+        dst_path = safe_path(dst, dst / _dest_rel(rel))
         if not src_path.exists():
             continue
         dst_path.parent.mkdir(parents=True, exist_ok=True)
@@ -565,12 +567,16 @@ def _sync_dir(
     This replaces an earlier ``rmtree`` + ``copytree``, which deleted project rules
     that lived inside kit directories.
     """
+    dst_dir = safe_path(root, dst_dir)
     dst_dir.mkdir(parents=True, exist_ok=True)
+    for existing in dst_dir.rglob("*"):
+        if existing.is_symlink():
+            raise UnsafePathError(f"refusing symlink in managed kit directory: {existing}")
 
     shipped: set[Path] = set()
     for src_file in sorted(p for p in src_dir.rglob("*") if p.is_file()):
         rel = src_file.relative_to(src_dir)
-        target = dst_dir / rel
+        target = safe_path(root, dst_dir / rel)
         target.parent.mkdir(parents=True, exist_ok=True)
         # A kit file the project edited by hand is still kit-owned, so the new version
         # wins — but the edit is real intent and must not vanish silently. Stash it and
@@ -579,7 +585,7 @@ def _sync_dir(
             rel_to_root = target.relative_to(root).as_posix()
             recorded = known.get(rel_to_root)
             if recorded is not None and recorded != _file_sha256(target):
-                backup = root / _STATE_DIR / "overwritten" / rel_to_root
+                backup = safe_path(root, root / _STATE_DIR / "overwritten" / rel_to_root)
                 backup.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(target, backup)
                 overwritten.append(rel_to_root)
@@ -627,9 +633,9 @@ def _read_state(root: Path) -> dict:
     operator" — which makes the upgrade preserve files and ask questions, never
     delete or assume.
     """
-    state = _read_json(root / _STATE_FILE)
-    operator = _read_json(root / _OPERATOR_FILE)
-    secrets = _read_json(root / _SECRETS_FILE)
+    state = _read_json(safe_path(root, root / _STATE_FILE))
+    operator = _read_json(safe_path(root, root / _OPERATOR_FILE))
+    secrets = _read_json(safe_path(root, root / _SECRETS_FILE))
     # Legacy manifests may still carry operator-local fields from before
     # operator.json existed. Ignore them here so a clone never inherits another
     # programmer's identity; the next write strips them from the manifest.
@@ -684,7 +690,7 @@ def _write_state(
     previous = _read_state(root)
     files: dict[str, str] = dict(_state_files(previous))
     for rel in installed:
-        target = root / rel
+        target = safe_path(root, root / rel)
         if target.is_file():
             files[rel] = _file_sha256(target)
         elif target.is_dir():
@@ -699,13 +705,13 @@ def _write_state(
     operator_local = {k: v for k, v in merged_meta.items() if k in _OPERATOR_PLACEHOLDERS}
     sensitive = {k: v for k, v in merged_meta.items() if k in _SENSITIVE_PLACEHOLDERS}
 
-    state_dir = root / _STATE_DIR
+    state_dir = safe_path(root, root / _STATE_DIR)
     state_dir.mkdir(parents=True, exist_ok=True)
     # Self-contained ignore rules, matching the bash installer: manifest.json stays
     # tracked (the team shares it), the credential half and the stash never do. Kept
     # here so the guarantee holds even in a project whose root .gitignore we did not
     # write — the secrets file must never depend on that having gone well.
-    (state_dir / ".gitignore").write_text(
+    safe_path(root, state_dir / ".gitignore").write_text(
         "# Managed by governancekit.\n"
         "# manifest.json is intentionally NOT ignored — the team must share it.\n"
         "operator.json\n"
@@ -715,7 +721,7 @@ def _write_state(
         encoding="utf-8",
     )
 
-    (root / _STATE_FILE).write_text(
+    safe_path(root, root / _STATE_FILE).write_text(
         json.dumps(
             {
                 "state_version": _STATE_VERSION,
@@ -731,7 +737,7 @@ def _write_state(
         encoding="utf-8",
     )
 
-    operator_path = root / _OPERATOR_FILE
+    operator_path = safe_path(root, root / _OPERATOR_FILE)
     if operator_local:
         operator_path.write_text(
             json.dumps(
@@ -749,7 +755,7 @@ def _write_state(
     # Written only when there is something to write, so a project with no secrets
     # never grows a confusing empty file.
     if sensitive:
-        secrets_path = root / _SECRETS_FILE
+        secrets_path = safe_path(root, root / _SECRETS_FILE)
         secrets_path.write_text(
             json.dumps(
                 {"state_version": _STATE_VERSION, "metadata": sensitive},
@@ -777,8 +783,8 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
 
     Returns ``(migrated, notes)`` where *notes* is a human-readable report.
     """
-    docs = root / "docs"
-    dotdocs = root / ".docs"
+    docs = safe_path(root, root / "docs")
+    dotdocs = safe_path(root, root / ".docs")
     # Legacy markers must be KIT-SPECIFIC. A generic name like docs/software-overview.md
     # is a common project filename; triggering on it would relocate a non-kit project's
     # whole docs/ (e.g. a GitHub Pages site) into the hidden .docs/. Require a marker a
@@ -787,6 +793,10 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
     markers = [docs / "agents", docs / "workflows" / "session-close.md"]
     if not docs.is_dir() or not any(m.exists() for m in markers):
         return False, []
+
+    for path in docs.rglob("*"):
+        if path.is_symlink():
+            raise UnsafePathError(f"refusing symlink in legacy migration source: {path}")
 
     notes: list[str] = []
     # A pre-existing .docs/ usually means migration already completed → the marker
@@ -861,7 +871,7 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
 
 def _ensure_project_docs(root: Path) -> None:
     """Seed missing project-owned docs without overwriting project content."""
-    project_dir = root / _PROJECT_DOCS_DIR
+    project_dir = safe_path(root, root / _PROJECT_DOCS_DIR)
     project_dir.mkdir(parents=True, exist_ok=True)
 
     readme = project_dir / "README.md"
@@ -876,7 +886,7 @@ def _ensure_project_docs(root: Path) -> None:
 # ── track-kit-docs config ─────────────────────────────────────────────────────────
 
 def _read_kit_config(root: Path) -> dict:
-    path = root / _CONFIG_FILE
+    path = safe_path(root, root / _CONFIG_FILE)
     if not path.is_file():
         return {}
     try:
@@ -886,7 +896,7 @@ def _read_kit_config(root: Path) -> dict:
 
 
 def _write_kit_config(root: Path, config: dict) -> None:
-    path = root / _CONFIG_FILE
+    path = safe_path(root, root / _CONFIG_FILE)
     path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
@@ -1096,6 +1106,7 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
 
 
 def _update_gitignore(gitignore: Path, paths: list[str], *, track_kit_docs: bool = False) -> None:
+    gitignore = safe_path(gitignore.parent, gitignore)
     existing = gitignore.read_text(encoding="utf-8") if gitignore.is_file() else ""
     cleaned = _remove_section_text(existing)
     entries = "\n".join(_gitignore_entries(paths, track_kit_docs=track_kit_docs))

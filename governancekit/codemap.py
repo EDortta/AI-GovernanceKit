@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .path_safety import safe_path, safe_regular_file
+
 
 # ── constants ──────────────────────────────────────────────────────────────────
 
@@ -123,7 +125,9 @@ def run_map(
     root = root.resolve()
     if output is None:
         output = root / 'docs' / 'codemap.md'
-    output = output.resolve()
+    elif not output.is_absolute():
+        output = root / output
+    output = safe_path(root, output)
 
     gitignore_patterns = _load_gitignore(root)
 
@@ -136,7 +140,7 @@ def run_map(
         entry_points=tuple(_detect_entry_points(root)),
     )
 
-    output.parent.mkdir(parents=True, exist_ok=True)
+    safe_path(root, output.parent).mkdir(parents=True, exist_ok=True)
     output.write_text(_render_markdown(result), encoding='utf-8')
     return result
 
@@ -200,10 +204,12 @@ def _walk_source(directory: Path, root: Path, patterns: list[str]):
         rel = item.relative_to(root)
         if _is_gitignored(rel, patterns):
             continue
+        if item.is_symlink():
+            continue
         if item.is_dir():
             if not _should_skip_dir(item.name):
                 yield from _walk_source(item, root, patterns)
-        elif item.is_file() and _should_include(item):
+        elif safe_regular_file(root, item) and _should_include(item):
             yield item
 
 

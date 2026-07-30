@@ -17,6 +17,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .path_safety import safe_path
+
 # Local, gitignored, per-instance identity file. Lives at the repo root.
 IDENTITY_FILENAME = ".governancekit-identity.json"
 
@@ -66,7 +68,8 @@ class Identity:
 
 
 def identity_path(root: Path) -> Path:
-    return root.resolve() / IDENTITY_FILENAME
+    root = root.resolve()
+    return safe_path(root, root / IDENTITY_FILENAME)
 
 
 def _coerce_ports(value: object) -> list[str]:
@@ -129,7 +132,8 @@ def save_identity(root: Path, identity: Identity) -> Path:
 
 def ensure_gitignored(root: Path) -> bool:
     """Ensure the identity file is listed in .gitignore. Returns True if changed."""
-    gitignore = root.resolve() / ".gitignore"
+    root = root.resolve()
+    gitignore = safe_path(root, root / ".gitignore")
     entry = IDENTITY_FILENAME
     existing = ""
     if gitignore.is_file():

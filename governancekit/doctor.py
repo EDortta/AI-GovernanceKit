@@ -31,6 +31,7 @@ _CODEMAP_SKIP: frozenset[str] = frozenset({
     '.tox', '.venv', 'venv', 'env',
     'dist', 'build',
     '.mypy_cache', '.pytest_cache', '.ruff_cache',
+    '.docs-migration-bak',
 })
 
 _CODEMAP_SOURCE_EXTENSIONS: frozenset[str] = frozenset({
@@ -118,6 +119,8 @@ def _iter_source_files(root: Path):
         except (PermissionError, OSError):
             continue
         for item in items:
+            if item.is_symlink():
+                continue
             if item.is_dir():
                 if item.name in _CODEMAP_SKIP or item.name.endswith((".egg-info", ".dist-info")):
                     continue
@@ -559,6 +562,8 @@ def _count_newer_source_files(root: Path, since: float) -> int:
     except PermissionError:
         return 0
     for item in items:
+        if item.is_symlink():
+            continue
         if item.is_dir():
             if item.name not in _CODEMAP_SKIP and not item.name.endswith(('.egg-info', '.dist-info')):
                 count += _count_newer_source_files(item, since)

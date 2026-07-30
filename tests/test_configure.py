@@ -10,6 +10,7 @@ from governancekit.configure import (
     run_configure_identity,
 )
 from governancekit.identity import load_identity
+from governancekit.path_safety import UnsafePathError
 
 
 class ConfigureTests(unittest.TestCase):
@@ -21,7 +22,7 @@ class ConfigureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_set_pairs(["NOEQUALS"])
 
-    def test_fills_known_placeholder_across_files(self) -> None:
+    def test_fills_known_placeholder_without_touching_project_docs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             (root / "AGENTS.md").write_text("Hi {{OPERATOR_NAME}}\n", encoding="utf-8")
@@ -31,9 +32,9 @@ class ConfigureTests(unittest.TestCase):
             result = run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
 
             self.assertEqual(result.values, {"OPERATOR_NAME": "Ann"})
-            self.assertEqual(len(result.changed_files), 2)
+            self.assertEqual(result.changed_files, ["AGENTS.md"])
             self.assertNotIn("{{OPERATOR_NAME}}", (root / "AGENTS.md").read_text())
-            self.assertNotIn("{{OPERATOR_NAME}}", (root / "docs" / "x.md").read_text())
+            self.assertIn("{{OPERATOR_NAME}}", (root / "docs" / "x.md").read_text())
 
     def test_ignores_unknown_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -68,6 +69,18 @@ class ConfigureTests(unittest.TestCase):
             self.assertEqual(result.found_tokens, [])
             self.assertEqual(result.changed_files, [])
             self.assertEqual(backup_file.read_text(encoding="utf-8"), original)
+
+    def test_refuses_symlinked_managed_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
+            root = Path(temp_dir)
+            outside = Path(outside_dir) / "outside.md"
+            outside.write_text("owner: {{OPERATOR_NAME}}\n", encoding="utf-8")
+            (root / "AGENTS.md").symlink_to(outside)
+
+            with self.assertRaises(UnsafePathError):
+                run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
+
+            self.assertIn("{{OPERATOR_NAME}}", outside.read_text(encoding="utf-8"))
 
 
 class ConfigureIdentityTests(unittest.TestCase):
