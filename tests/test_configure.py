@@ -82,6 +82,20 @@ class ConfigureTests(unittest.TestCase):
 
             self.assertIn("{{OPERATOR_NAME}}", outside.read_text(encoding="utf-8"))
 
+    def test_ignores_credential_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
+            root = Path(temp_dir)
+            outside = Path(outside_dir) / "credential.json"
+            outside.write_text('{"token": "unchanged"}\n', encoding="utf-8")
+            credentials = root / ".credentials"
+            credentials.mkdir()
+            (credentials / "jira.json").symlink_to(outside)
+
+            result = run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
+
+            self.assertEqual(result.found_tokens, [])
+            self.assertEqual(outside.read_text(encoding="utf-8"), '{"token": "unchanged"}\n')
+
 
 class ConfigureIdentityTests(unittest.TestCase):
     def test_non_interactive_missing_required_does_not_save(self) -> None:

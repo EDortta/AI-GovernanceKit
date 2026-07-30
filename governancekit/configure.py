@@ -38,6 +38,11 @@ _TEXT_NAMES: frozenset[str] = frozenset({
 # the doctor's own `[FAIL]` / `[HINT]` output samples in README) are left alone.
 _KNOWN_TOKENS: frozenset[str] = frozenset(_PLACEHOLDER_DESCRIPTIONS)
 
+# Credentials are local project state, not kit templates. They may intentionally
+# contain symlinks to a private credential store and must never be read or changed
+# by ``configure``.
+_CONFIGURE_EXCLUDED_PATHS: frozenset[str] = frozenset({".credentials"})
+
 
 @dataclass
 class ConfigureResult:
@@ -146,7 +151,7 @@ def _scan(root: Path) -> dict[str, list[Path]]:
     """
     found: dict[str, list[Path]] = {}
     for rel in _FRESH_PATHS:
-        if rel in _PROJECT_SEED_PATHS:
+        if rel in _PROJECT_SEED_PATHS or rel in _CONFIGURE_EXCLUDED_PATHS:
             continue
         path = root / _dest_rel(rel)
         if path.is_dir():
