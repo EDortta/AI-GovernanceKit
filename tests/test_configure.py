@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from governancekit.configure import (
     parse_set_pairs,
@@ -118,11 +119,15 @@ class ConfigureIdentityTests(unittest.TestCase):
                 '{"values": {"OPERATOR_NAME": "Esteban"}}\n', encoding="utf-8"
             )
 
-            result = run_configure_identity(root, interactive=False)
+            with patch("governancekit.configure.socket.gethostname", return_value="devel3"), patch(
+                "builtins.input", return_value=""
+            ):
+                result = run_configure_identity(root, interactive=True)
 
             self.assertEqual(result.identity.operator_name, "Esteban")
             self.assertEqual(result.identity.instance_path, str(root.resolve()))
-            self.assertEqual(result.missing_required, ["host_id"])
+            self.assertEqual(result.identity.host_id, "devel3")
+            self.assertEqual(result.missing_required, [])
 
     def test_identity_does_not_follow_credential_identity_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:

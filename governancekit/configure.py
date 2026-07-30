@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -110,6 +111,8 @@ def run_configure_identity(
             values[f] = inherited_operator
         elif f == "instance_path":
             values[f] = str(root)
+        elif f == "host_id" and interactive:
+            values[f] = socket.gethostname()
         else:
             values[f] = ""
 
