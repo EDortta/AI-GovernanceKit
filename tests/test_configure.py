@@ -54,6 +54,21 @@ class ConfigureTests(unittest.TestCase):
 
             self.assertEqual(result.unfilled, ["GITHUB_OWNER"])
 
+    def test_ignores_placeholders_in_migration_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup = root / ".docs-migration-bak"
+            backup.mkdir()
+            original = "owner: {{OPERATOR_NAME}}\n"
+            backup_file = backup / "AGENTS.md"
+            backup_file.write_text(original, encoding="utf-8")
+
+            result = run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
+
+            self.assertEqual(result.found_tokens, [])
+            self.assertEqual(result.changed_files, [])
+            self.assertEqual(backup_file.read_text(encoding="utf-8"), original)
+
 
 class ConfigureIdentityTests(unittest.TestCase):
     def test_non_interactive_missing_required_does_not_save(self) -> None:

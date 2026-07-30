@@ -15,6 +15,9 @@ SKIP_DIRS: frozenset[str] = frozenset({
     'dist', 'build',
     '.mypy_cache', '.pytest_cache', '.ruff_cache',
     '.idea', '.vscode',
+    # Complete pre-migration copy. It is recovery material, not active project
+    # content: never map it or let `configure` mutate its old placeholders.
+    '.docs-migration-bak',
 })
 
 SOURCE_EXTENSIONS: frozenset[str] = frozenset({

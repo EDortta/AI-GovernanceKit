@@ -133,7 +133,11 @@ def _is_text_file(path: Path) -> bool:
 
 
 def _scan(root: Path) -> dict[str, list[Path]]:
-    """Map each known placeholder token to the files that still contain it."""
+    """Map each known placeholder token in active, configurable files.
+
+    In particular, the migration backup is recovery material and may retain the
+    original templates. It must never cause an interactive prompt or be modified.
+    """
     found: dict[str, list[Path]] = {}
     for path in root.rglob("*"):
         if any(part in SKIP_DIRS for part in path.relative_to(root).parts):

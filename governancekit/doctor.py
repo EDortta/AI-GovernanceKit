@@ -325,7 +325,7 @@ def _check_unfilled_placeholders(root: Path) -> CheckResult:
         return CheckResult(
             "unfilled placeholders",
             False,
-            f"kit not configured — run 'governancekit install-agents' to fill: {detail}",
+            f"kit not configured — run 'governancekit configure' to fill: {detail}",
         )
     return CheckResult("unfilled placeholders", True, "all placeholders filled")
 

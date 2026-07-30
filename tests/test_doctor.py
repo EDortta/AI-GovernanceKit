@@ -124,6 +124,18 @@ class DoctorTests(unittest.TestCase):
             check = next(c for c in result.checks if c.name == "unfilled placeholders")
             self.assertTrue(check.passed)
 
+    def test_placeholder_guidance_uses_configure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "AGENTS.md").write_text("owner: {{OPERATOR_NAME}}\n", encoding="utf-8")
+
+            result = run_doctor(root)
+
+            check = next(c for c in result.checks if c.name == "unfilled placeholders")
+            self.assertFalse(check.passed)
+            self.assertIn("governancekit configure", check.message)
+
     def test_missing_project_config_is_advisory_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
