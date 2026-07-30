@@ -560,9 +560,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             docs_state = "tracked in git" if result.track_kit_docs else "gitignored"
             print(f".gitignore updated: {result.gitignore_path} (.docs/ {docs_state})")
         if result.awt_message:
-            label = "awt" if result.awt_installed else "awt (manual step needed)"
             for line in result.awt_message.splitlines():
-                print(f"{label}: {line}")
+                print(f"awt: {line}")
         if not args.docs_only and not args.skip_project_configuration:
             if sys.stdin.isatty():
                 answer = input("Review project scope now? [Y/n] ").strip().lower()

@@ -345,8 +345,6 @@ def run_install_agents(
 
     if install_awt and _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
         result.awt_installed, result.awt_message = _install_awt(root)
-    elif _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
-        result.awt_message = "skipped (pass --install-awt to symlink 'awt' onto PATH)"
     return result
 
 
