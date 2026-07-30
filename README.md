@@ -147,6 +147,10 @@ governancekit --root "$PWD" configure                       # re-fill [PLACEHOLD
 It defaults to the current directory; use an absolute path when operating on a
 different checkout. `--target` belongs only to the legacy AI-Agents shell installer.
 
+After a fresh install, run `governancekit --root "$PWD" configure` once for each
+host/checkout. It writes the local, gitignored `.governancekit-identity.json` required
+by `doctor` before governed work can start.
+
 `docs/` is yours to track; the kit lives under `.docs/` and is overwritten on
 upgrade. `install-agents` asks whether to track `.docs/` in git (saved to
 `.governancekit`); secrets stay gitignored regardless. Legacy installs (kit in

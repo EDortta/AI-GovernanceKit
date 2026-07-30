@@ -78,11 +78,25 @@ class InstallAgentsTests(unittest.TestCase):
             root = Path(temp_dir)
             ia._ensure_project_docs(root)
             readme = root / ia._PROJECT_DOCS_DIR / "README.md"
+            required_reading = root / ia._PROJECT_DOCS_DIR / "required-reading.md"
             self.assertTrue(readme.is_file())
+            self.assertEqual(required_reading.read_text(encoding="utf-8").splitlines()[-1], "- (none)")
 
             readme.write_text("custom\n", encoding="utf-8")
             ia._ensure_project_docs(root)
             self.assertEqual(readme.read_text(), "custom\n")
+
+    def test_ensure_project_docs_adds_missing_index_to_existing_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            docs = root / ia._PROJECT_DOCS_DIR
+            docs.mkdir()
+            (docs / "README.md").write_text("project docs\n", encoding="utf-8")
+
+            ia._ensure_project_docs(root)
+
+            self.assertEqual((docs / "README.md").read_text(encoding="utf-8"), "project docs\n")
+            self.assertTrue((docs / "required-reading.md").is_file())
 
     def test_docs_only_installs_into_dotdocs(self) -> None:
         with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:

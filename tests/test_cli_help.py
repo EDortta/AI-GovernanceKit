@@ -28,6 +28,22 @@ def test_main_without_command_prints_expanded_help() -> None:
     assert "a command is required" in output
 
 
+def test_install_agents_prints_identity_setup_for_unconfigured_host(monkeypatch, tmp_path) -> None:
+    result = InstallResult(target=tmp_path, upgraded=False)
+    monkeypatch.setattr(
+        "governancekit.install_agents.run_install_agents", lambda *_args, **_kwargs: result
+    )
+    stdout = io.StringIO()
+
+    with redirect_stdout(stdout):
+        code = cli.main(["--root", str(tmp_path), "install-agents", "--skip-project-configuration"])
+
+    output = stdout.getvalue()
+    assert code == 0
+    assert "Next required local setup (per host/checkout):" in output
+    assert f"governancekit --root {tmp_path} configure" in output
+
+
 def test_install_agents_does_not_report_optional_awt_as_manual_step(
     monkeypatch, tmp_path
 ) -> None:

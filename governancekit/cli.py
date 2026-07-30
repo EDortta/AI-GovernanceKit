@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -566,6 +567,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if result.awt_message:
             for line in result.awt_message.splitlines():
                 print(f"awt: {line}")
+        if not args.docs_only:
+            from .identity import load_identity
+
+            if load_identity(args.root) is None:
+                root_command = shlex.quote(str(args.root.resolve()))
+                print("Next required local setup (per host/checkout):")
+                print(f"  governancekit --root {root_command} configure")
         if not args.docs_only and not args.skip_project_configuration:
             if sys.stdin.isatty():
                 answer = input("Review project scope now? [Y/n] ").strip().lower()

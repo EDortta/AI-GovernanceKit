@@ -130,6 +130,14 @@ List the documents an agent must read before analysing or implementing an issue 
 `docs/required-reading.md`.
 """
 
+_PROJECT_REQUIRED_READING = """# Required Reading
+
+List the project documents an agent must read before analysing or implementing an
+issue. Keep `- (none)` only when there are genuinely no additional documents.
+
+- (none)
+"""
+
 # Kit-owned doc paths that legacy projects keep in docs/ and must be migrated to
 # .docs/ (source/dest share the trailing name). Includes the seed templates.
 # NB: HTML landing pages (index.html/concepts.html) are intentionally EXCLUDED. The
@@ -852,13 +860,17 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
 # ── project-owned docs ──────────────────────────────────────────────────────────
 
 def _ensure_project_docs(root: Path) -> None:
-    """Create the project-owned ``docs/`` folder once, never overwrite it."""
+    """Seed missing project-owned docs without overwriting project content."""
     project_dir = root / _PROJECT_DOCS_DIR
-    readme = project_dir / "README.md"
-    if readme.exists():
-        return
     project_dir.mkdir(parents=True, exist_ok=True)
-    readme.write_text(_PROJECT_DOCS_README, encoding="utf-8")
+
+    readme = project_dir / "README.md"
+    if not readme.exists():
+        readme.write_text(_PROJECT_DOCS_README, encoding="utf-8")
+
+    required_reading = project_dir / "required-reading.md"
+    if not required_reading.exists():
+        required_reading.write_text(_PROJECT_REQUIRED_READING, encoding="utf-8")
 
 
 # ── track-kit-docs config ─────────────────────────────────────────────────────────
