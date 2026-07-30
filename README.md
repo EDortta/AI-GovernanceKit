@@ -137,11 +137,15 @@ python3 -m governancekit install-hooks --hook-type pre-commit
 ### Installing & updating the AI-Agents kit
 
 ```bash
-governancekit install-agents                 # fresh install (kit → .docs/, project owns docs/, prompts for variables)
-governancekit install-agents --upgrade       # update all kit-owned files, preserve project state
-governancekit install-agents --docs-only     # update only kit docs (not AGENTS.md / rule files)
-governancekit configure                       # re-fill [PLACEHOLDER] variables without reinstalling
+governancekit --root "$PWD" install-agents                 # fresh install (kit → .docs/, project owns docs/, prompts for variables)
+governancekit --root "$PWD" install-agents --upgrade       # update all kit-owned files, preserve project state
+governancekit --root "$PWD" install-agents --docs-only     # update only kit docs (not AGENTS.md / rule files)
+governancekit --root "$PWD" configure                       # re-fill [PLACEHOLDER] variables without reinstalling
 ```
+
+`--root` is the canonical project selector and must appear before the command.
+It defaults to the current directory; use an absolute path when operating on a
+different checkout. `--target` belongs only to the legacy AI-Agents shell installer.
 
 `docs/` is yours to track; the kit lives under `.docs/` and is overwritten on
 upgrade. `install-agents` asks whether to track `.docs/` in git (saved to

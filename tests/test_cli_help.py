@@ -21,6 +21,8 @@ def test_main_without_command_prints_expanded_help() -> None:
     assert "context             Inspect or build a deterministic task context." in output
     assert "voice-integration   Detect optional AI-ListenToMeOnCLI availability." in output
     assert "Common command options:" in output
+    assert "Target a project explicitly" in output
+    assert "governancekit --root /absolute/path COMMAND [OPTIONS]" in output
     assert "--upgrade, --docs-only, --force" in output
     assert "--set KEY=VALUE, --operator-name NAME" in output
     assert "a command is required" in output

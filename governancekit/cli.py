@@ -11,6 +11,10 @@ from .context import ContextError, build_context, format_context
 
 
 _ROOT_HELP_EPILOG = """Common command options:
+  Target a project explicitly
+    governancekit --root /absolute/path COMMAND [OPTIONS]
+    --root is global and must precede the command; it defaults to the current directory.
+
   doctor
     --json
   discover
