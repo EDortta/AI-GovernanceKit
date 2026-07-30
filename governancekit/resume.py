@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,7 +48,7 @@ def _load_identity_context(root: Path) -> tuple[str, str, str, str]:
     active_branch = current_branch(root)
     if identity is None:
         return '', '', active_branch, (
-            'No host identity found — run governancekit configure to declare '
+            f'No host identity found — run governancekit --root {shlex.quote(str(root.resolve()))} configure to declare '
             'operator_name/host_id/instance_path.'
         )
     warning = sibling_branch_conflict(identity, active_branch)
@@ -67,7 +68,7 @@ def run_resume(root: Path) -> ResumeResult:
             work_id='', branch='', status='',
             next_step='',
             handoff=None,
-            warning='No RESUME.md found under docs/issues/ — run governancekit doctor for details.',
+            warning=f'No RESUME.md found under docs/issues/ — run governancekit --root {shlex.quote(str(root))} doctor for details.',
             operator_name=operator_name,
             host_id=host_id,
             active_branch=active_branch,

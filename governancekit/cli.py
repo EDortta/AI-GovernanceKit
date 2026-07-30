@@ -218,7 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     configure_parser = subparsers.add_parser(
         "configure",
-        help="Fill kit placeholder variables (e.g. {{OPERATOR_NAME}}) across all docs.",
+        help="Fill managed kit placeholders and configure this host/checkout identity.",
     )
     configure_parser.add_argument(
         "--set",
@@ -570,7 +570,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not args.docs_only:
             from .identity import load_identity
 
-            if load_identity(args.root) is None:
+            identity = load_identity(args.root)
+            if identity is None or identity.missing_required():
                 root_command = shlex.quote(str(args.root.resolve()))
                 print("Next required local setup (per host/checkout):")
                 print(f"  governancekit --root {root_command} configure")
@@ -604,7 +605,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         return 1
                     print(format_config_session(session, args.root))
             else:
-                print("Run: governancekit config-session start --interactive to review project scope.")
+                root_command = shlex.quote(str(args.root.resolve()))
+                print(f"Run: governancekit --root {root_command} config-session start --interactive to review project scope.")
         return 0
 
     if args.command == "configure":

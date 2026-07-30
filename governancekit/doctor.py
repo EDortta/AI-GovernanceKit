@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -72,6 +73,10 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_codemap(repo_root),
     ]
     return DoctorResult(root=repo_root, checks=tuple(checks))
+
+
+def _command(root: Path, command: str) -> str:
+    return f"governancekit --root {shlex.quote(str(root.resolve()))} {command}"
 
 
 # ── security advisories (security-standards §1–§4, §7–§11) ────────────────────────
@@ -227,7 +232,7 @@ def _check_project_config(root: Path) -> CheckResult:
         return CheckResult(
             "project configuration",
             False,
-            f"{_PROJECT_CONFIG_FILE} missing — run 'governancekit configure-project plan' before structural work",
+            f"{_PROJECT_CONFIG_FILE} missing — run '{_command(root, 'configure-project plan')}' before structural work",
             advisory=True,
         )
     config = load_project_config(root)
@@ -235,7 +240,7 @@ def _check_project_config(root: Path) -> CheckResult:
         return CheckResult(
             "project configuration",
             False,
-            f"{_PROJECT_CONFIG_FILE} unreadable — rebuild it with 'governancekit configure-project apply'",
+            f"{_PROJECT_CONFIG_FILE} unreadable — rebuild it with '{_command(root, 'configure-project apply')}'",
             advisory=True,
         )
     return CheckResult(
@@ -263,7 +268,7 @@ def _check_host_identity(root: Path) -> CheckResult:
         return CheckResult(
             "host identity",
             False,
-            f"{IDENTITY_FILENAME} missing — run 'governancekit configure' to "
+            f"{IDENTITY_FILENAME} missing or unreadable — run '{_command(root, 'configure')}' to "
             "collect operator_name, host_id and instance_path",
         )
     missing = identity.missing_required()
@@ -272,7 +277,7 @@ def _check_host_identity(root: Path) -> CheckResult:
             "host identity",
             False,
             f"{IDENTITY_FILENAME} incomplete — missing: {', '.join(missing)}; "
-            "run 'governancekit configure' to complete it",
+            f"run '{_command(root, 'configure')}' to complete it",
         )
     return CheckResult(
         "host identity",
@@ -328,7 +333,7 @@ def _check_unfilled_placeholders(root: Path) -> CheckResult:
         return CheckResult(
             "unfilled placeholders",
             False,
-            f"kit not configured — run 'governancekit configure' to fill: {detail}",
+            f"kit not configured — run '{_command(root, 'configure')}' to fill: {detail}",
         )
     return CheckResult("unfilled placeholders", True, "all placeholders filled")
 
@@ -579,7 +584,7 @@ def _check_codemap(root: Path) -> CheckResult:
         return CheckResult(
             "codemap",
             False,
-            "docs/codemap.md missing — run 'governancekit map' to generate it",
+            f"docs/codemap.md missing — run '{_command(root, 'map')}' to generate it",
             advisory=True,
         )
     since = codemap.stat().st_mtime
@@ -588,7 +593,7 @@ def _check_codemap(root: Path) -> CheckResult:
         return CheckResult(
             "codemap",
             False,
-            f"docs/codemap.md is stale ({stale_count} source file(s) changed) — run 'governancekit map'",
+            f"docs/codemap.md is stale ({stale_count} source file(s) changed) — run '{_command(root, 'map')}'",
             advisory=True,
         )
     return CheckResult("codemap", True, "docs/codemap.md is up to date")

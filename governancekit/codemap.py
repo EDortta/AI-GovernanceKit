@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import datetime
 import json
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -406,7 +407,7 @@ def _render_markdown(result: MapResult) -> str:
         f'# Code Map · {result.project_name}',
         '',
         f'> Generated: {result.generated_at} · Root: `{result.root}`',
-        f'> Refresh: `governancekit map`',
+        f'> Refresh: `governancekit --root {shlex.quote(str(result.root))} map`',
         '',
         f'{result.file_count} file(s) · {result.symbol_count} symbol(s) indexed',
         '',

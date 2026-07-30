@@ -64,7 +64,8 @@ Three CLI commands are available:
   `contract-change`, `security-sensitive`, etc.).
 
 - **`governancekit config-session`** — turns configuration into a resumable,
-  approval-gated session. `config-session start --interactive` loads every
+  locally acknowledged session; it is not an independent authorization boundary.
+  `config-session start --interactive` loads every
   available source named by `docs/required-reading.md`, invokes the chosen,
   locally authenticated agent in read-only mode to propose domains with source
   evidence, then records the reviewed agent, domains, owned capabilities, LLM

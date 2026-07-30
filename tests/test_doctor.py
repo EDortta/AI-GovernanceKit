@@ -134,7 +134,8 @@ class DoctorTests(unittest.TestCase):
 
             check = next(c for c in result.checks if c.name == "unfilled placeholders")
             self.assertFalse(check.passed)
-            self.assertIn("governancekit configure", check.message)
+            self.assertIn("governancekit --root", check.message)
+            self.assertIn("configure", check.message)
 
     def test_missing_project_config_is_advisory_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

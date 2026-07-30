@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -179,13 +180,13 @@ def format_config_session(session: ConfigSession, root: Path | None = None) -> s
         for note in session.notes:
             lines.append(f"  - {note}")
     if session.status == "pending_approval":
-        prefix = f"governancekit --root {root} config-session" if root else "governancekit config-session"
+        prefix = f"governancekit --root {shlex.quote(str(root.resolve()))} config-session" if root else "governancekit config-session"
         missing = [approval for approval in session.approvals_required if approval not in session.approvals_granted]
         lines.extend(
             [
                 "",
                 "meaning: the configuration plan is saved but has not been applied.",
-                "Approval tokens are granted locally with the commands below; no separate tool is required.",
+                "These are local acknowledgements, not independent authorization or access control.",
                 "approvals still needed:",
             ]
         )
@@ -196,22 +197,22 @@ def format_config_session(session: ConfigSession, root: Path | None = None) -> s
                 lines.append("  - project-config-review: review the domains, capabilities, agents, and providers in the plan.")
             else:
                 lines.append(f"  - {approval}: review the change required by this approval token.")
-            lines.append(f"    grant: {prefix} approve --approval {approval}")
+            lines.append(f"    acknowledge: {prefix} approve --approval {approval}")
         lines.extend(
             [
                 "",
-                "After every required approval is granted:",
+                "After every required local acknowledgement is recorded:",
                 f"  {prefix} show",
                 f"  {prefix} apply",
                 "The approved configuration will be written to .gk/project-config.json and docs/project-configuration.md.",
             ]
         )
     elif session.status == "approved":
-        prefix = f"governancekit --root {root} config-session" if root else "governancekit config-session"
+        prefix = f"governancekit --root {shlex.quote(str(root.resolve()))} config-session" if root else "governancekit config-session"
         lines.extend(
             [
                 "",
-                "meaning: all required approvals are granted; the plan is ready to apply.",
+                "meaning: all required local acknowledgements are recorded; the plan is ready to apply.",
                 f"apply: {prefix} apply",
             ]
         )
@@ -219,8 +220,8 @@ def format_config_session(session: ConfigSession, root: Path | None = None) -> s
         lines.extend(
             [
                 "",
-                "meaning: the approved configuration has been written to the project.",
-                "inspect: governancekit configure-project show",
+                "meaning: the locally acknowledged configuration has been written to the project.",
+                f"inspect: governancekit --root {shlex.quote(str(root.resolve()))} configure-project show" if root else "inspect: governancekit configure-project show",
             ]
         )
     return "\n".join(lines)

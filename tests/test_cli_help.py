@@ -44,6 +44,23 @@ def test_install_agents_prints_identity_setup_for_unconfigured_host(monkeypatch,
     assert f"governancekit --root {tmp_path} configure" in output
 
 
+def test_install_agents_prints_identity_setup_for_incomplete_identity(monkeypatch, tmp_path) -> None:
+    result = InstallResult(target=tmp_path, upgraded=False)
+    monkeypatch.setattr(
+        "governancekit.install_agents.run_install_agents", lambda *_args, **_kwargs: result
+    )
+    (tmp_path / ".governancekit-identity.json").write_text(
+        '{"operator_name": "Ann"}\n', encoding="utf-8"
+    )
+    stdout = io.StringIO()
+
+    with redirect_stdout(stdout):
+        code = cli.main(["--root", str(tmp_path), "install-agents", "--skip-project-configuration"])
+
+    assert code == 0
+    assert "Next required local setup (per host/checkout):" in stdout.getvalue()
+
+
 def test_install_agents_does_not_report_optional_awt_as_manual_step(
     monkeypatch, tmp_path
 ) -> None:
