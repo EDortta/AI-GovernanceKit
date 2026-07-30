@@ -113,6 +113,8 @@ def run_configure_identity(
             values[f] = str(root)
         elif f == "host_id" and interactive:
             values[f] = socket.gethostname()
+        elif f == "branch_ownership" and interactive:
+            values[f] = "all"
         else:
             values[f] = ""
 

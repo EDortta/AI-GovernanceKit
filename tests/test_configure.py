@@ -11,6 +11,7 @@ from governancekit.configure import (
     run_configure_identity,
 )
 from governancekit.identity import load_identity
+from governancekit.identity import Identity, sibling_branch_conflict
 from governancekit.path_safety import UnsafePathError
 
 
@@ -99,6 +100,9 @@ class ConfigureTests(unittest.TestCase):
 
 
 class ConfigureIdentityTests(unittest.TestCase):
+    def test_all_branch_ownership_allows_any_branch(self) -> None:
+        identity = Identity(sibling_path="/other", branch_ownership="all")
+        self.assertEqual(sibling_branch_conflict(identity, "development"), "")
     def test_non_interactive_missing_required_does_not_save(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -127,6 +131,7 @@ class ConfigureIdentityTests(unittest.TestCase):
             self.assertEqual(result.identity.operator_name, "Esteban")
             self.assertEqual(result.identity.instance_path, str(root.resolve()))
             self.assertEqual(result.identity.host_id, "devel3")
+            self.assertEqual(result.identity.branch_ownership, "all")
             self.assertEqual(result.missing_required, [])
 
     def test_identity_does_not_follow_credential_identity_symlink(self) -> None:

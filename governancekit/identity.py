@@ -36,7 +36,7 @@ _FIELD_DESCRIPTIONS: dict[str, str] = {
     "instance_path": "absolute path of this instance's checkout",
     "sibling_path": "path(s) of sibling instance(s), if any (comma-separated)",
     "assigned_ports": "ports reserved by this instance (comma-separated)",
-    "branch_ownership": "which branch(es) this instance owns on shared-branch projects",
+    "branch_ownership": "branches this instance may operate; use 'all' for any branch",
 }
 
 
@@ -196,6 +196,8 @@ def sibling_branch_conflict(identity: Identity, branch: str) -> str:
     if not branch or not identity.sibling_path.strip():
         return ""
     owned = {b.strip() for b in identity.branch_ownership.split(",") if b.strip()}
+    if "all" in owned:
+        return ""
     if owned and branch not in owned:
         return (
             f"current branch '{branch}' is not owned by this instance "
