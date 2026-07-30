@@ -332,18 +332,23 @@ def run_install_agents(
         # it on --upgrade / --docs-only without overwriting it.
         _ensure_project_docs(root)
 
-        track_kit_docs = _resolve_track_kit_docs(root, track)
-        result.track_kit_docs = track_kit_docs
+        if docs_only:
+            # This mode promises a documentation refresh. Do not prompt for tracking
+            # or rewrite the project's root .gitignore as a side effect.
+            result.track_kit_docs = bool(_read_kit_config(root).get("track_kit_docs", False))
+        else:
+            track_kit_docs = _resolve_track_kit_docs(root, track)
+            result.track_kit_docs = track_kit_docs
 
-        gitignore_path = root / ".gitignore"
-        # The managed section always lists the secrets (.credentials, handoff.md)
-        # and rule files so they stay untracked regardless of run mode. Whether
-        # .docs/ is listed depends on the track-kit-docs choice. Always derive the
-        # section from the full _FRESH_PATHS list (not the narrower upgrade scope) so
-        # secrets are never dropped.
-        _update_gitignore(gitignore_path, _FRESH_PATHS, track_kit_docs=track_kit_docs)
-        result.gitignore_updated = True
-        result.gitignore_path = gitignore_path
+            gitignore_path = root / ".gitignore"
+            # The managed section always lists the secrets (.credentials, handoff.md)
+            # and rule files so they stay untracked regardless of run mode. Whether
+            # .docs/ is listed depends on the track-kit-docs choice. Always derive the
+            # section from the full _FRESH_PATHS list (not the narrower upgrade scope) so
+            # secrets are never dropped.
+            _update_gitignore(gitignore_path, _FRESH_PATHS, track_kit_docs=track_kit_docs)
+            result.gitignore_updated = True
+            result.gitignore_path = gitignore_path
 
     metadata = _fill_placeholders(
         root, result.paths_installed, known=_state_metadata(state)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 from contextlib import redirect_stdout
 
+import pytest
+
 from governancekit import cli, install_agents
 from governancekit.install_agents import InstallResult
 
@@ -98,3 +100,20 @@ def test_install_agents_silently_skips_optional_awt(monkeypatch, tmp_path) -> No
 
     assert not result.awt_installed
     assert result.awt_message is None
+
+
+def test_docs_only_does_not_modify_root_gitignore(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(install_agents, "_download", lambda *_args: tmp_path)
+    monkeypatch.setattr(install_agents, "_do_upgrade", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(install_agents, "_ensure_project_docs", lambda *_args: None)
+    monkeypatch.setattr(install_agents, "_fill_placeholders", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(install_agents, "_write_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        install_agents,
+        "_update_gitignore",
+        lambda *_args, **_kwargs: pytest.fail("--docs-only must not rewrite .gitignore"),
+    )
+
+    result = install_agents.run_install_agents(tmp_path, docs_only=True)
+
+    assert not result.gitignore_updated

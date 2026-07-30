@@ -471,10 +471,14 @@ def _is_secret_template(path: str) -> bool:
     name = Path(path).name
     if name.endswith(_TEMPLATE_SUFFIXES):
         return True
+    # Conventional marker/template names. They communicate absence or an example,
+    # rather than carrying a runtime environment value.
+    if name in {".env.missing", ".env-example"}:
+        return True
     if not path.startswith(".credentials/"):
         return False
     # Doc/scaffolding files the kit seeds into .credentials/ — never secrets.
-    return name == ".gitignore" or name.startswith("README")
+    return name in {".gitignore", ".keep"} or name.startswith("README")
 
 
 def _check_tracked_secret_files(root: Path) -> CheckResult:
