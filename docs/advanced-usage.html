@@ -49,8 +49,10 @@ governancekit --root /project install-agents --upgrade</code></pre>
       <tr><td><code>--repo OWNER/REPO</code></td><td>Alternative source repository. Default: <code>EDortta/AI-Agents</code>.</td></tr>
       <tr><td><code>--force</code></td><td>Overwrites existing kit files.</td></tr>
       <tr><td><code>--upgrade</code></td><td>Updates kit-owned files while preserving project-owned state.</td></tr>
+      <tr><td><code>--migrate-content</code></td><td>With <code>--upgrade</code>, extracts legacy project-specific agent contracts from <code>.docs-migration-bak/</code> into <code>docs/project-rules/</code>. Required before upgrading an orphaned migration.</td></tr>
       <tr><td><code>--docs-only</code></td><td>Refreshes managed documentation without touching <code>AGENTS.md</code> or tool adapters.</td></tr>
       <tr><td><code>--install-awt</code></td><td>Installs the downloaded <code>agent-worktree.sh</code> helper onto PATH.</td></tr>
+      <tr><td><code>--skip-project-configuration</code></td><td>Skips the default offer to start the required-reading-driven project scope interview.</td></tr>
       <tr><td><code>--track</code></td><td>Keeps kit documentation tracked in Git and saves the choice to <code>.governancekit</code>.</td></tr>
       <tr><td><code>--no-track</code></td><td>Keeps kit documentation out of Git; mutually exclusive with <code>--track</code>.</td></tr>
     </tbody></table>
@@ -94,14 +96,14 @@ governancekit --root /project install-agents --upgrade</code></pre>
   --domain backend \
   --capability api \
   --agent openai-agents \
-  --provider openai:env:OPENAI_API_KEY \
+  --provider openai:env:OPENAI_API_KEY:primary \
   --json</code></pre>
     <table><tbody>
       <tr><td><code>--project-name</code></td><td>Overrides the inferred project name for the shareable config.</td></tr>
       <tr><td><code>--domain</code></td><td>Adds or overrides governed domains; repeatable.</td></tr>
       <tr><td><code>--capability</code></td><td>Adds or overrides governed capabilities; repeatable.</td></tr>
       <tr><td><code>--agent</code></td><td>Adds or overrides the active agent inventory; repeatable.</td></tr>
-      <tr><td><code>--provider NAME[:MODE[:CREDENTIAL_REF]]</code></td><td>Declares provider config without storing secrets. <code>MODE</code> is <code>manual</code>, <code>env</code>, or <code>file-ref</code>.</td></tr>
+      <tr><td><code>--provider NAME[:MODE[:CREDENTIAL_REF[:ROLE]]]</code></td><td>Declares provider config without storing secrets. <code>MODE</code> is <code>manual</code>, <code>env</code>, or <code>file-ref</code>; <code>ROLE</code> is <code>primary</code>, <code>fallback</code>, or <code>optional</code>.</td></tr>
       <tr><td><code>--json</code></td><td>Outputs the plan or current configuration as JSON.</td></tr>
     </tbody></table>
     <p><code>apply</code> writes <code>.gk/project-config.json</code> plus <code>docs/project-configuration.md</code>. <code>show</code> prints the current saved configuration.</p>
@@ -139,13 +141,13 @@ governancekit --root /project install-agents --upgrade</code></pre>
   --domain backend \
   --capability api \
   --agent openai-agents \
-  --provider openai:env:OPENAI_API_KEY \
+  --provider openai:env:OPENAI_API_KEY:primary \
   --json
 
 governancekit --root /project config-session approve --approval project-config-review
 governancekit --root /project config-session show --json
 governancekit --root /project config-session apply</code></pre>
-    <p>Uses the same <code>--project-name</code>, <code>--domain</code>, <code>--capability</code>, <code>--agent</code>, <code>--provider</code>, and <code>--json</code> options as <code>configure-project plan</code>. The <code>approve</code> subcommand adds an approval token via <code>--approval</code> and only <code>apply</code> writes files once all required approvals are present.</p>
+    <p>Use <code>config-session start --interactive</code> to load the sources selected by <code>docs/required-reading.md</code>. The selected, locally authenticated agent runs in read-only mode and proposes domains with source evidence before the operator reviews them. The interview follows the operational locale, explains each structured answer, leaves visual space between prompts, and retains saved or pending answers as defaults. Providers are collected as name, purpose, routing role, mode, and credential reference: <code>primary</code> is the default route, <code>fallback</code> is used when it fails, and <code>optional</code> is not selected by default. API keys are never stored in project configuration; local credential files are protected and gitignored. A <code>pending_approval</code> session means the plan is saved in <code>.gk/config-session.json</code> but is not applied: run <code>config-session approve --approval &lt;token&gt;</code> once for every listed approval, inspect with <code>config-session show</code>, then run <code>config-session apply</code>. The terminal prints the exact commands and explains what each approval reviews.</p>
   </section>
 
   <section>

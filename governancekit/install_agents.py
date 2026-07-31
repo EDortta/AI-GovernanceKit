@@ -12,11 +12,13 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .path_safety import UnsafePathError, safe_path
+
 REPO = "EDortta/AI-Agents"
 # Pinned to a tagged release (not the mutable "main" branch) so installs are
 # reproducible and can be checksum-verified. Bump alongside KNOWN_TARBALL_SHA256
 # when a new AI-Agents release is adopted.
-DEFAULT_REF = "v1.1.6"
+DEFAULT_REF = "v1.1.7"
 
 # codeload.github.com tarball SHA-256 for (repo, ref) pairs we can vouch for.
 # Only the upstream default repo/ref is pinned here; a custom --repo/--ref
@@ -30,6 +32,7 @@ KNOWN_TARBALL_SHA256: dict[tuple[str, str], str] = {
     (REPO, "v1.1.4"): "497670c3ce1bbdbd2d434f845438a32d6d3afa3337933b8567367127884e9403",
     (REPO, "v1.1.5"): "68881466d94fead63d8f55d2c48e3ab82d4b4099a3741c2064b08e44a726f2fd",
     (REPO, "v1.1.6"): "0cac041c9e5c7ce0cc28b032fbb6cc400509b9a23dc9f04c24e21b6d7daf6c21",
+    (REPO, "v1.1.7"): "7bff38d6ff94576fee6329fd84074d14ad9af649e8d98ff4230516a4283db97a",
 }
 
 # ── layout: kit lives in .docs/, project owns docs/ ──────────────────────────────
@@ -70,6 +73,7 @@ _KIT_SEED_PATHS: list[str] = [
 # never overwritten. They stay in docs/, not .docs/.
 _PROJECT_SEED_PATHS: list[str] = [
     "docs/required-reading.md",
+    "docs/project-rules.md",
     "docs/napkin-lessons.md",
 ]
 
@@ -128,6 +132,22 @@ instead.
 
 List the documents an agent must read before analysing or implementing an issue in
 `docs/required-reading.md`.
+"""
+
+_PROJECT_REQUIRED_READING = """# Required Reading
+
+List the project documents an agent must read before analysing or implementing an
+issue. Keep this index honest: add the project contracts, runbooks, and domain
+rules an agent must load before work.
+
+- `docs/project-rules.md` — project-specific rules and operational contracts
+"""
+
+_PROJECT_RULES = """# Project Rules
+
+Record the project-specific contracts, runbooks, and operational constraints that
+do not belong in the reusable AI-Agents kit. Keep `docs/required-reading.md`
+aligned with every document an agent must load before work.
 """
 
 # Kit-owned doc paths that legacy projects keep in docs/ and must be migrated to
@@ -268,6 +288,7 @@ def run_install_agents(
     force: bool = False,
     upgrade: bool = False,
     docs_only: bool = False,
+    migrate_content: bool = False,
     track: bool | None = None,
     install_awt: bool = False,
 ) -> InstallResult:
@@ -294,12 +315,22 @@ def run_install_agents(
     # and the previous answers to avoid re-interrogating the operator.
     state = _read_state(root)
 
+    if upgrade and _content_migration_required(root) and not migrate_content:
+        raise RuntimeError(
+            "Refusing upgrade: legacy agent contracts remain in .docs-migration-bak/. "
+            "Run 'governancekit install-agents --upgrade --migrate-content' first."
+        )
+
     # Migrate a legacy layout (kit in docs/, project in docs/project/) BEFORE any
     # upgrade write, so kit content lands in .docs/ and project docs are preserved.
     if upgrade or docs_only:
         migrated, notes = _migrate_legacy_layout(root)
         result.migrated = migrated
         result.migration_notes = notes
+        if migrate_content:
+            content_migrated, content_notes = _migrate_legacy_content(root)
+            result.migrated = result.migrated or content_migrated
+            result.migration_notes.extend(content_notes)
 
     with tempfile.TemporaryDirectory() as tmp:
         src_root = _download(repo, ref, Path(tmp))
@@ -322,18 +353,23 @@ def run_install_agents(
         # it on --upgrade / --docs-only without overwriting it.
         _ensure_project_docs(root)
 
-        track_kit_docs = _resolve_track_kit_docs(root, track)
-        result.track_kit_docs = track_kit_docs
+        if docs_only:
+            # This mode promises a documentation refresh. Do not prompt for tracking
+            # or rewrite the project's root .gitignore as a side effect.
+            result.track_kit_docs = bool(_read_kit_config(root).get("track_kit_docs", False))
+        else:
+            track_kit_docs = _resolve_track_kit_docs(root, track)
+            result.track_kit_docs = track_kit_docs
 
-        gitignore_path = root / ".gitignore"
-        # The managed section always lists the secrets (.credentials, handoff.md)
-        # and rule files so they stay untracked regardless of run mode. Whether
-        # .docs/ is listed depends on the track-kit-docs choice. Always derive the
-        # section from the full _FRESH_PATHS list (not the narrower upgrade scope) so
-        # secrets are never dropped.
-        _update_gitignore(gitignore_path, _FRESH_PATHS, track_kit_docs=track_kit_docs)
-        result.gitignore_updated = True
-        result.gitignore_path = gitignore_path
+            gitignore_path = root / ".gitignore"
+            # The managed section always lists the secrets (.credentials, handoff.md)
+            # and rule files so they stay untracked regardless of run mode. Whether
+            # .docs/ is listed depends on the track-kit-docs choice. Always derive the
+            # section from the full _FRESH_PATHS list (not the narrower upgrade scope) so
+            # secrets are never dropped.
+            _update_gitignore(gitignore_path, _FRESH_PATHS, track_kit_docs=track_kit_docs)
+            result.gitignore_updated = True
+            result.gitignore_path = gitignore_path
 
     metadata = _fill_placeholders(
         root, result.paths_installed, known=_state_metadata(state)
@@ -341,12 +377,17 @@ def run_install_agents(
     result.metadata_known = sorted(metadata)
     # Written last: hashes must describe the files as they stand AFTER substitution,
     # so a configured file still matches its own record on the next upgrade.
-    _write_state(root, result.paths_installed, repo=repo, ref=ref, metadata=metadata)
+    _write_state(
+        root,
+        result.paths_installed,
+        repo=repo,
+        ref=ref,
+        metadata=metadata,
+        prune_missing=upgrade and not docs_only,
+    )
 
     if install_awt and _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
         result.awt_installed, result.awt_message = _install_awt(root)
-    elif _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
-        result.awt_message = "skipped (pass --install-awt to symlink 'awt' onto PATH)"
     return result
 
 
@@ -477,7 +518,7 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
         if rel in skip:
             continue
         src_path = _resolve_src(src, rel)
-        dst_path = dst / _dest_rel(rel)
+        dst_path = safe_path(dst, dst / _dest_rel(rel))
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         if dst_path.exists():
             if dst_path.is_dir():
@@ -507,7 +548,7 @@ def _reset_readiness_flags(root: Path) -> None:
             "- limits_ready: no",
         ),
     ]:
-        path = root / rel
+        path = safe_path(root, root / rel)
         if path.is_file():
             text = path.read_text(encoding="utf-8", errors="replace")
             path.write_text(text.replace(pattern, replacement), encoding="utf-8")
@@ -528,7 +569,7 @@ def _do_upgrade(
     known = manifest if manifest is not None else {}
     for rel in (paths if paths is not None else _UPGRADE_PATHS):
         src_path = _resolve_src(src, rel)
-        dst_path = dst / _dest_rel(rel)
+        dst_path = safe_path(dst, dst / _dest_rel(rel))
         if not src_path.exists():
             continue
         dst_path.parent.mkdir(parents=True, exist_ok=True)
@@ -559,12 +600,16 @@ def _sync_dir(
     This replaces an earlier ``rmtree`` + ``copytree``, which deleted project rules
     that lived inside kit directories.
     """
+    dst_dir = safe_path(root, dst_dir)
     dst_dir.mkdir(parents=True, exist_ok=True)
+    for existing in dst_dir.rglob("*"):
+        if existing.is_symlink():
+            raise UnsafePathError(f"refusing symlink in managed kit directory: {existing}")
 
     shipped: set[Path] = set()
     for src_file in sorted(p for p in src_dir.rglob("*") if p.is_file()):
         rel = src_file.relative_to(src_dir)
-        target = dst_dir / rel
+        target = safe_path(root, dst_dir / rel)
         target.parent.mkdir(parents=True, exist_ok=True)
         # A kit file the project edited by hand is still kit-owned, so the new version
         # wins — but the edit is real intent and must not vanish silently. Stash it and
@@ -573,7 +618,7 @@ def _sync_dir(
             rel_to_root = target.relative_to(root).as_posix()
             recorded = known.get(rel_to_root)
             if recorded is not None and recorded != _file_sha256(target):
-                backup = root / _STATE_DIR / "overwritten" / rel_to_root
+                backup = safe_path(root, root / _STATE_DIR / "overwritten" / rel_to_root)
                 backup.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(target, backup)
                 overwritten.append(rel_to_root)
@@ -621,9 +666,9 @@ def _read_state(root: Path) -> dict:
     operator" — which makes the upgrade preserve files and ask questions, never
     delete or assume.
     """
-    state = _read_json(root / _STATE_FILE)
-    operator = _read_json(root / _OPERATOR_FILE)
-    secrets = _read_json(root / _SECRETS_FILE)
+    state = _read_json(safe_path(root, root / _STATE_FILE))
+    operator = _read_json(safe_path(root, root / _OPERATOR_FILE))
+    secrets = _read_json(safe_path(root, root / _SECRETS_FILE))
     # Legacy manifests may still carry operator-local fields from before
     # operator.json existed. Ignore them here so a clone never inherits another
     # programmer's identity; the next write strips them from the manifest.
@@ -664,6 +709,7 @@ def _write_state(
     repo: str,
     ref: str,
     metadata: dict[str, str],
+    prune_missing: bool = False,
 ) -> None:
     """Persist file hashes and operator answers.
 
@@ -677,8 +723,13 @@ def _write_state(
     """
     previous = _read_state(root)
     files: dict[str, str] = dict(_state_files(previous))
+    if prune_missing:
+        # A full upgrade is authoritative for the kit layout. Retired files and
+        # pre-.docs paths must not survive forever as fake managed files. Narrow
+        # documentation refreshes deliberately do not prune outside their scope.
+        files = {rel: digest for rel, digest in files.items() if (root / rel).is_file()}
     for rel in installed:
-        target = root / rel
+        target = safe_path(root, root / rel)
         if target.is_file():
             files[rel] = _file_sha256(target)
         elif target.is_dir():
@@ -693,13 +744,13 @@ def _write_state(
     operator_local = {k: v for k, v in merged_meta.items() if k in _OPERATOR_PLACEHOLDERS}
     sensitive = {k: v for k, v in merged_meta.items() if k in _SENSITIVE_PLACEHOLDERS}
 
-    state_dir = root / _STATE_DIR
+    state_dir = safe_path(root, root / _STATE_DIR)
     state_dir.mkdir(parents=True, exist_ok=True)
     # Self-contained ignore rules, matching the bash installer: manifest.json stays
     # tracked (the team shares it), the credential half and the stash never do. Kept
     # here so the guarantee holds even in a project whose root .gitignore we did not
     # write — the secrets file must never depend on that having gone well.
-    (state_dir / ".gitignore").write_text(
+    safe_path(root, state_dir / ".gitignore").write_text(
         "# Managed by governancekit.\n"
         "# manifest.json is intentionally NOT ignored — the team must share it.\n"
         "operator.json\n"
@@ -709,7 +760,7 @@ def _write_state(
         encoding="utf-8",
     )
 
-    (root / _STATE_FILE).write_text(
+    safe_path(root, root / _STATE_FILE).write_text(
         json.dumps(
             {
                 "state_version": _STATE_VERSION,
@@ -725,7 +776,7 @@ def _write_state(
         encoding="utf-8",
     )
 
-    operator_path = root / _OPERATOR_FILE
+    operator_path = safe_path(root, root / _OPERATOR_FILE)
     if operator_local:
         operator_path.write_text(
             json.dumps(
@@ -743,7 +794,7 @@ def _write_state(
     # Written only when there is something to write, so a project with no secrets
     # never grows a confusing empty file.
     if sensitive:
-        secrets_path = root / _SECRETS_FILE
+        secrets_path = safe_path(root, root / _SECRETS_FILE)
         secrets_path.write_text(
             json.dumps(
                 {"state_version": _STATE_VERSION, "metadata": sensitive},
@@ -771,8 +822,8 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
 
     Returns ``(migrated, notes)`` where *notes* is a human-readable report.
     """
-    docs = root / "docs"
-    dotdocs = root / ".docs"
+    docs = safe_path(root, root / "docs")
+    dotdocs = safe_path(root, root / ".docs")
     # Legacy markers must be KIT-SPECIFIC. A generic name like docs/software-overview.md
     # is a common project filename; triggering on it would relocate a non-kit project's
     # whole docs/ (e.g. a GitHub Pages site) into the hidden .docs/. Require a marker a
@@ -781,6 +832,10 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
     markers = [docs / "agents", docs / "workflows" / "session-close.md"]
     if not docs.is_dir() or not any(m.exists() for m in markers):
         return False, []
+
+    for path in docs.rglob("*"):
+        if path.is_symlink():
+            raise UnsafePathError(f"refusing symlink in legacy migration source: {path}")
 
     notes: list[str] = []
     # A pre-existing .docs/ usually means migration already completed → the marker
@@ -851,22 +906,107 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
     return True, notes
 
 
+def _content_migration_required(root: Path) -> bool:
+    """Whether a layout backup still contains contracts outside the load path."""
+    backup_agents = root / _MIGRATION_BACKUP_DIR / "agents"
+    project_rules = root / "docs" / "project-rules.md"
+    project_rules_dir = root / "docs" / "project-rules"
+    return backup_agents.is_dir() and not project_rules.exists() and not project_rules_dir.is_dir()
+
+
+def _migrate_legacy_content(root: Path) -> tuple[bool, list[str]]:
+    """Preserve legacy agent contracts in project-owned reading paths.
+
+    Layout migration protects the original tree in ``.docs-migration-bak``. This
+    explicit second stage makes any agent role that is project-specific (or differs
+    from the refreshed kit role) reachable through ``docs/project-rules`` and the
+    required-reading index. It never deletes the backup or overwrites existing
+    project rules.
+    """
+    backup_agents = safe_path(root, root / _MIGRATION_BACKUP_DIR / "agents")
+    if not backup_agents.is_dir():
+        return False, ["content migration: no legacy agent backup found"]
+
+    selected: list[Path] = []
+    kit_agents = root / ".docs" / "agents"
+    for source in sorted(backup_agents.rglob("*.md")):
+        relative = source.relative_to(backup_agents)
+        current = kit_agents / relative
+        if not current.is_file() or current.read_bytes() != source.read_bytes():
+            selected.append(source)
+
+    rules_dir = safe_path(root, root / "docs" / "project-rules")
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    migrated = rules_dir / "legacy-agent-contracts.md"
+    if migrated.exists():
+        return False, ["content migration: docs/project-rules/legacy-agent-contracts.md already exists"]
+
+    sections = [
+        "# Migrated Legacy Agent Contracts",
+        "",
+        "Project-specific contracts preserved from the legacy AI-Agents layout. "
+        "The original backup remains in `.docs-migration-bak/` for audit.",
+    ]
+    for source in selected:
+        sections.extend([
+            "",
+            f"## {source.relative_to(backup_agents).as_posix()}",
+            "",
+            source.read_text(encoding="utf-8", errors="replace").rstrip(),
+        ])
+    if not selected:
+        sections.extend(["", "No project-specific differences were detected."])
+    migrated.write_text("\n".join(sections) + "\n", encoding="utf-8")
+
+    project_rules = root / "docs" / "project-rules.md"
+    if not project_rules.exists():
+        project_rules.write_text(
+            "# Project Rules\n\n"
+            "Read `docs/project-rules/legacy-agent-contracts.md` before work that "
+            "matches its operational domain.\n",
+            encoding="utf-8",
+        )
+    _add_required_reading_entries(root, [
+        "docs/project-rules.md",
+        "docs/project-rules/legacy-agent-contracts.md",
+    ])
+    return True, [f"content: {len(selected)} legacy contract(s) extracted to docs/project-rules/"]
+
+
+def _add_required_reading_entries(root: Path, paths: list[str]) -> None:
+    index = safe_path(root, root / "docs" / "required-reading.md")
+    existing = index.read_text(encoding="utf-8") if index.exists() else "# Required Reading\n"
+    lines = [line for line in existing.splitlines() if line.strip().lower() not in {"- (none)", "* (none)"}]
+    for path in paths:
+        if path not in existing:
+            lines.append(f"- `{path}` — migrated project-specific contract")
+    index.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
 # ── project-owned docs ──────────────────────────────────────────────────────────
 
 def _ensure_project_docs(root: Path) -> None:
-    """Create the project-owned ``docs/`` folder once, never overwrite it."""
-    project_dir = root / _PROJECT_DOCS_DIR
-    readme = project_dir / "README.md"
-    if readme.exists():
-        return
+    """Seed missing project-owned docs without overwriting project content."""
+    project_dir = safe_path(root, root / _PROJECT_DOCS_DIR)
     project_dir.mkdir(parents=True, exist_ok=True)
-    readme.write_text(_PROJECT_DOCS_README, encoding="utf-8")
+
+    readme = project_dir / "README.md"
+    if not readme.exists():
+        readme.write_text(_PROJECT_DOCS_README, encoding="utf-8")
+
+    required_reading = project_dir / "required-reading.md"
+    if not required_reading.exists():
+        required_reading.write_text(_PROJECT_REQUIRED_READING, encoding="utf-8")
+
+    project_rules = project_dir / "project-rules.md"
+    if not project_rules.exists():
+        project_rules.write_text(_PROJECT_RULES, encoding="utf-8")
 
 
 # ── track-kit-docs config ─────────────────────────────────────────────────────────
 
 def _read_kit_config(root: Path) -> dict:
-    path = root / _CONFIG_FILE
+    path = safe_path(root, root / _CONFIG_FILE)
     if not path.is_file():
         return {}
     try:
@@ -876,7 +1016,7 @@ def _read_kit_config(root: Path) -> dict:
 
 
 def _write_kit_config(root: Path, config: dict) -> None:
-    path = root / _CONFIG_FILE
+    path = safe_path(root, root / _CONFIG_FILE)
     path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
@@ -1086,6 +1226,7 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
 
 
 def _update_gitignore(gitignore: Path, paths: list[str], *, track_kit_docs: bool = False) -> None:
+    gitignore = safe_path(gitignore.parent, gitignore)
     existing = gitignore.read_text(encoding="utf-8") if gitignore.is_file() else ""
     cleaned = _remove_section_text(existing)
     entries = "\n".join(_gitignore_entries(paths, track_kit_docs=track_kit_docs))

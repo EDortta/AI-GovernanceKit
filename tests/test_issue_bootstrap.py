@@ -70,3 +70,17 @@ def test_bootstrap_issue_uses_project_config_and_classification(tmp_path: Path) 
     assert "domains: backend; capabilities: api" in epic_text
     assert "Move auth boundary. labels: contract-change" in epic_text
     assert "010-adopt-new-auth-boundary" in task_text
+
+
+def test_bootstrap_issue_normalizes_unicode_titles(tmp_path: Path) -> None:
+    _seed_templates(tmp_path)
+
+    result = bootstrap_issue(
+        tmp_path,
+        epic_number="011",
+        epic_title="Adoção e configuración",
+        task_title="Revisão",
+    )
+
+    assert result.epic_dir == "docs/issues/011-adocao-e-configuracion-[draft]"
+    assert result.files[-1].endswith("011-revisao-[draft].md")

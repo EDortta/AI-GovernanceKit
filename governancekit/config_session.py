@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import shlex
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .classification import load_change_classification
 from .project_config import (
+    ProviderConfig,
     ProjectConfigPlan,
-    apply_project_config_plan,
+    _config_from_existing,
+    apply_project_config,
     build_project_config_plan,
+    provider_warnings,
 )
 
 _SESSION_FILE = ".gk/config-session.json"
@@ -54,6 +58,11 @@ def start_config_session(
     capabilities: list[str] | None = None,
     agents: list[str] | None = None,
     provider_names: list[str] | None = None,
+    provider_configs: list[ProviderConfig] | None = None,
+    selected_agent: str | None = None,
+    capability_domains: dict[str, str] | None = None,
+    required_reading: list[str] | None = None,
+    scope_summary: str | None = None,
 ) -> ConfigSession:
     root = root.resolve()
     plan = build_project_config_plan(
@@ -63,7 +72,15 @@ def start_config_session(
         capabilities=capabilities,
         agents=agents,
         provider_names=provider_names,
+        provider_configs=provider_configs,
+        selected_agent=selected_agent,
+        capability_domains=capability_domains,
+        required_reading=required_reading,
+        scope_summary=scope_summary,
     )
+    warnings = provider_warnings(plan.config.providers)
+    if warnings:
+        raise ValueError("configuration session cannot start: " + "; ".join(warnings))
     session = ConfigSession(
         status="pending_approval",
         approvals_required=_required_approvals(root, plan),
@@ -130,13 +147,16 @@ def apply_config_session(root: Path) -> list[str]:
         raise RuntimeError(
             "configuration session is not approved; missing: " + ", ".join(missing)
         )
-    plan = build_project_config_plan(root)
-    written = apply_project_config_plan(plan)
+    config_raw = session.plan.get("config")
+    config = _config_from_existing(config_raw) if isinstance(config_raw, dict) else None
+    if config is None:
+        raise RuntimeError("configuration session has an invalid saved plan")
+    written = apply_project_config(root, config)
     updated = ConfigSession(
         status="applied",
         approvals_required=session.approvals_required,
         approvals_granted=session.approvals_granted,
-        plan=plan.as_dict(),
+        plan=session.plan,
         notes=[*session.notes, "session applied to disk"],
     )
     _session_path(root).write_text(
@@ -146,7 +166,7 @@ def apply_config_session(root: Path) -> list[str]:
     return written
 
 
-def format_config_session(session: ConfigSession) -> str:
+def format_config_session(session: ConfigSession, root: Path | None = None) -> str:
     lines = ["AI GovernanceKit config-session"]
     lines.append(f"status: {session.status}")
     lines.append(
@@ -159,4 +179,49 @@ def format_config_session(session: ConfigSession) -> str:
         lines.append("notes:")
         for note in session.notes:
             lines.append(f"  - {note}")
+    if session.status == "pending_approval":
+        prefix = f"governancekit --root {shlex.quote(str(root.resolve()))} config-session" if root else "governancekit config-session"
+        missing = [approval for approval in session.approvals_required if approval not in session.approvals_granted]
+        lines.extend(
+            [
+                "",
+                "meaning: the configuration plan is saved but has not been applied.",
+                "These are local acknowledgements, not independent authorization or access control.",
+                "approvals still needed:",
+            ]
+        )
+        for approval in missing:
+            if approval == "existing-project-adoption-review":
+                lines.append("  - existing-project-adoption-review: inspect the existing project before adoption.")
+            elif approval == "project-config-review":
+                lines.append("  - project-config-review: review the domains, capabilities, agents, and providers in the plan.")
+            else:
+                lines.append(f"  - {approval}: review the change required by this approval token.")
+            lines.append(f"    acknowledge: {prefix} approve --approval {approval}")
+        lines.extend(
+            [
+                "",
+                "After every required local acknowledgement is recorded:",
+                f"  {prefix} show",
+                f"  {prefix} apply",
+                "The approved configuration will be written to .gk/project-config.json and docs/project-configuration.md.",
+            ]
+        )
+    elif session.status == "approved":
+        prefix = f"governancekit --root {shlex.quote(str(root.resolve()))} config-session" if root else "governancekit config-session"
+        lines.extend(
+            [
+                "",
+                "meaning: all required local acknowledgements are recorded; the plan is ready to apply.",
+                f"apply: {prefix} apply",
+            ]
+        )
+    elif session.status == "applied":
+        lines.extend(
+            [
+                "",
+                "meaning: the locally acknowledged configuration has been written to the project.",
+                f"inspect: governancekit --root {shlex.quote(str(root.resolve()))} configure-project show" if root else "inspect: governancekit configure-project show",
+            ]
+        )
     return "\n".join(lines)

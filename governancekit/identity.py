@@ -17,6 +17,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .path_safety import safe_path, safe_regular_file
+
 # Local, gitignored, per-instance identity file. Lives at the repo root.
 IDENTITY_FILENAME = ".governancekit-identity.json"
 
@@ -34,7 +36,7 @@ _FIELD_DESCRIPTIONS: dict[str, str] = {
     "instance_path": "absolute path of this instance's checkout",
     "sibling_path": "path(s) of sibling instance(s), if any (comma-separated)",
     "assigned_ports": "ports reserved by this instance (comma-separated)",
-    "branch_ownership": "which branch(es) this instance owns on shared-branch projects",
+    "branch_ownership": "branches this instance may operate; use 'all' for any branch",
 }
 
 
@@ -66,7 +68,8 @@ class Identity:
 
 
 def identity_path(root: Path) -> Path:
-    return root.resolve() / IDENTITY_FILENAME
+    root = root.resolve()
+    return safe_path(root, root / IDENTITY_FILENAME)
 
 
 def _coerce_ports(value: object) -> list[str]:
@@ -96,6 +99,29 @@ def load_identity(root: Path) -> Identity | None:
         assigned_ports=_coerce_ports(data.get("assigned_ports")),
         branch_ownership=str(data.get("branch_ownership", "") or ""),
     )
+
+
+def read_existing_operator_name(root: Path) -> str:
+    """Read an existing local operator value without following credential links."""
+    root = root.resolve()
+    candidates = (
+        (root / ".gk" / "operator.json", ("metadata", "OPERATOR_NAME")),
+        (root / ".credentials" / "identity.json", ("values", "OPERATOR_NAME")),
+    )
+    for path, keys in candidates:
+        if not safe_regular_file(root, path):
+            continue
+        try:
+            data: object = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for key in keys:
+            if not isinstance(data, dict):
+                break
+            data = data.get(key)
+        if isinstance(data, str) and data.strip():
+            return data.strip()
+    return ""
 
 
 def identity_from_values(values: dict[str, str]) -> Identity:
@@ -129,7 +155,8 @@ def save_identity(root: Path, identity: Identity) -> Path:
 
 def ensure_gitignored(root: Path) -> bool:
     """Ensure the identity file is listed in .gitignore. Returns True if changed."""
-    gitignore = root.resolve() / ".gitignore"
+    root = root.resolve()
+    gitignore = safe_path(root, root / ".gitignore")
     entry = IDENTITY_FILENAME
     existing = ""
     if gitignore.is_file():
@@ -169,6 +196,8 @@ def sibling_branch_conflict(identity: Identity, branch: str) -> str:
     if not branch or not identity.sibling_path.strip():
         return ""
     owned = {b.strip() for b in identity.branch_ownership.split(",") if b.strip()}
+    if "all" in owned:
+        return ""
     if owned and branch not in owned:
         return (
             f"current branch '{branch}' is not owned by this instance "

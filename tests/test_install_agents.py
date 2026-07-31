@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from governancekit import install_agents as ia
+from governancekit.path_safety import UnsafePathError
 
 
 def _make_source(src: Path) -> None:
@@ -78,11 +79,27 @@ class InstallAgentsTests(unittest.TestCase):
             root = Path(temp_dir)
             ia._ensure_project_docs(root)
             readme = root / ia._PROJECT_DOCS_DIR / "README.md"
+            required_reading = root / ia._PROJECT_DOCS_DIR / "required-reading.md"
+            project_rules = root / ia._PROJECT_DOCS_DIR / "project-rules.md"
             self.assertTrue(readme.is_file())
+            self.assertIn("docs/project-rules.md", required_reading.read_text(encoding="utf-8"))
+            self.assertTrue(project_rules.is_file())
 
             readme.write_text("custom\n", encoding="utf-8")
             ia._ensure_project_docs(root)
             self.assertEqual(readme.read_text(), "custom\n")
+
+    def test_ensure_project_docs_adds_missing_index_to_existing_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            docs = root / ia._PROJECT_DOCS_DIR
+            docs.mkdir()
+            (docs / "README.md").write_text("project docs\n", encoding="utf-8")
+
+            ia._ensure_project_docs(root)
+
+            self.assertEqual((docs / "README.md").read_text(encoding="utf-8"), "project docs\n")
+            self.assertTrue((docs / "required-reading.md").is_file())
 
     def test_docs_only_installs_into_dotdocs(self) -> None:
         with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
@@ -173,6 +190,16 @@ class InstallAgentsTests(unittest.TestCase):
             merged = ia._state_files(ia._read_state(root))
             self.assertIn("AGENTS.md", merged)
             self.assertIn(".docs/agents/programmer.md", merged)
+
+    def test_full_upgrade_state_prunes_missing_paths_but_docs_only_does_not(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".gk").mkdir()
+            (root / ".gk" / "manifest.json").write_text(
+                '{"files":{"gone.md":"hash"},"metadata":{}}', encoding="utf-8"
+            )
+            ia._write_state(root, [], repo="r", ref="v2", metadata={}, prune_missing=True)
+            self.assertNotIn("gone.md", ia._state_files(ia._read_state(root)))
 
     def test_metadata_reapplied_without_a_terminal(self) -> None:
         # The continuity case: an upgrade overwrote the file with a fresh template, so
@@ -484,6 +511,46 @@ class InstallAgentsTests(unittest.TestCase):
         # And it seeds into docs/, not .docs/
         self.assertEqual(ia._dest_rel("docs/required-reading.md"), "docs/required-reading.md")
 
+    def test_content_migration_extracts_only_project_or_changed_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup = root / ia._MIGRATION_BACKUP_DIR / "agents"
+            backup.mkdir(parents=True)
+            (backup / "programmer.md").write_text("project delta\n", encoding="utf-8")
+            (backup / "build-deploy.md").write_text("project-only\n", encoding="utf-8")
+            (root / ".docs" / "agents").mkdir(parents=True)
+            (root / ".docs" / "agents" / "programmer.md").write_text("kit\n", encoding="utf-8")
+            (root / "docs").mkdir()
+            (root / "docs" / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
+
+            migrated, notes = ia._migrate_legacy_content(root)
+
+            self.assertTrue(migrated, notes)
+            content = (root / "docs" / "project-rules" / "legacy-agent-contracts.md").read_text()
+            self.assertIn("programmer.md", content)
+            self.assertIn("build-deploy.md", content)
+            index = (root / "docs" / "required-reading.md").read_text()
+            self.assertNotIn("(none)", index)
+            self.assertIn("docs/project-rules.md", index)
+
+    def test_upgrade_refuses_orphaned_content_without_explicit_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / ia._MIGRATION_BACKUP_DIR / "agents").mkdir(parents=True)
+            with self.assertRaisesRegex(RuntimeError, "migrate-content"):
+                ia.run_install_agents(root, upgrade=True)
+
+    def test_upgrade_refuses_symlinked_managed_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir, tempfile.TemporaryDirectory() as outside_dir:
+            src, dst, outside = Path(source_dir), Path(target_dir), Path(outside_dir)
+            _make_source(src)
+            (dst / ".docs").symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaises(UnsafePathError):
+                ia._do_upgrade(src, dst, paths=["docs/agents"])
+
+            self.assertFalse((outside / "agents").exists())
+
     def test_fill_placeholders_ignores_doc_example_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -498,12 +565,12 @@ class InstallAgentsTests(unittest.TestCase):
             self.assertIn("[TOKEN]", text)
             self.assertIn("{{OPERATOR_NAME}}", text)
 
-    def test_fill_placeholders_supports_legacy_and_current_syntax(self) -> None:
+    def test_fill_placeholders_only_supports_canonical_syntax(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             doc = root / "AGENTS.md"
             doc.write_text(
-                "legacy [OPERATOR_NAME] current {{SMTP_ACCOUNT}}\n",
+                "policy [OPERATOR_NAME] current {{SMTP_ACCOUNT}}\n",
                 encoding="utf-8",
             )
 
@@ -515,7 +582,7 @@ class InstallAgentsTests(unittest.TestCase):
 
             self.assertEqual(
                 doc.read_text(encoding="utf-8"),
-                "legacy Esteban current esteban@example.com\n",
+                "policy [OPERATOR_NAME] current esteban@example.com\n",
             )
             self.assertEqual(values["OPERATOR_NAME"], "Esteban")
             self.assertEqual(values["SMTP_ACCOUNT"], "esteban@example.com")

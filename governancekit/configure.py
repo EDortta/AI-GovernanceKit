@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import sys
+import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .codemap import SKIP_DIRS
 from .identity import (
     ALL_FIELDS,
     REQUIRED_FIELDS,
@@ -12,9 +12,17 @@ from .identity import (
     Identity,
     identity_from_values,
     load_identity,
+    read_existing_operator_name,
     save_identity,
 )
-from .install_agents import _PLACEHOLDER_DESCRIPTIONS, _PLACEHOLDER_RE
+from .install_agents import (
+    _FRESH_PATHS,
+    _PLACEHOLDER_DESCRIPTIONS,
+    _PLACEHOLDER_RE,
+    _PROJECT_SEED_PATHS,
+    _dest_rel,
+)
+from .path_safety import UnsafePathError, safe_path, safe_regular_file
 
 # Text file extensions worth scanning for placeholders. Kept deliberately small —
 # the kit's templates are Markdown / dotfiles / shell.
@@ -31,6 +39,11 @@ _TEXT_NAMES: frozenset[str] = frozenset({
 # Known kit placeholders. Only these are filled — arbitrary [WORD] tokens (e.g.
 # the doctor's own `[FAIL]` / `[HINT]` output samples in README) are left alone.
 _KNOWN_TOKENS: frozenset[str] = frozenset(_PLACEHOLDER_DESCRIPTIONS)
+
+# Credentials are local project state, not kit templates. They may intentionally
+# contain symlinks to a private credential store and must never be read or changed
+# by ``configure``.
+_CONFIGURE_EXCLUDED_PATHS: frozenset[str] = frozenset({".credentials"})
 
 
 @dataclass
@@ -86,6 +99,7 @@ def run_configure_identity(
         interactive = sys.stdin.isatty()
 
     existing = load_identity(root)
+    inherited_operator = read_existing_operator_name(root) if existing is None else ""
     values: dict[str, str] = {}
     for f in ALL_FIELDS:
         if f in preset:
@@ -93,6 +107,14 @@ def run_configure_identity(
         elif existing is not None:
             cur = getattr(existing, f)
             values[f] = ",".join(cur) if isinstance(cur, list) else str(cur)
+        elif f == "operator_name":
+            values[f] = inherited_operator
+        elif f == "instance_path":
+            values[f] = str(root)
+        elif f == "host_id" and interactive:
+            values[f] = socket.gethostname()
+        elif f == "branch_ownership" and interactive:
+            values[f] = "all"
         else:
             values[f] = ""
 
@@ -133,20 +155,34 @@ def _is_text_file(path: Path) -> bool:
 
 
 def _scan(root: Path) -> dict[str, list[Path]]:
-    """Map each known placeholder token to the files that still contain it."""
+    """Map each known placeholder token in active kit-owned files.
+
+    Project-owned documents and migration recovery material are deliberately not
+    scanned or changed by ``configure``.
+    """
     found: dict[str, list[Path]] = {}
-    for path in root.rglob("*"):
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
+    for rel in _FRESH_PATHS:
+        if rel in _PROJECT_SEED_PATHS or rel in _CONFIGURE_EXCLUDED_PATHS:
             continue
-        if not path.is_file() or not _is_text_file(path):
-            continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for token in _PLACEHOLDER_RE.findall(text):
-            if token in _KNOWN_TOKENS:
-                found.setdefault(token, []).append(path)
+        path = root / _dest_rel(rel)
+        if path.is_dir():
+            safe_path(root, path)
+            candidates = path.rglob("*")
+        else:
+            candidates = (path,)
+        for candidate in candidates:
+            if candidate.is_symlink():
+                raise UnsafePathError(f"refusing symlink in managed kit path: {candidate}")
+            if not safe_regular_file(root, candidate) or not _is_text_file(candidate):
+                continue
+            path = candidate
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for token in _PLACEHOLDER_RE.findall(text):
+                if token in _KNOWN_TOKENS:
+                    found.setdefault(token, []).append(path)
     return found
 
 
@@ -156,7 +192,7 @@ def run_configure(
     preset: dict[str, str] | None = None,
     interactive: bool | None = None,
 ) -> ConfigureResult:
-    """Fill kit placeholder variables across all text files under *root*.
+    """Fill kit placeholder variables only in managed kit files under *root*.
 
     ``preset`` supplies non-interactive ``KEY=VALUE`` answers. Remaining tokens are
     prompted for when a TTY is available (override with ``interactive``). Only

@@ -58,6 +58,7 @@ governancekit --root /projeto install-agents --upgrade</code></pre>
         <tr><td><code>--repo OWNER/REPO</code></td><td>Origem alternativa. Padrão: <code>EDortta/AI-Agents</code>. Uma origem personalizada não possui checksum pré-conhecido.</td></tr>
         <tr><td><code>--force</code></td><td>Sobrescreve arquivos existentes. Use somente após revisar o impacto.</td></tr>
         <tr><td><code>--upgrade</code></td><td>Atualiza arquivos pertencentes ao kit e preserva estado e documentação do projeto.</td></tr>
+        <tr><td><code>--migrate-content</code></td><td>Com <code>--upgrade</code>, extrai contratos legados específicos do projeto de <code>.docs-migration-bak/</code> para <code>docs/project-rules/</code>. Obrigatório antes de atualizar uma migração órfã.</td></tr>
         <tr><td><code>--docs-only</code></td><td>Atualiza somente documentação gerenciada; não toca <code>AGENTS.md</code> nem adaptadores das ferramentas.</td></tr>
         <tr><td><code>--install-awt</code></td><td>Executa a instalação do helper <code>agent-worktree.sh</code> no PATH. É opt-in porque executa código baixado.</td></tr>
         <tr><td><code>--track</code></td><td>Mantém a documentação do kit rastreada no Git. A escolha fica em <code>.governancekit</code>.</td></tr>
@@ -148,12 +149,12 @@ governancekit --root /projeto context build \
 
   <section>
     <h2>Configuração de projeto, classificação e retomada</h2>
-    <pre><code>governancekit --root /projeto configure-project plan --project-name "Demo" --domain backend --capability api --agent openai-agents --provider openai:env:OPENAI_API_KEY --json
+    <pre><code>governancekit --root /projeto configure-project plan --project-name "Demo" --domain backend --capability api --agent openai-agents --provider openai:env:OPENAI_API_KEY:primary --json
 governancekit --root /projeto classify-change plan --summary "Mover fronteira de autenticação" --label migration --label contract-change --rationale "Chamadores existentes precisam se adaptar" --domain backend --capability api --compatibility "unsafe in any order" --residual-risk "rollout manual" --json
-governancekit --root /projeto config-session start --project-name "Demo" --domain backend --capability api --provider openai:env:OPENAI_API_KEY --json
+governancekit --root /projeto config-session start --interactive
 governancekit --root /projeto config-session approve --approval project-config-review
 governancekit --root /projeto config-session apply</code></pre>
-    <p>Os comandos acima introduzem as flags <code>--project-name</code>, <code>--domain</code>, <code>--capability</code>, <code>--agent</code>, <code>--provider</code>, <code>--summary</code>, <code>--label</code>, <code>--rationale</code>, <code>--compatibility</code>, <code>--residual-risk</code> e <code>--approval</code>. O estado compartilhável vai para <code>.gk/project-config.json</code> e o gating de aprovação fica em <code>.gk/config-session.json</code>.</p>
+    <p><code>config-session start --interactive</code> lê as fontes listadas em <code>docs/required-reading.md</code>, usa o idioma operacional e conduz a definição de escopo com explicação, exemplo e espaço visual antes de cada resposta estruturada. Registra agente escolhido, domínio primário de cada capacidade e, para cada provider, finalidade, papel de roteamento, modo e apenas a referência da credencial; a chave nunca vai para a configuração do projeto. Arquivos locais de credencial são protegidos e ignorados pelo git. <code>primary</code> é o padrão, <code>fallback</code> é usado quando ele falha e <code>optional</code> não participa do roteamento padrão. Valores salvos ou pendentes reaparecem como defaults no próximo upgrade. Uma sessão <code>pending_approval</code> significa que o plano está salvo em <code>.gk/config-session.json</code>, mas ainda não foi aplicado: execute <code>config-session approve --approval &lt;token&gt;</code> para cada aprovação listada, confira com <code>config-session show</code> e então execute <code>config-session apply</code>. O terminal imprime os comandos exatos e explica o que cada aprovação revisa. O estado compartilhável vai para <code>.gk/project-config.json</code>.</p>
   </section>
 
   <section>

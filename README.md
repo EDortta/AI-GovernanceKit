@@ -64,8 +64,15 @@ Three CLI commands are available:
   `contract-change`, `security-sensitive`, etc.).
 
 - **`governancekit config-session`** — turns configuration into a resumable,
-  approval-gated session so discovery, classification, and project config can be
-  approved and then applied later without losing state.
+  locally acknowledged session; it is not an independent authorization boundary.
+  `config-session start --interactive` loads every
+  available source named by `docs/required-reading.md`, invokes the chosen,
+  locally authenticated agent in read-only mode to propose domains with source
+  evidence, then records the reviewed agent, domains, owned capabilities, LLM
+  provider purpose, routing role, and credential reference without ever storing
+  a secret. The guided interview explains each choice, validates providers in
+  place, and uses saved or pending values as defaults on the next installation
+  or upgrade.
 
 - **`governancekit bootstrap-issue`** — generates local epic/task scaffolding
   from the installed issue templates, reusing the current project config and
@@ -131,11 +138,19 @@ python3 -m governancekit install-hooks --hook-type pre-commit
 ### Installing & updating the AI-Agents kit
 
 ```bash
-governancekit install-agents                 # fresh install (kit → .docs/, project owns docs/, prompts for variables)
-governancekit install-agents --upgrade       # update all kit-owned files, preserve project state
-governancekit install-agents --docs-only     # update only kit docs (not AGENTS.md / rule files)
-governancekit configure                       # re-fill [PLACEHOLDER] variables without reinstalling
+governancekit --root "$PWD" install-agents                 # fresh install (kit → .docs/, project owns docs/, prompts for variables)
+governancekit --root "$PWD" install-agents --upgrade       # update all kit-owned files, preserve project state
+governancekit --root "$PWD" install-agents --docs-only     # update only kit docs (not AGENTS.md / rule files)
+governancekit --root "$PWD" configure                       # re-fill [PLACEHOLDER] variables without reinstalling
 ```
+
+`--root` is the canonical project selector and must appear before the command.
+It defaults to the current directory; use an absolute path when operating on a
+different checkout. `--target` belongs only to the legacy AI-Agents shell installer.
+
+After a fresh install, run `governancekit --root "$PWD" configure` once for each
+host/checkout. It writes the local, gitignored `.governancekit-identity.json` required
+by `doctor` before governed work can start.
 
 `docs/` is yours to track; the kit lives under `.docs/` and is overwritten on
 upgrade. `install-agents` asks whether to track `.docs/` in git (saved to
@@ -158,7 +173,7 @@ governancekit configure-project plan            # preview shareable project-conf
 governancekit configure-project apply           # write .gk/project-config.json + docs summary
 governancekit classify-change plan              # preview required architecture classification
 governancekit classify-change apply             # persist .gk/change-classification.json
-governancekit config-session start              # create resumable, approval-gated config session
+governancekit config-session start --interactive # define scope from the agent reading index
 governancekit config-session approve --approval project-config-review
 governancekit config-session apply              # apply approved session
 governancekit bootstrap-issue                   # scaffold local epic/task files from templates

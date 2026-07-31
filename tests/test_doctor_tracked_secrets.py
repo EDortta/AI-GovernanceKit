@@ -101,6 +101,17 @@ class TrackedSecretFilesTests(unittest.TestCase):
 
             self.assertTrue(result.passed, result.message)
 
+    def test_known_scaffolding_markers_are_not_tracked_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _init_repo_with_tracked_file(root, ".credentials/.keep")
+            _add_tracked_file(root, ".env.missing")
+            _add_tracked_file(root, ".temp/aux-testes/.env-example")
+
+            result = _check_tracked_secret_files(root)
+
+            self.assertTrue(result.passed, result.message)
+
     def test_credentials_translated_readme_is_not_a_tracked_secret(self) -> None:
         # The kit ships .credentials/README-ptbr.md and README-es.md; the exact
         # name "README.md" is not enough — the AI-Agents source repo trips it.

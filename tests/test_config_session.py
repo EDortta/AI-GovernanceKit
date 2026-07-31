@@ -5,7 +5,7 @@ from pathlib import Path
 
 from governancekit import cli
 from governancekit.classification import build_change_classification, save_change_classification
-from governancekit.config_session import load_config_session
+from governancekit.config_session import format_config_session, load_config_session, start_config_session
 
 
 def _seed_contract(root: Path) -> None:
@@ -59,6 +59,10 @@ def test_session_requires_approvals_before_apply(tmp_path: Path, capsys) -> None
     assert code == 0
     out = capsys.readouterr().out
     assert "pending_approval" in out
+    assert "configuration plan is saved but has not been applied" in out
+    assert "config-session approve --approval project-config-review" in out
+    assert "config-session approve --approval existing-project-adoption-review" in out
+    assert "config-session apply" in out
 
     code = cli.main(["--root", str(tmp_path), "config-session", "apply"])
     assert code == 1
@@ -83,6 +87,9 @@ def test_session_requires_approvals_before_apply(tmp_path: Path, capsys) -> None
     session = load_config_session(tmp_path)
     assert session is not None
     assert session.status == "applied"
+    config = json.loads((tmp_path / ".gk" / "project-config.json").read_text(encoding="utf-8"))
+    assert config["project_name"] == "Demo"
+    assert config["capability_domains"]["api"] == "backend"
 
 
 def test_show_session_as_json(tmp_path: Path, capsys) -> None:
@@ -97,3 +104,49 @@ def test_show_session_as_json(tmp_path: Path, capsys) -> None:
     assert code == 0
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "pending_approval"
+
+
+def test_approval_output_explains_next_command(tmp_path: Path, capsys) -> None:
+    _seed_contract(tmp_path)
+    cli.main(["--root", str(tmp_path), "config-session", "start", "--json"])
+    capsys.readouterr()
+
+    code = cli.main(
+        ["--root", str(tmp_path), "config-session", "approve", "--approval", "project-config-review"]
+    )
+
+    assert code == 0
+    output = capsys.readouterr().out
+    assert "all required local acknowledgements are recorded" in output
+    assert "apply: governancekit --root" in output
+
+
+def test_session_commands_quote_root_with_spaces(tmp_path: Path) -> None:
+    root = tmp_path / "project with spaces"
+    _seed_contract(root)
+    session = start_config_session(root)
+
+    output = format_config_session(session, root)
+
+    assert f"governancekit --root '{root}' config-session" in output
+    assert "local acknowledgements, not independent authorization" in output
+
+
+def test_session_rejects_configured_provider_without_credential_reference(
+    tmp_path: Path, capsys
+) -> None:
+    _seed_contract(tmp_path)
+
+    code = cli.main(
+        [
+            "--root",
+            str(tmp_path),
+            "config-session",
+            "start",
+            "--provider",
+            "openai:env",
+        ]
+    )
+
+    assert code == 1
+    assert "credential_ref" in capsys.readouterr().out

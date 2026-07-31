@@ -11,6 +11,7 @@ from governancekit.codemap import (
     _parse_python,
     run_map,
 )
+from governancekit.path_safety import UnsafePathError
 
 
 class IsPrivateTests(unittest.TestCase):
@@ -231,6 +232,25 @@ class RunMapTests(unittest.TestCase):
             result = run_map(root)
             paths = [str(f.path) for f in result.files]
             self.assertFalse(any("secret.py" in p for p in paths))
+
+    def test_skips_symlinked_directory_outside_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            root, outside = Path(tmp), Path(outside_tmp)
+            self._make_project(root)
+            (outside / "secret.py").write_text("SECRET = 'outside'\n", encoding="utf-8")
+            (root / "linked").symlink_to(outside, target_is_directory=True)
+
+            result = run_map(root)
+
+            self.assertNotIn("linked/secret.py", {str(file.path) for file in result.files})
+
+    def test_refuses_output_outside_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            root, outside = Path(tmp), Path(outside_tmp)
+            self._make_project(root)
+
+            with self.assertRaises(UnsafePathError):
+                run_map(root, output=outside / "map.md")
 
 
 if __name__ == "__main__":

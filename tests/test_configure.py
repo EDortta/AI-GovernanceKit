@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from governancekit.configure import (
     parse_set_pairs,
@@ -10,6 +11,8 @@ from governancekit.configure import (
     run_configure_identity,
 )
 from governancekit.identity import load_identity
+from governancekit.identity import Identity, sibling_branch_conflict
+from governancekit.path_safety import UnsafePathError
 
 
 class ConfigureTests(unittest.TestCase):
@@ -21,7 +24,7 @@ class ConfigureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_set_pairs(["NOEQUALS"])
 
-    def test_fills_known_placeholder_across_files(self) -> None:
+    def test_fills_known_placeholder_without_touching_project_docs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             (root / "AGENTS.md").write_text("Hi {{OPERATOR_NAME}}\n", encoding="utf-8")
@@ -31,9 +34,9 @@ class ConfigureTests(unittest.TestCase):
             result = run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
 
             self.assertEqual(result.values, {"OPERATOR_NAME": "Ann"})
-            self.assertEqual(len(result.changed_files), 2)
+            self.assertEqual(result.changed_files, ["AGENTS.md"])
             self.assertNotIn("{{OPERATOR_NAME}}", (root / "AGENTS.md").read_text())
-            self.assertNotIn("{{OPERATOR_NAME}}", (root / "docs" / "x.md").read_text())
+            self.assertIn("{{OPERATOR_NAME}}", (root / "docs" / "x.md").read_text())
 
     def test_ignores_unknown_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -54,8 +57,52 @@ class ConfigureTests(unittest.TestCase):
 
             self.assertEqual(result.unfilled, ["GITHUB_OWNER"])
 
+    def test_ignores_placeholders_in_migration_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup = root / ".docs-migration-bak"
+            backup.mkdir()
+            original = "owner: {{OPERATOR_NAME}}\n"
+            backup_file = backup / "AGENTS.md"
+            backup_file.write_text(original, encoding="utf-8")
+
+            result = run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
+
+            self.assertEqual(result.found_tokens, [])
+            self.assertEqual(result.changed_files, [])
+            self.assertEqual(backup_file.read_text(encoding="utf-8"), original)
+
+    def test_refuses_symlinked_managed_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
+            root = Path(temp_dir)
+            outside = Path(outside_dir) / "outside.md"
+            outside.write_text("owner: {{OPERATOR_NAME}}\n", encoding="utf-8")
+            (root / "AGENTS.md").symlink_to(outside)
+
+            with self.assertRaises(UnsafePathError):
+                run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
+
+            self.assertIn("{{OPERATOR_NAME}}", outside.read_text(encoding="utf-8"))
+
+    def test_ignores_credential_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
+            root = Path(temp_dir)
+            outside = Path(outside_dir) / "credential.json"
+            outside.write_text('{"token": "unchanged"}\n', encoding="utf-8")
+            credentials = root / ".credentials"
+            credentials.mkdir()
+            (credentials / "jira.json").symlink_to(outside)
+
+            result = run_configure(root, preset={"OPERATOR_NAME": "Ann"}, interactive=False)
+
+            self.assertEqual(result.found_tokens, [])
+            self.assertEqual(outside.read_text(encoding="utf-8"), '{"token": "unchanged"}\n')
+
 
 class ConfigureIdentityTests(unittest.TestCase):
+    def test_all_branch_ownership_allows_any_branch(self) -> None:
+        identity = Identity(sibling_path="/other", branch_ownership="all")
+        self.assertEqual(sibling_branch_conflict(identity, "development"), "")
     def test_non_interactive_missing_required_does_not_save(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -64,8 +111,42 @@ class ConfigureIdentityTests(unittest.TestCase):
             )
             self.assertFalse(result.saved)
             self.assertIn("host_id", result.missing_required)
-            self.assertIn("instance_path", result.missing_required)
+            self.assertNotIn("instance_path", result.missing_required)
             self.assertIsNone(load_identity(root))
+
+    def test_identity_prefills_existing_operator_and_checkout_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            credentials = root / ".credentials"
+            credentials.mkdir()
+            (credentials / "identity.json").write_text(
+                '{"values": {"OPERATOR_NAME": "Esteban"}}\n', encoding="utf-8"
+            )
+
+            with patch("governancekit.configure.socket.gethostname", return_value="devel3"), patch(
+                "builtins.input", return_value=""
+            ):
+                result = run_configure_identity(root, interactive=True)
+
+            self.assertEqual(result.identity.operator_name, "Esteban")
+            self.assertEqual(result.identity.instance_path, str(root.resolve()))
+            self.assertEqual(result.identity.host_id, "devel3")
+            self.assertEqual(result.identity.branch_ownership, "all")
+            self.assertEqual(result.missing_required, [])
+
+    def test_identity_does_not_follow_credential_identity_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
+            root, outside = Path(temp_dir), Path(outside_dir)
+            (outside / "identity.json").write_text(
+                '{"values": {"OPERATOR_NAME": "Outside"}}\n', encoding="utf-8"
+            )
+            credentials = root / ".credentials"
+            credentials.mkdir()
+            (credentials / "identity.json").symlink_to(outside / "identity.json")
+
+            result = run_configure_identity(root, interactive=False)
+
+            self.assertEqual(result.identity.operator_name, "")
 
     def test_non_interactive_complete_saves_and_gitignores(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
