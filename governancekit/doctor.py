@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shlex
 import subprocess
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -50,7 +51,6 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_file(repo_root, "AGENTS.md"),
         _check_file(repo_root, "README.md"),
         _check_file(repo_root, "handoff.md"),
-        _check_agents_integration_contract(repo_root),
         _check_ready_flag(
             repo_root,
             ".docs/software-overview.md",
@@ -62,11 +62,14 @@ def run_doctor(root: Path) -> DoctorResult:
             "limits_ready: yes",
         ),
         _check_required_reading(repo_root),
+        _check_content_migration(repo_root),
+        _check_manifest_drift(repo_root),
         _check_active_issue(repo_root),
         _check_resume_next_step(repo_root),
         _check_tracked_secret_files(repo_root),
         _check_gitignore_secrets(repo_root),
         _check_project_config(repo_root),
+        _check_agents_integration_contract(repo_root),
         _check_host_identity(repo_root),
         _check_sibling_branch(repo_root),
         _check_security_advisories(repo_root),
@@ -215,13 +218,19 @@ def _check_security_advisories(root: Path) -> CheckResult:
 
 def _check_agents_integration_contract(root: Path) -> CheckResult:
     from .integration import inspect_integration_contract
+    from .project_config import load_project_config
 
     result = inspect_integration_contract(root)
     if result.status == "ok":
         return CheckResult("AI-Agents integration contract", True, result.message)
     if result.status == "custom-repo":
         return CheckResult("AI-Agents integration contract", True, result.message, advisory=True)
-    return CheckResult("AI-Agents integration contract", False, result.message, advisory=True)
+    config = load_project_config(root)
+    # An existing project that has completed scope configuration must not claim
+    # readiness without the executable contract that binds its installed kit to
+    # this runtime.  Unconfigured and custom projects retain the advisory path.
+    blocking = config is not None and config.project_state == "existing"
+    return CheckResult("AI-Agents integration contract", False, result.message, advisory=not blocking)
 
 
 def _check_project_config(root: Path) -> CheckResult:
@@ -362,6 +371,8 @@ _REQUIRED_READING_REL = "docs/required-reading.md"
 _REQUIRED_READING_STUBS: frozenset[str] = frozenset({
     "[path]", "<doc>", "<path>", "...", "tbd", "todo",
 })
+_REQUIRED_READING_PATH_RE = re.compile(r"`([^`]+)`")
+_MIGRATION_BACKUP_DIR = ".docs-migration-bak"
 
 
 def _check_required_reading(root: Path) -> CheckResult:
@@ -379,24 +390,99 @@ def _check_required_reading(root: Path) -> CheckResult:
             "(use '- (none)' if there are none)",
         )
 
-    entries = []
+    entries: list[str] = []
+    explicit_none = False
     for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw.strip()
         if not line.startswith(("- ", "* ")):
             continue
         item = line[2:].strip()
         if item.lower() in {"(none)", "none"}:
-            return CheckResult(_REQUIRED_READING_REL, True, "explicitly declares no required reading")
+            explicit_none = True
+            continue
         if item and item.lower() not in _REQUIRED_READING_STUBS:
             entries.append(item)
 
+    if explicit_none and _has_project_knowledge_signals(root):
+        return CheckResult(
+            _REQUIRED_READING_REL,
+            False,
+            "declares '- (none)' despite migrated or project-specific documentation — "
+            "list the contracts agents must read",
+        )
+    if explicit_none:
+        return CheckResult(_REQUIRED_READING_REL, True, "explicitly declares no required reading")
+
     if entries:
+        missing = _required_reading_missing_paths(root, entries)
+        if missing:
+            return CheckResult(
+                _REQUIRED_READING_REL,
+                False,
+                f"lists missing document(s): {', '.join(missing)}",
+            )
         return CheckResult(_REQUIRED_READING_REL, True, f"lists {len(entries)} required document(s)")
     return CheckResult(
         _REQUIRED_READING_REL,
         False,
         "no concrete entries — list the docs to read, or '- (none)'",
     )
+
+
+def _has_project_knowledge_signals(root: Path) -> bool:
+    """Return whether an empty index would hide known project documentation."""
+    backup = root / _MIGRATION_BACKUP_DIR
+    return (
+        (backup / "agents").is_dir()
+        or (root / "docs" / "guides").is_dir()
+        or (root / "docs" / "usage").is_dir()
+    )
+
+
+def _required_reading_missing_paths(root: Path, entries: list[str]) -> list[str]:
+    missing: list[str] = []
+    for entry in entries:
+        match = _REQUIRED_READING_PATH_RE.search(entry)
+        if not match:
+            continue
+        rel = Path(match.group(1))
+        candidate = (root / rel).resolve()
+        if not candidate.is_relative_to(root.resolve()) or not candidate.is_file():
+            missing.append(match.group(1))
+    return missing
+
+
+def _check_content_migration(root: Path) -> CheckResult:
+    backup_agents = root / _MIGRATION_BACKUP_DIR / "agents"
+    project_rules = root / "docs" / "project-rules.md"
+    project_rules_dir = root / "docs" / "project-rules"
+    if backup_agents.is_dir() and not project_rules.exists() and not project_rules_dir.is_dir():
+        return CheckResult(
+            "content migration",
+            False,
+            f"{_MIGRATION_BACKUP_DIR}/agents contains legacy contracts but docs/project-rules* is missing — "
+            f"run '{_command(root, 'install-agents --upgrade --migrate-content')}'",
+        )
+    return CheckResult("content migration", True, "no orphaned legacy agent contracts")
+
+
+def _check_manifest_drift(root: Path) -> CheckResult:
+    path = root / ".gk" / "manifest.json"
+    if not path.is_file():
+        return CheckResult("AI-Agents manifest", True, "no install manifest recorded", advisory=True)
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+        files = state.get("files", {})
+    except (OSError, json.JSONDecodeError):
+        return CheckResult("AI-Agents manifest", False, "unreadable .gk/manifest.json")
+    if not isinstance(files, dict):
+        return CheckResult("AI-Agents manifest", False, "manifest files must be an object")
+    missing = sorted(rel for rel in files if not (root / rel).is_file())
+    if missing:
+        shown = ", ".join(missing[:8])
+        suffix = "" if len(missing) <= 8 else f" (+{len(missing) - 8} more)"
+        return CheckResult("AI-Agents manifest", False, f"{len(missing)} tracked path(s) missing: {shown}{suffix}")
+    return CheckResult("AI-Agents manifest", True, "all tracked kit paths present")
 
 
 def _check_active_issue(root: Path) -> CheckResult:

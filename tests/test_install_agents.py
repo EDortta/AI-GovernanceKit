@@ -80,8 +80,10 @@ class InstallAgentsTests(unittest.TestCase):
             ia._ensure_project_docs(root)
             readme = root / ia._PROJECT_DOCS_DIR / "README.md"
             required_reading = root / ia._PROJECT_DOCS_DIR / "required-reading.md"
+            project_rules = root / ia._PROJECT_DOCS_DIR / "project-rules.md"
             self.assertTrue(readme.is_file())
-            self.assertEqual(required_reading.read_text(encoding="utf-8").splitlines()[-1], "- (none)")
+            self.assertIn("docs/project-rules.md", required_reading.read_text(encoding="utf-8"))
+            self.assertTrue(project_rules.is_file())
 
             readme.write_text("custom\n", encoding="utf-8")
             ia._ensure_project_docs(root)
@@ -188,6 +190,16 @@ class InstallAgentsTests(unittest.TestCase):
             merged = ia._state_files(ia._read_state(root))
             self.assertIn("AGENTS.md", merged)
             self.assertIn(".docs/agents/programmer.md", merged)
+
+    def test_full_upgrade_state_prunes_missing_paths_but_docs_only_does_not(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".gk").mkdir()
+            (root / ".gk" / "manifest.json").write_text(
+                '{"files":{"gone.md":"hash"},"metadata":{}}', encoding="utf-8"
+            )
+            ia._write_state(root, [], repo="r", ref="v2", metadata={}, prune_missing=True)
+            self.assertNotIn("gone.md", ia._state_files(ia._read_state(root)))
 
     def test_metadata_reapplied_without_a_terminal(self) -> None:
         # The continuity case: an upgrade overwrote the file with a fresh template, so
@@ -498,6 +510,35 @@ class InstallAgentsTests(unittest.TestCase):
         self.assertNotIn("docs/required-reading.md", ia._UPGRADE_PATHS)
         # And it seeds into docs/, not .docs/
         self.assertEqual(ia._dest_rel("docs/required-reading.md"), "docs/required-reading.md")
+
+    def test_content_migration_extracts_only_project_or_changed_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup = root / ia._MIGRATION_BACKUP_DIR / "agents"
+            backup.mkdir(parents=True)
+            (backup / "programmer.md").write_text("project delta\n", encoding="utf-8")
+            (backup / "build-deploy.md").write_text("project-only\n", encoding="utf-8")
+            (root / ".docs" / "agents").mkdir(parents=True)
+            (root / ".docs" / "agents" / "programmer.md").write_text("kit\n", encoding="utf-8")
+            (root / "docs").mkdir()
+            (root / "docs" / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
+
+            migrated, notes = ia._migrate_legacy_content(root)
+
+            self.assertTrue(migrated, notes)
+            content = (root / "docs" / "project-rules" / "legacy-agent-contracts.md").read_text()
+            self.assertIn("programmer.md", content)
+            self.assertIn("build-deploy.md", content)
+            index = (root / "docs" / "required-reading.md").read_text()
+            self.assertNotIn("(none)", index)
+            self.assertIn("docs/project-rules.md", index)
+
+    def test_upgrade_refuses_orphaned_content_without_explicit_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / ia._MIGRATION_BACKUP_DIR / "agents").mkdir(parents=True)
+            with self.assertRaisesRegex(RuntimeError, "migrate-content"):
+                ia.run_install_agents(root, upgrade=True)
 
     def test_upgrade_refuses_symlinked_managed_directory(self) -> None:
         with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir, tempfile.TemporaryDirectory() as outside_dir:

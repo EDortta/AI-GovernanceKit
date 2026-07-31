@@ -49,6 +49,7 @@ governancekit --root /proyecto install-agents --upgrade</code></pre>
       <tr><td><code>--repo OWNER/REPO</code></td><td>Repositorio alternativo. Por defecto: <code>EDortta/AI-Agents</code>.</td></tr>
       <tr><td><code>--force</code></td><td>Sobrescribe archivos existentes del kit.</td></tr>
       <tr><td><code>--upgrade</code></td><td>Actualiza archivos del kit preservando el estado propio del proyecto.</td></tr>
+      <tr><td><code>--migrate-content</code></td><td>Con <code>--upgrade</code>, extrae contratos heredados específicos del proyecto de <code>.docs-migration-bak/</code> a <code>docs/project-rules/</code>. Es obligatorio antes de actualizar una migración huérfana.</td></tr>
       <tr><td><code>--docs-only</code></td><td>Actualiza documentación gestionada sin tocar <code>AGENTS.md</code> ni adaptadores.</td></tr>
       <tr><td><code>--install-awt</code></td><td>Instala el helper descargado <code>agent-worktree.sh</code> en PATH.</td></tr>
       <tr><td><code>--track</code></td><td>Mantiene la documentación del kit rastreada por Git y guarda la elección.</td></tr>

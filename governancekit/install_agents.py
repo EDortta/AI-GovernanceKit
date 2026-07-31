@@ -18,7 +18,7 @@ REPO = "EDortta/AI-Agents"
 # Pinned to a tagged release (not the mutable "main" branch) so installs are
 # reproducible and can be checksum-verified. Bump alongside KNOWN_TARBALL_SHA256
 # when a new AI-Agents release is adopted.
-DEFAULT_REF = "v1.1.6"
+DEFAULT_REF = "v1.1.7"
 
 # codeload.github.com tarball SHA-256 for (repo, ref) pairs we can vouch for.
 # Only the upstream default repo/ref is pinned here; a custom --repo/--ref
@@ -32,6 +32,7 @@ KNOWN_TARBALL_SHA256: dict[tuple[str, str], str] = {
     (REPO, "v1.1.4"): "497670c3ce1bbdbd2d434f845438a32d6d3afa3337933b8567367127884e9403",
     (REPO, "v1.1.5"): "68881466d94fead63d8f55d2c48e3ab82d4b4099a3741c2064b08e44a726f2fd",
     (REPO, "v1.1.6"): "0cac041c9e5c7ce0cc28b032fbb6cc400509b9a23dc9f04c24e21b6d7daf6c21",
+    (REPO, "v1.1.7"): "7bff38d6ff94576fee6329fd84074d14ad9af649e8d98ff4230516a4283db97a",
 }
 
 # ── layout: kit lives in .docs/, project owns docs/ ──────────────────────────────
@@ -72,6 +73,7 @@ _KIT_SEED_PATHS: list[str] = [
 # never overwritten. They stay in docs/, not .docs/.
 _PROJECT_SEED_PATHS: list[str] = [
     "docs/required-reading.md",
+    "docs/project-rules.md",
     "docs/napkin-lessons.md",
 ]
 
@@ -135,9 +137,17 @@ List the documents an agent must read before analysing or implementing an issue 
 _PROJECT_REQUIRED_READING = """# Required Reading
 
 List the project documents an agent must read before analysing or implementing an
-issue. Keep `- (none)` only when there are genuinely no additional documents.
+issue. Keep this index honest: add the project contracts, runbooks, and domain
+rules an agent must load before work.
 
-- (none)
+- `docs/project-rules.md` — project-specific rules and operational contracts
+"""
+
+_PROJECT_RULES = """# Project Rules
+
+Record the project-specific contracts, runbooks, and operational constraints that
+do not belong in the reusable AI-Agents kit. Keep `docs/required-reading.md`
+aligned with every document an agent must load before work.
 """
 
 # Kit-owned doc paths that legacy projects keep in docs/ and must be migrated to
@@ -278,6 +288,7 @@ def run_install_agents(
     force: bool = False,
     upgrade: bool = False,
     docs_only: bool = False,
+    migrate_content: bool = False,
     track: bool | None = None,
     install_awt: bool = False,
 ) -> InstallResult:
@@ -304,12 +315,22 @@ def run_install_agents(
     # and the previous answers to avoid re-interrogating the operator.
     state = _read_state(root)
 
+    if upgrade and _content_migration_required(root) and not migrate_content:
+        raise RuntimeError(
+            "Refusing upgrade: legacy agent contracts remain in .docs-migration-bak/. "
+            "Run 'governancekit install-agents --upgrade --migrate-content' first."
+        )
+
     # Migrate a legacy layout (kit in docs/, project in docs/project/) BEFORE any
     # upgrade write, so kit content lands in .docs/ and project docs are preserved.
     if upgrade or docs_only:
         migrated, notes = _migrate_legacy_layout(root)
         result.migrated = migrated
         result.migration_notes = notes
+        if migrate_content:
+            content_migrated, content_notes = _migrate_legacy_content(root)
+            result.migrated = result.migrated or content_migrated
+            result.migration_notes.extend(content_notes)
 
     with tempfile.TemporaryDirectory() as tmp:
         src_root = _download(repo, ref, Path(tmp))
@@ -356,7 +377,14 @@ def run_install_agents(
     result.metadata_known = sorted(metadata)
     # Written last: hashes must describe the files as they stand AFTER substitution,
     # so a configured file still matches its own record on the next upgrade.
-    _write_state(root, result.paths_installed, repo=repo, ref=ref, metadata=metadata)
+    _write_state(
+        root,
+        result.paths_installed,
+        repo=repo,
+        ref=ref,
+        metadata=metadata,
+        prune_missing=upgrade and not docs_only,
+    )
 
     if install_awt and _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
         result.awt_installed, result.awt_message = _install_awt(root)
@@ -681,6 +709,7 @@ def _write_state(
     repo: str,
     ref: str,
     metadata: dict[str, str],
+    prune_missing: bool = False,
 ) -> None:
     """Persist file hashes and operator answers.
 
@@ -694,6 +723,11 @@ def _write_state(
     """
     previous = _read_state(root)
     files: dict[str, str] = dict(_state_files(previous))
+    if prune_missing:
+        # A full upgrade is authoritative for the kit layout. Retired files and
+        # pre-.docs paths must not survive forever as fake managed files. Narrow
+        # documentation refreshes deliberately do not prune outside their scope.
+        files = {rel: digest for rel, digest in files.items() if (root / rel).is_file()}
     for rel in installed:
         target = safe_path(root, root / rel)
         if target.is_file():
@@ -872,6 +906,83 @@ def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
     return True, notes
 
 
+def _content_migration_required(root: Path) -> bool:
+    """Whether a layout backup still contains contracts outside the load path."""
+    backup_agents = root / _MIGRATION_BACKUP_DIR / "agents"
+    project_rules = root / "docs" / "project-rules.md"
+    project_rules_dir = root / "docs" / "project-rules"
+    return backup_agents.is_dir() and not project_rules.exists() and not project_rules_dir.is_dir()
+
+
+def _migrate_legacy_content(root: Path) -> tuple[bool, list[str]]:
+    """Preserve legacy agent contracts in project-owned reading paths.
+
+    Layout migration protects the original tree in ``.docs-migration-bak``. This
+    explicit second stage makes any agent role that is project-specific (or differs
+    from the refreshed kit role) reachable through ``docs/project-rules`` and the
+    required-reading index. It never deletes the backup or overwrites existing
+    project rules.
+    """
+    backup_agents = safe_path(root, root / _MIGRATION_BACKUP_DIR / "agents")
+    if not backup_agents.is_dir():
+        return False, ["content migration: no legacy agent backup found"]
+
+    selected: list[Path] = []
+    kit_agents = root / ".docs" / "agents"
+    for source in sorted(backup_agents.rglob("*.md")):
+        relative = source.relative_to(backup_agents)
+        current = kit_agents / relative
+        if not current.is_file() or current.read_bytes() != source.read_bytes():
+            selected.append(source)
+
+    rules_dir = safe_path(root, root / "docs" / "project-rules")
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    migrated = rules_dir / "legacy-agent-contracts.md"
+    if migrated.exists():
+        return False, ["content migration: docs/project-rules/legacy-agent-contracts.md already exists"]
+
+    sections = [
+        "# Migrated Legacy Agent Contracts",
+        "",
+        "Project-specific contracts preserved from the legacy AI-Agents layout. "
+        "The original backup remains in `.docs-migration-bak/` for audit.",
+    ]
+    for source in selected:
+        sections.extend([
+            "",
+            f"## {source.relative_to(backup_agents).as_posix()}",
+            "",
+            source.read_text(encoding="utf-8", errors="replace").rstrip(),
+        ])
+    if not selected:
+        sections.extend(["", "No project-specific differences were detected."])
+    migrated.write_text("\n".join(sections) + "\n", encoding="utf-8")
+
+    project_rules = root / "docs" / "project-rules.md"
+    if not project_rules.exists():
+        project_rules.write_text(
+            "# Project Rules\n\n"
+            "Read `docs/project-rules/legacy-agent-contracts.md` before work that "
+            "matches its operational domain.\n",
+            encoding="utf-8",
+        )
+    _add_required_reading_entries(root, [
+        "docs/project-rules.md",
+        "docs/project-rules/legacy-agent-contracts.md",
+    ])
+    return True, [f"content: {len(selected)} legacy contract(s) extracted to docs/project-rules/"]
+
+
+def _add_required_reading_entries(root: Path, paths: list[str]) -> None:
+    index = safe_path(root, root / "docs" / "required-reading.md")
+    existing = index.read_text(encoding="utf-8") if index.exists() else "# Required Reading\n"
+    lines = [line for line in existing.splitlines() if line.strip().lower() not in {"- (none)", "* (none)"}]
+    for path in paths:
+        if path not in existing:
+            lines.append(f"- `{path}` — migrated project-specific contract")
+    index.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
 # ── project-owned docs ──────────────────────────────────────────────────────────
 
 def _ensure_project_docs(root: Path) -> None:
@@ -886,6 +997,10 @@ def _ensure_project_docs(root: Path) -> None:
     required_reading = project_dir / "required-reading.md"
     if not required_reading.exists():
         required_reading.write_text(_PROJECT_REQUIRED_READING, encoding="utf-8")
+
+    project_rules = project_dir / "project-rules.md"
+    if not project_rules.exists():
+        project_rules.write_text(_PROJECT_RULES, encoding="utf-8")
 
 
 # ── track-kit-docs config ─────────────────────────────────────────────────────────

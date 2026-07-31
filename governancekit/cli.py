@@ -183,6 +183,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     install_parser.add_argument(
+        "--migrate-content",
+        action="store_true",
+        help="Extract project-specific legacy agent contracts from .docs-migration-bak/ into docs/project-rules/.",
+    )
+    install_parser.add_argument(
         "--install-awt",
         dest="install_awt",
         action="store_true",
@@ -528,6 +533,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 force=args.force,
                 upgrade=args.upgrade,
                 docs_only=args.docs_only,
+                migrate_content=args.migrate_content,
                 track=args.track,
                 install_awt=args.install_awt,
             )

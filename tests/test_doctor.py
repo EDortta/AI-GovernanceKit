@@ -64,6 +64,60 @@ class DoctorTests(unittest.TestCase):
 
             self.assertNotIn("docs/required-reading.md", failed_check_names(result))
 
+    def test_required_reading_none_fails_when_legacy_agents_are_orphaned(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / ".docs-migration-bak" / "agents").mkdir(parents=True)
+            (root / "docs" / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
+
+            result = run_doctor(root)
+
+            self.assertIn("docs/required-reading.md", failed_check_names(result))
+            self.assertIn("content migration", failed_check_names(result))
+
+    def test_required_reading_fails_for_missing_listed_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "docs" / "required-reading.md").write_text(
+                "- `docs/project-rules.md` — project rules\n", encoding="utf-8"
+            )
+
+            result = run_doctor(root)
+
+            self.assertIn("docs/required-reading.md", failed_check_names(result))
+
+    def test_existing_config_requires_integration_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / ".gk").mkdir(exist_ok=True)
+            (root / ".gk" / "project-config.json").write_text(
+                '{"config_version":1,"project_name":"Demo","project_state":"existing",'
+                '"languages":[],"frameworks":[],"package_managers":[],"automation_commands":[],'
+                'domains":[],"capabilities":[],"agents":[],"providers":[],"governance_files":[],'
+                '"integration_status":"missing","notes":[]}\n',
+                encoding="utf-8",
+            )
+
+            result = run_doctor(root)
+
+            self.assertIn("AI-Agents integration contract", failed_check_names(result))
+
+    def test_manifest_missing_tracked_path_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / ".gk").mkdir(exist_ok=True)
+            (root / ".gk" / "manifest.json").write_text(
+                '{"files":{".docs/agents/programmer.md":"hash"}}\n', encoding="utf-8"
+            )
+
+            result = run_doctor(root)
+
+            self.assertIn("AI-Agents manifest", failed_check_names(result))
+
     def test_required_reading_only_stub_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

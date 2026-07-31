@@ -49,6 +49,7 @@ governancekit --root /project install-agents --upgrade</code></pre>
       <tr><td><code>--repo OWNER/REPO</code></td><td>Alternative source repository. Default: <code>EDortta/AI-Agents</code>.</td></tr>
       <tr><td><code>--force</code></td><td>Overwrites existing kit files.</td></tr>
       <tr><td><code>--upgrade</code></td><td>Updates kit-owned files while preserving project-owned state.</td></tr>
+      <tr><td><code>--migrate-content</code></td><td>With <code>--upgrade</code>, extracts legacy project-specific agent contracts from <code>.docs-migration-bak/</code> into <code>docs/project-rules/</code>. Required before upgrading an orphaned migration.</td></tr>
       <tr><td><code>--docs-only</code></td><td>Refreshes managed documentation without touching <code>AGENTS.md</code> or tool adapters.</td></tr>
       <tr><td><code>--install-awt</code></td><td>Installs the downloaded <code>agent-worktree.sh</code> helper onto PATH.</td></tr>
       <tr><td><code>--skip-project-configuration</code></td><td>Skips the default offer to start the required-reading-driven project scope interview.</td></tr>
