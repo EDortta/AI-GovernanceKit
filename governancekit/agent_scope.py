@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .project_config import ProviderConfig
@@ -145,7 +145,57 @@ def _provider_failure_detail(error: urllib.error.HTTPError) -> str:
     return f"HTTP {error.code}: {reason}"
 
 
-def _propose_via_llm(provider: ProviderConfig, root: Path, sources: list[str], locale: str) -> ScopeProposal:
+def _credential_file_path(root: Path, reference: str, credential_root: Path | None) -> Path:
+    """Resolve a project-local credential reference without widening source access."""
+    relative = Path(reference)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise RuntimeError("LLM credential file must be a relative path inside the project")
+    path = (root / relative).resolve()
+    allowed_roots = [root.resolve()]
+    if credential_root is not None:
+        trusted_root = credential_root.resolve()
+        if not trusted_root.is_dir():
+            raise RuntimeError("trusted credential root is not an available directory")
+        allowed_roots.append(trusted_root)
+    for allowed_root in allowed_roots:
+        try:
+            path.relative_to(allowed_root)
+            return path
+        except ValueError:
+            continue
+    raise RuntimeError("LLM credential file escaped the project and trusted credential roots")
+
+
+def _credential_from_file(provider: ProviderConfig, root: Path, credential_root: Path | None) -> tuple[str | None, ProviderConfig]:
+    path = _credential_file_path(root, provider.credential_ref or "", credential_root)
+    try:
+        content = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise RuntimeError("LLM credential file is not available; create it again or choose an environment variable") from exc
+    if not content.startswith("{"):
+        return content, provider
+    try:
+        profile = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("LLM credential profile is invalid JSON") from exc
+    if not isinstance(profile, dict):
+        raise RuntimeError("LLM credential profile must be a JSON object")
+    secret = next((profile.get(name) for name in ("api_key", "apiKey", "key") if isinstance(profile.get(name), str)), None)
+    if not secret or not secret.strip():
+        raise RuntimeError("LLM credential profile requires a non-empty api_key")
+    overrides: dict[str, str] = {}
+    for field in ("model", "base_url"):
+        value = profile.get(field)
+        if value is not None:
+            if not isinstance(value, str) or not value.strip():
+                raise RuntimeError(f"LLM credential profile has an invalid {field}")
+            overrides[field] = value.strip()
+    return secret.strip(), replace(provider, **overrides)
+
+
+def _propose_via_llm(
+    provider: ProviderConfig, root: Path, sources: list[str], locale: str, credential_root: Path | None = None
+) -> ScopeProposal:
     if provider.mode not in {"env", "file-ref"} or not provider.credential_ref:
         raise RuntimeError("LLM API analysis requires an environment-variable or protected-file credential reference")
     if not provider.base_url or not provider.model:
@@ -153,18 +203,7 @@ def _propose_via_llm(provider: ProviderConfig, root: Path, sources: list[str], l
     if provider.mode == "env":
         secret = os.environ.get(provider.credential_ref)
     else:
-        credential_path = Path(provider.credential_ref)
-        if credential_path.is_absolute() or ".." in credential_path.parts:
-            raise RuntimeError("LLM credential file must stay inside the project root")
-        credential_path = (root / credential_path).resolve()
-        try:
-            credential_path.relative_to(root.resolve())
-        except ValueError as exc:
-            raise RuntimeError("LLM credential file escaped the project root") from exc
-        try:
-            secret = credential_path.read_text(encoding="utf-8").strip()
-        except OSError as exc:
-            raise RuntimeError("LLM credential file is not available; create it again or choose an environment variable") from exc
+        secret, provider = _credential_from_file(provider, root, credential_root)
     if not secret:
         location = "shell" if provider.mode == "env" else "credential file"
         raise RuntimeError(f"LLM credential {provider.credential_ref!r} is not available in the {location}; configure it and retry")
@@ -265,13 +304,21 @@ def _parse_proposal(raw: str, sources: list[str]) -> ScopeProposal:
     )
 
 
-def propose_project_scope(root: Path, agent: str, sources: list[str], *, locale: str = "en", provider: ProviderConfig | None = None) -> ScopeProposal:
+def propose_project_scope(
+    root: Path,
+    agent: str,
+    sources: list[str],
+    *,
+    locale: str = "en",
+    provider: ProviderConfig | None = None,
+    credential_root: Path | None = None,
+) -> ScopeProposal:
     """Ask the selected, locally authenticated agent for a read-only proposal."""
     root = root.resolve()
     if agent == "llm-api":
         if provider is None:
             raise RuntimeError("select an LLM provider before choosing llm-api")
-        return _propose_via_llm(provider, root, sources, locale)
+        return _propose_via_llm(provider, root, sources, locale, credential_root)
     executable = _AGENT_COMMANDS.get(agent)
     if not executable or not shutil.which(executable):
         raise RuntimeError(f"scope agent {agent!r} is not available on PATH")

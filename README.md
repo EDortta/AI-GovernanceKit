@@ -72,7 +72,12 @@ Three CLI commands are available:
   provider purpose, routing role, and credential reference without ever storing
   a secret. The guided interview explains each choice, validates providers in
   place, and uses saved or pending values as defaults on the next installation
-  or upgrade.
+  or upgrade. For a local credential symlink whose destination is outside the
+  project, the operator may pass `--credential-root PATH` to the interactive
+  session. That root is trusted only for this invocation, is never saved, and
+  does not relax the read-only source boundary. A JSON credential profile may
+  contain `api_key` (or `apiKey`/`key`) plus optional `model` and `base_url`;
+  those values are used in memory only.
 
 - **`governancekit bootstrap-issue`** — generates local epic/task scaffolding
   from the installed issue templates, reusing the current project config and

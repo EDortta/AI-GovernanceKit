@@ -121,3 +121,72 @@ def test_llm_scope_adapter_reads_a_project_local_protected_credential_file(tmp_p
 
     assert proposal.domain_names == ["sessions"]
     assert captured["authorization"] == "Bearer file-secret"
+
+
+def test_llm_scope_adapter_allows_a_symlink_into_the_operator_trusted_credential_root(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "docs/product.md"
+    source.parent.mkdir()
+    source.write_text("product\n", encoding="utf-8")
+    trusted_root = tmp_path / "operator-credentials"
+    trusted_root.mkdir()
+    profile = trusted_root / "openai.json"
+    profile.write_text('{"api_key":"file-secret","model":"profile-model"}', encoding="utf-8")
+    credential = tmp_path / ".credentials/openai.json"
+    credential.parent.mkdir()
+    credential.symlink_to(profile)
+    captured: dict[str, object] = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": '{"summary":"Product","domains":[{"name":"sessions","capabilities":["manage"],"evidence":["docs/product.md: flow"]}],"questions":[]}'}}]}).encode()
+
+    def fake_urlopen(request, timeout):
+        captured["authorization"] = request.headers["Authorization"]
+        captured["payload"] = json.loads(request.data)
+        assert timeout == 90
+        return Response()
+
+    monkeypatch.setattr("governancekit.agent_scope.urllib.request.urlopen", fake_urlopen)
+    provider = ProviderConfig(
+        name="openai", base_url="https://example.test/v1", model="configured-model",
+        mode="file-ref", credential_ref=".credentials/openai.json",
+    )
+
+    proposal = propose_project_scope(
+        tmp_path, "llm-api", ["docs/product.md"], provider=provider,
+        credential_root=trusted_root,
+    )
+
+    assert proposal.domain_names == ["sessions"]
+    assert captured["authorization"] == "Bearer file-secret"
+    assert captured["payload"]["model"] == "profile-model"
+
+
+def test_llm_scope_adapter_rejects_a_credential_symlink_outside_the_trusted_root(tmp_path: Path) -> None:
+    source = tmp_path / "docs/product.md"
+    source.parent.mkdir()
+    source.write_text("product\n", encoding="utf-8")
+    trusted_root = tmp_path / "operator-credentials"
+    trusted_root.mkdir()
+    outside = tmp_path.parent / "credential-outside"
+    outside.mkdir()
+    credential = tmp_path / ".credentials/openai.key"
+    credential.parent.mkdir()
+    credential.symlink_to(outside / "openai.key")
+    (outside / "openai.key").write_text("file-secret\n", encoding="utf-8")
+    provider = ProviderConfig(
+        name="openai", base_url="https://example.test/v1", model="configured-model",
+        mode="file-ref", credential_ref=".credentials/openai.key",
+    )
+
+    with pytest.raises(RuntimeError, match="trusted credential roots"):
+        propose_project_scope(
+            tmp_path, "llm-api", ["docs/product.md"], provider=provider,
+            credential_root=trusted_root,
+        )
