@@ -165,7 +165,7 @@ def _credential_file_path(root: Path, reference: str, credential_root: Path | No
             continue
     if credential_root is None:
         raise RuntimeError(
-            "LLM credential file escaped the project root; pass --credential-root PATH to trust its destination for this invocation"
+            "LLM credential file resolves outside the project root. Credential files reached through symbolic links require --credential-root PATH before the command to trust their destination for this invocation"
         )
     raise RuntimeError("LLM credential file escaped the project and trusted credential roots")
 

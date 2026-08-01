@@ -185,6 +185,9 @@ def test_llm_scope_adapter_rejects_a_credential_symlink_outside_the_trusted_root
         mode="file-ref", credential_ref=".credentials/openai.key",
     )
 
+    with pytest.raises(RuntimeError, match="symbolic links require --credential-root PATH"):
+        propose_project_scope(tmp_path, "llm-api", ["docs/product.md"], provider=provider)
+
     with pytest.raises(RuntimeError, match="trusted credential roots"):
         propose_project_scope(
             tmp_path, "llm-api", ["docs/product.md"], provider=provider,
