@@ -658,7 +658,11 @@ def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) 
 
 
 def run_scope_conversation(
-    root: Path, *, locale: str | None = None, credential_root: Path | None = None
+    root: Path,
+    *,
+    locale: str | None = None,
+    credential_root: Path | None = None,
+    allow_project_credential_symlinks: bool = False,
 ) -> ScopeConversation:
     root = root.resolve()
     locale = locale or resolve_locale(root=root)
@@ -700,6 +704,7 @@ def run_scope_conversation(
     proposal: ScopeProposal = propose_project_scope(
         root, selected_agent, sources, locale=locale, provider=api_provider,
         credential_root=credential_root,
+        allow_project_credential_symlinks=allow_project_credential_symlinks,
     )
     print("\n" + _message(locale, "proposal"))
     print(proposal.render(locale=locale))
