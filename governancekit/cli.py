@@ -49,7 +49,8 @@ _ROOT_HELP_EPILOG = """Common command options:
     --related-commit REF
   config-session start
     --project-name NAME, --domain NAME, --capability NAME, --agent NAME,
-    --provider NAME[:MODE[:CREDENTIAL_REF[:ROLE]]], --interactive, --json
+    --provider NAME[:MODE[:CREDENTIAL_REF[:ROLE]]], --interactive,
+    --credential-root PATH, --json
   config-session approve
     --approval TOKEN, --json
   config-session show
@@ -319,6 +320,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--interactive",
         action="store_true",
         help="Run the required-reading-driven project scope interview.",
+    )
+    start_parser.add_argument(
+        "--credential-root",
+        type=Path,
+        help="Operator-trusted local root allowed only to resolve credential-file symlinks during this interview.",
     )
     start_parser.add_argument("--json", dest="as_json", action="store_true")
     approve_parser = session_commands.add_parser("approve")
@@ -814,7 +820,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 from .scope_conversation import run_scope_conversation
 
                 try:
-                    conversation = run_scope_conversation(args.root)
+                    conversation = run_scope_conversation(args.root, credential_root=args.credential_root)
                 except RuntimeError as exc:
                     print(f"ERROR: {exc}")
                     return 1

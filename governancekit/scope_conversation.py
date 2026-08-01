@@ -657,7 +657,9 @@ def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) 
     return providers or [ProviderConfig(name="manual", mode="manual")]
 
 
-def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeConversation:
+def run_scope_conversation(
+    root: Path, *, locale: str | None = None, credential_root: Path | None = None
+) -> ScopeConversation:
     root = root.resolve()
     locale = locale or resolve_locale(root=root)
     sources, missing = load_required_reading(root)
@@ -695,7 +697,10 @@ def run_scope_conversation(root: Path, *, locale: str | None = None) -> ScopeCon
         print("  " + _message(locale, "choose_agent"))
         selected_agent = _ask(_message(locale, "agent"), selected_default, gap=False)
     _print_analysis_notice(locale, selected_agent, sources, api_provider if selected_agent == "llm-api" else None)
-    proposal: ScopeProposal = propose_project_scope(root, selected_agent, sources, locale=locale, provider=api_provider)
+    proposal: ScopeProposal = propose_project_scope(
+        root, selected_agent, sources, locale=locale, provider=api_provider,
+        credential_root=credential_root,
+    )
     print("\n" + _message(locale, "proposal"))
     print(proposal.render(locale=locale))
     if _is_legacy_pending_scope_baseline(root, existing):
