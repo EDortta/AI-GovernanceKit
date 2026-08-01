@@ -18,14 +18,14 @@ def test_main_without_command_prints_expanded_help() -> None:
 
     output = stdout.getvalue()
     assert code == 2
-    assert "usage: governancekit [-h] [--root ROOT] [--credential-root CREDENTIAL_ROOT]" in output
+    assert "usage: governancekit [-h] [--root ROOT] [--version]" in output
     assert "positional arguments:" in output
     assert "doctor              Validate required governance files and readiness" in output
     assert "context             Inspect or build a deterministic task context." in output
     assert "voice-integration   Detect optional AI-ListenToMeOnCLI availability." in output
     assert "Common command options:" in output
     assert "Target a project explicitly" in output
-    assert "governancekit --root /absolute/path --credential-root /trusted/credentials COMMAND [OPTIONS]" in output
+    assert "governancekit --root /absolute/path COMMAND [OPTIONS]" in output
     assert "--upgrade, --docs-only, --force" in output
     assert "--set KEY=VALUE, --operator-name NAME" in output
     assert "a command is required" in output

@@ -13,9 +13,8 @@ from .context import ContextError, build_context, format_context
 
 _ROOT_HELP_EPILOG = """Common command options:
   Target a project explicitly
-    governancekit --root /absolute/path --credential-root /trusted/credentials COMMAND [OPTIONS]
-    --root and --credential-root are global and must precede the command.
-    --root defaults to the current directory; --credential-root is used only by an interactive scope interview.
+    governancekit --root /absolute/path COMMAND [OPTIONS]
+    --root is global and must precede the command; it defaults to the current directory.
 
   doctor
     --json
@@ -75,11 +74,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path.cwd(),
         help="Repository root to inspect. Defaults to the current directory.",
-    )
-    parser.add_argument(
-        "--credential-root",
-        type=Path,
-        help="Operator-trusted local root allowed only to resolve credential-file symlinks during an interactive scope interview.",
     )
     parser.add_argument(
         "--version",
@@ -325,6 +319,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--interactive",
         action="store_true",
         help="Run the required-reading-driven project scope interview.",
+    )
+    start_parser.add_argument(
+        "--credentials-allow-symlinks",
+        action="store_true",
+        help="Allow credential-file symlinks below .credentials/ for this interactive interview.",
     )
     start_parser.add_argument("--json", dest="as_json", action="store_true")
     approve_parser = session_commands.add_parser("approve")
@@ -602,7 +601,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                     try:
                         conversation = run_scope_conversation(
                             args.root,
-                            credential_root=args.credential_root,
                             allow_project_credential_symlinks=True,
                         )
                     except RuntimeError as exc:
@@ -824,7 +822,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 from .scope_conversation import run_scope_conversation
 
                 try:
-                    conversation = run_scope_conversation(args.root, credential_root=args.credential_root)
+                    conversation = run_scope_conversation(
+                        args.root,
+                        allow_project_credential_symlinks=args.credentials_allow_symlinks,
+                    )
                 except RuntimeError as exc:
                     print(f"ERROR: {exc}")
                     return 1

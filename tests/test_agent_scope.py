@@ -123,13 +123,13 @@ def test_llm_scope_adapter_reads_a_project_local_protected_credential_file(tmp_p
     assert captured["authorization"] == "Bearer file-secret"
 
 
-def test_llm_scope_adapter_allows_a_symlink_into_the_operator_trusted_credential_root(tmp_path: Path, monkeypatch) -> None:
+def test_llm_scope_adapter_allows_a_credential_symlink_when_explicitly_enabled(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "docs/product.md"
     source.parent.mkdir()
     source.write_text("product\n", encoding="utf-8")
-    trusted_root = tmp_path / "operator-credentials"
-    trusted_root.mkdir()
-    profile = trusted_root / "openai.json"
+    credential_store = tmp_path.parent / "operator-credentials"
+    credential_store.mkdir()
+    profile = credential_store / "openai.json"
     profile.write_text('{"api_key":"file-secret","model":"profile-model"}', encoding="utf-8")
     credential = tmp_path / ".credentials/openai.json"
     credential.parent.mkdir()
@@ -160,7 +160,7 @@ def test_llm_scope_adapter_allows_a_symlink_into_the_operator_trusted_credential
 
     proposal = propose_project_scope(
         tmp_path, "llm-api", ["docs/product.md"], provider=provider,
-        credential_root=trusted_root,
+        allow_project_credential_symlinks=True,
     )
 
     assert proposal.domain_names == ["sessions"]
@@ -172,8 +172,6 @@ def test_llm_scope_adapter_rejects_a_credential_symlink_outside_the_trusted_root
     source = tmp_path / "docs/product.md"
     source.parent.mkdir()
     source.write_text("product\n", encoding="utf-8")
-    trusted_root = tmp_path / "operator-credentials"
-    trusted_root.mkdir()
     outside = tmp_path.parent / "credential-outside"
     outside.mkdir()
     credential = tmp_path / ".credentials/openai.key"
@@ -185,15 +183,9 @@ def test_llm_scope_adapter_rejects_a_credential_symlink_outside_the_trusted_root
         mode="file-ref", credential_ref=".credentials/openai.key",
     )
 
-    with pytest.raises(RuntimeError, match="symbolic links require --credential-root PATH"):
+    with pytest.raises(RuntimeError, match="--credentials-allow-symlinks"):
         propose_project_scope(tmp_path, "llm-api", ["docs/product.md"], provider=provider)
 
     assert _credential_file_path(
-        tmp_path, ".credentials/openai.key", None, allow_project_credential_symlinks=True
+        tmp_path, ".credentials/openai.key", allow_project_credential_symlinks=True
     ) == outside / "openai.key"
-
-    with pytest.raises(RuntimeError, match="trusted credential roots"):
-        propose_project_scope(
-            tmp_path, "llm-api", ["docs/product.md"], provider=provider,
-            credential_root=trusted_root,
-        )
