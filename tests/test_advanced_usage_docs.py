@@ -35,6 +35,14 @@ def test_advanced_guide_documents_every_cli_parameter() -> None:
     assert missing == []
 
 
+def test_credential_root_is_global_for_every_interactive_entrypoint() -> None:
+    args = build_parser().parse_args(
+        ["--credential-root", "/operator/credentials", "config-session", "start", "--interactive"]
+    )
+
+    assert args.credential_root == Path("/operator/credentials")
+
+
 def test_landing_links_advanced_guide_and_identity_is_unambiguous() -> None:
     guide = GUIDE.read_text(encoding="utf-8")
     landing = LANDING.read_text(encoding="utf-8")
