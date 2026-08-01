@@ -600,7 +600,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     from .scope_conversation import run_scope_conversation
 
                     try:
-                        conversation = run_scope_conversation(args.root, credential_root=args.credential_root)
+                        conversation = run_scope_conversation(
+                            args.root,
+                            credential_root=args.credential_root,
+                            allow_project_credential_symlinks=True,
+                        )
                     except RuntimeError as exc:
                         print(f"ERROR: {exc}")
                         return 1

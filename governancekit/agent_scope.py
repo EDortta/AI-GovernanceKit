@@ -145,7 +145,12 @@ def _provider_failure_detail(error: urllib.error.HTTPError) -> str:
     return f"HTTP {error.code}: {reason}"
 
 
-def _credential_file_path(root: Path, reference: str, credential_root: Path | None) -> Path:
+def _credential_file_path(
+    root: Path,
+    reference: str,
+    credential_root: Path | None,
+    allow_project_credential_symlinks: bool = False,
+) -> Path:
     """Resolve a project-local credential reference without widening source access."""
     relative = Path(reference)
     if relative.is_absolute() or ".." in relative.parts:
@@ -163,6 +168,8 @@ def _credential_file_path(root: Path, reference: str, credential_root: Path | No
             return path
         except ValueError:
             continue
+    if allow_project_credential_symlinks and relative.parts and relative.parts[0] == ".credentials":
+        return path
     if credential_root is None:
         raise RuntimeError(
             "LLM credential file resolves outside the project root. Credential files reached through symbolic links require --credential-root PATH before the command to trust their destination for this invocation"
@@ -170,8 +177,15 @@ def _credential_file_path(root: Path, reference: str, credential_root: Path | No
     raise RuntimeError("LLM credential file escaped the project and trusted credential roots")
 
 
-def _credential_from_file(provider: ProviderConfig, root: Path, credential_root: Path | None) -> tuple[str | None, ProviderConfig]:
-    path = _credential_file_path(root, provider.credential_ref or "", credential_root)
+def _credential_from_file(
+    provider: ProviderConfig,
+    root: Path,
+    credential_root: Path | None,
+    allow_project_credential_symlinks: bool,
+) -> tuple[str | None, ProviderConfig]:
+    path = _credential_file_path(
+        root, provider.credential_ref or "", credential_root, allow_project_credential_symlinks
+    )
     try:
         content = path.read_text(encoding="utf-8").strip()
     except OSError as exc:
@@ -198,7 +212,12 @@ def _credential_from_file(provider: ProviderConfig, root: Path, credential_root:
 
 
 def _propose_via_llm(
-    provider: ProviderConfig, root: Path, sources: list[str], locale: str, credential_root: Path | None = None
+    provider: ProviderConfig,
+    root: Path,
+    sources: list[str],
+    locale: str,
+    credential_root: Path | None = None,
+    allow_project_credential_symlinks: bool = False,
 ) -> ScopeProposal:
     if provider.mode not in {"env", "file-ref"} or not provider.credential_ref:
         raise RuntimeError("LLM API analysis requires an environment-variable or protected-file credential reference")
@@ -207,7 +226,9 @@ def _propose_via_llm(
     if provider.mode == "env":
         secret = os.environ.get(provider.credential_ref)
     else:
-        secret, provider = _credential_from_file(provider, root, credential_root)
+        secret, provider = _credential_from_file(
+            provider, root, credential_root, allow_project_credential_symlinks
+        )
     if not secret:
         location = "shell" if provider.mode == "env" else "credential file"
         raise RuntimeError(f"LLM credential {provider.credential_ref!r} is not available in the {location}; configure it and retry")
@@ -316,13 +337,16 @@ def propose_project_scope(
     locale: str = "en",
     provider: ProviderConfig | None = None,
     credential_root: Path | None = None,
+    allow_project_credential_symlinks: bool = False,
 ) -> ScopeProposal:
     """Ask the selected, locally authenticated agent for a read-only proposal."""
     root = root.resolve()
     if agent == "llm-api":
         if provider is None:
             raise RuntimeError("select an LLM provider before choosing llm-api")
-        return _propose_via_llm(provider, root, sources, locale, credential_root)
+        return _propose_via_llm(
+            provider, root, sources, locale, credential_root, allow_project_credential_symlinks
+        )
     executable = _AGENT_COMMANDS.get(agent)
     if not executable or not shutil.which(executable):
         raise RuntimeError(f"scope agent {agent!r} is not available on PATH")

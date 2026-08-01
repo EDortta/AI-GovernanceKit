@@ -4,7 +4,7 @@ from pathlib import Path
 from subprocess import CompletedProcess
 import json
 
-from governancekit.agent_scope import _command, _provider_failure_detail, propose_project_scope
+from governancekit.agent_scope import _command, _credential_file_path, _provider_failure_detail, propose_project_scope
 from governancekit.project_config import ProviderConfig
 import pytest
 
@@ -187,6 +187,10 @@ def test_llm_scope_adapter_rejects_a_credential_symlink_outside_the_trusted_root
 
     with pytest.raises(RuntimeError, match="symbolic links require --credential-root PATH"):
         propose_project_scope(tmp_path, "llm-api", ["docs/product.md"], provider=provider)
+
+    assert _credential_file_path(
+        tmp_path, ".credentials/openai.key", None, allow_project_credential_symlinks=True
+    ) == outside / "openai.key"
 
     with pytest.raises(RuntimeError, match="trusted credential roots"):
         propose_project_scope(
