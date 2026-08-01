@@ -75,7 +75,7 @@ Three CLI commands are available:
   or upgrade. For a local credential symlink whose destination is outside the
   project, `install-agents` and `install-agents --upgrade` accept symlinks under
   `.credentials/` during their operator-started interactive interview. Direct
-  `config-session` use requires `--credential-root PATH` before the command.
+  `config-session` use requires `--credentials-allow-symlinks` when needed.
   Neither exception is saved or relaxes the read-only source boundary. A JSON credential profile may
   contain `api_key` (or `apiKey`/`key`) plus optional `model` and `base_url`;
   those values are used in memory only.

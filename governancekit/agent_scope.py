@@ -148,7 +148,6 @@ def _provider_failure_detail(error: urllib.error.HTTPError) -> str:
 def _credential_file_path(
     root: Path,
     reference: str,
-    credential_root: Path | None,
     allow_project_credential_symlinks: bool = False,
 ) -> Path:
     """Resolve a project-local credential reference without widening source access."""
@@ -156,35 +155,25 @@ def _credential_file_path(
     if relative.is_absolute() or ".." in relative.parts:
         raise RuntimeError("LLM credential file must be a relative path inside the project")
     path = (root / relative).resolve()
-    allowed_roots = [root.resolve()]
-    if credential_root is not None:
-        trusted_root = credential_root.resolve()
-        if not trusted_root.is_dir():
-            raise RuntimeError("trusted credential root is not an available directory")
-        allowed_roots.append(trusted_root)
-    for allowed_root in allowed_roots:
-        try:
-            path.relative_to(allowed_root)
-            return path
-        except ValueError:
-            continue
+    try:
+        path.relative_to(root.resolve())
+        return path
+    except ValueError:
+        pass
     if allow_project_credential_symlinks and relative.parts and relative.parts[0] == ".credentials":
         return path
-    if credential_root is None:
-        raise RuntimeError(
-            "LLM credential file resolves outside the project root. Credential files reached through symbolic links require --credential-root PATH before the command to trust their destination for this invocation"
-        )
-    raise RuntimeError("LLM credential file escaped the project and trusted credential roots")
+    raise RuntimeError(
+        "LLM credential file resolves outside the project root. Credential files reached through symbolic links require --credentials-allow-symlinks with config-session start --interactive"
+    )
 
 
 def _credential_from_file(
     provider: ProviderConfig,
     root: Path,
-    credential_root: Path | None,
     allow_project_credential_symlinks: bool,
 ) -> tuple[str | None, ProviderConfig]:
     path = _credential_file_path(
-        root, provider.credential_ref or "", credential_root, allow_project_credential_symlinks
+        root, provider.credential_ref or "", allow_project_credential_symlinks
     )
     try:
         content = path.read_text(encoding="utf-8").strip()
@@ -216,7 +205,6 @@ def _propose_via_llm(
     root: Path,
     sources: list[str],
     locale: str,
-    credential_root: Path | None = None,
     allow_project_credential_symlinks: bool = False,
 ) -> ScopeProposal:
     if provider.mode not in {"env", "file-ref"} or not provider.credential_ref:
@@ -227,7 +215,7 @@ def _propose_via_llm(
         secret = os.environ.get(provider.credential_ref)
     else:
         secret, provider = _credential_from_file(
-            provider, root, credential_root, allow_project_credential_symlinks
+            provider, root, allow_project_credential_symlinks
         )
     if not secret:
         location = "shell" if provider.mode == "env" else "credential file"
@@ -336,7 +324,6 @@ def propose_project_scope(
     *,
     locale: str = "en",
     provider: ProviderConfig | None = None,
-    credential_root: Path | None = None,
     allow_project_credential_symlinks: bool = False,
 ) -> ScopeProposal:
     """Ask the selected, locally authenticated agent for a read-only proposal."""
@@ -345,7 +332,7 @@ def propose_project_scope(
         if provider is None:
             raise RuntimeError("select an LLM provider before choosing llm-api")
         return _propose_via_llm(
-            provider, root, sources, locale, credential_root, allow_project_credential_symlinks
+            provider, root, sources, locale, allow_project_credential_symlinks
         )
     executable = _AGENT_COMMANDS.get(agent)
     if not executable or not shutil.which(executable):

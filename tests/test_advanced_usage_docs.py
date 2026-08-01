@@ -35,12 +35,12 @@ def test_advanced_guide_documents_every_cli_parameter() -> None:
     assert missing == []
 
 
-def test_credential_root_is_global_for_every_interactive_entrypoint() -> None:
+def test_credentials_allow_symlinks_is_an_interactive_scope_option() -> None:
     args = build_parser().parse_args(
-        ["--credential-root", "/operator/credentials", "config-session", "start", "--interactive"]
+        ["config-session", "start", "--interactive", "--credentials-allow-symlinks"]
     )
 
-    assert args.credential_root == Path("/operator/credentials")
+    assert args.credentials_allow_symlinks is True
 
 
 def test_landing_links_advanced_guide_and_identity_is_unambiguous() -> None:
