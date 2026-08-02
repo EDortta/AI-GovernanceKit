@@ -166,6 +166,13 @@ governancekit --root /projeto voice-integration detect --json</code></pre>
   </section>
 
   <section>
+    <h2><code>remove-agents</code></h2>
+    <pre><code>governancekit --root /projeto remove-agents plan --with-llm --json
+governancekit --root /projeto remove-agents apply --plan .gk/remove-agents-plan.json --accept-project-extractions</code></pre>
+    <p>Com <code>--with-llm</code>, o provedor primário configurado pode propor a separação de conteúdo local. Revise o plano: a aplicação exige <code>--accept-project-extractions</code>, escreve o conteúdo do projeto em <code>docs/project-rules/</code>, registra a leitura e cria backup.</p>
+  </section>
+
+  <section>
     <h2>Sequências usuais</h2>
     <h3>Primeira configuração</h3>
     <pre><code>governancekit --root /projeto install-agents

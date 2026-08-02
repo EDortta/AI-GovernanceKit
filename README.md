@@ -182,6 +182,9 @@ governancekit classify-change apply             # persist .gk/change-classificat
 governancekit config-session start --interactive # define scope from the agent reading index
 governancekit config-session approve --approval project-config-review
 governancekit config-session apply              # apply approved session
+governancekit remove-agents plan                 # write a conservative provenance plan
+governancekit remove-agents plan --with-llm      # propose reviewable project-content extraction
+governancekit remove-agents apply --plan .gk/remove-agents-plan.json --accept-project-extractions
 governancekit bootstrap-issue                   # scaffold local epic/task files from templates
 governancekit install-hooks --hook-type pre-commit
 governancekit voice-integration detect          # detect optional voice integration

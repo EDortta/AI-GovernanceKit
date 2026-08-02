@@ -176,6 +176,13 @@ governancekit context telemetry prune --manifest PATH</code></pre>
   </section>
 
   <section>
+    <h2><code>remove-agents</code></h2>
+    <pre><code>governancekit --root /proyecto remove-agents plan --with-llm --json
+governancekit --root /proyecto remove-agents apply --plan .gk/remove-agents-plan.json --accept-project-extractions</code></pre>
+    <p>Con <code>--with-llm</code>, el proveedor primario configurado puede proponer la separación de contenido local. Revise el plan: aplicar exige <code>--accept-project-extractions</code>, escribe el contenido del proyecto en <code>docs/project-rules/</code>, registra la lectura y crea una copia.</p>
+  </section>
+
+  <section>
     <h2>Secuencias comunes</h2>
     <pre><code># Primera configuración
 governancekit --root /proyecto install-agents
