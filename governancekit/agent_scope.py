@@ -276,6 +276,10 @@ def _validated_strings(value: object, *, label: str, maximum: int) -> list[str]:
 
 
 def _parse_proposal(raw: str, sources: list[str]) -> ScopeProposal:
+    raw = raw.strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", raw, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        raw = fenced.group(1)
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:

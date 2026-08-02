@@ -4,7 +4,7 @@ from pathlib import Path
 from subprocess import CompletedProcess
 import json
 
-from governancekit.agent_scope import _command, _credential_file_path, _provider_failure_detail, propose_project_scope
+from governancekit.agent_scope import _command, _credential_file_path, _parse_proposal, _provider_failure_detail, propose_project_scope
 from governancekit.project_config import ProviderConfig
 import pytest
 
@@ -70,6 +70,15 @@ def test_scope_proposal_labels_domains_capabilities_and_open_questions() -> None
 
     assert "evidence gaps to resolve before implementation" in rendered
     assert "not saved answers or required fields" in rendered
+
+
+def test_scope_proposal_accepts_a_json_markdown_fence() -> None:
+    proposal = _parse_proposal(
+        '```json\n{"summary":"Product","domains":[{"name":"sessions","capabilities":["manage"],"evidence":["docs/product.md: flow"]}],"questions":[]}\n```',
+        ["docs/product.md"],
+    )
+
+    assert proposal.domain_names == ["sessions"]
 
 
 def test_provider_failure_detail_does_not_expose_response_data() -> None:

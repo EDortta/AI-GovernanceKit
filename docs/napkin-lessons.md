@@ -1,5 +1,20 @@
 # Napkin Lessons
 
+- 2026-08-01: Descobrir uma credencial não deve obrigar o operador a cadastrá-la
+  novamente ao ajustar outro provider. A entrevista deve mostrar apenas os
+  caminhos locais, sugerir o arquivo com o mesmo nome do provider escolhido e
+  preservar os demais detectados como alternativas, sem abrir os segredos.
+
+- 2026-08-01: A fronteira de fontes do agente e a resolução de credenciais são
+  controles distintos. Para uma entrevista iniciada pelo operador, aceitar links
+  apenas sob `.credentials/` remove atrito sem permitir que as fontes aprovadas
+  escapem do projeto; em fluxos diretos, um opt-in explícito mantém a decisão
+  visível.
+
+- 2026-07-31: Um gate de identidade é para instâncias consumidoras, não para o
+  checkout-fonte do kit. Se o próprio produto falha por não ter identidade local,
+  ele confunde neutralidade de distribuição com uma instância operacional.
+
 - 2026-07-27: A tokenizer can count its own encoding precisely without predicting
   another model's billing tokens. Report tokenizer and estimate mode separately;
   never translate library precision into universal model precision.

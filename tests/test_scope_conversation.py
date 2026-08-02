@@ -123,6 +123,26 @@ def test_analysis_notice_explains_the_delay_and_read_only_boundary(capsys) -> No
     assert "up to 90 seconds" in output
 
 
+def test_each_configured_llm_is_a_selectable_scope_agent(tmp_path: Path, monkeypatch) -> None:
+    _seed_sources(tmp_path)
+    providers = [
+        ProviderConfig(name="nvidia", base_url="https://nvidia.test", model="nemotron", mode="file-ref", credential_ref=".credentials/nvidia.key"),
+        ProviderConfig(name="openai", base_url="https://openai.test", model="gpt", mode="file-ref", credential_ref=".credentials/openai.key"),
+    ]
+    answers = iter(["", "llm-openai", "", "", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    monkeypatch.setattr("governancekit.scope_conversation._collect_providers", lambda *_args: providers)
+    monkeypatch.setattr("governancekit.scope_conversation.supported_scope_agents", lambda _agents: [])
+    captured = {}
+    monkeypatch.setattr("governancekit.scope_conversation.propose_project_scope", lambda _root, agent, _sources, **kwargs: (captured.update(agent=agent, provider=kwargs["provider"]) or _proposal()))
+
+    conversation = run_scope_conversation(tmp_path, locale="en")
+
+    assert conversation.selected_agent == "llm-openai"
+    assert captured["agent"] == "llm-api"
+    assert captured["provider"].name == "openai"
+
+
 def test_created_credential_file_is_private_and_not_part_of_provider_config(tmp_path: Path) -> None:
     reference = _write_credential_file(tmp_path, "OpenAI", "secret-value")
     credential = tmp_path / reference
@@ -151,6 +171,32 @@ def test_provider_interview_can_create_a_hidden_local_credential_file(tmp_path: 
     output = capsys.readouterr().out
     assert "entrada oculta" in output
     assert "pasted-secret" not in output
+
+
+def test_manual_provider_setup_lists_local_credentials_and_keeps_detected_fallback(tmp_path: Path, monkeypatch, capsys) -> None:
+    for provider in ("openai", "nvidia"):
+        credential = tmp_path / ".credentials/llm" / f"{provider}.key"
+        credential.parent.mkdir(parents=True, exist_ok=True)
+        credential.write_text("secret\n", encoding="utf-8")
+    for env_name in ("GEMINI_API_KEY", "NVIDIA_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(env_name, raising=False)
+    prompts: list[str] = []
+    answers = iter(["n", "", "openai", "", "", "file", "", "", "gpt-4o-mini", "n"])
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr("builtins.input", answer)
+    providers = _collect_providers(tmp_path, "en", None)
+
+    assert [(provider.name, provider.role) for provider in providers] == [("openai", "primary"), ("nvidia", "fallback")]
+    assert providers[0].credential_ref == ".credentials/llm/openai.key"
+    assert ".credentials/llm/openai.key" in "\n".join(prompts)
+    output = capsys.readouterr().out
+    assert "Available local credential files" in output
+    assert ".credentials/llm/nvidia.key" in output
+    assert "Detected providers added as alternatives" in output
 
 
 def test_detected_nvidia_credential_uses_the_nim_preset_without_reading_the_secret(tmp_path: Path, monkeypatch) -> None:

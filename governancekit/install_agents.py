@@ -503,9 +503,13 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
             dest_rel = _dest_rel(rel)
             if interactive:
                 try:
-                    answer = input(f"  '{dest_rel}' already exists — overwrite? [y/N] ").strip().lower()
+                    answer = input(f"  '{dest_rel}' already exists — overwrite? [y/n/a=No to all] ").strip().lower()
                 except EOFError:
                     answer = ""
+                if answer in {"a", "no to all", "none"}:
+                    skip.update(conflicts[conflicts.index(rel):])
+                    print("  skipped: remaining existing paths")
+                    break
                 if answer != "y":
                     print(f"  skipped: {dest_rel}")
                     skip.add(rel)
