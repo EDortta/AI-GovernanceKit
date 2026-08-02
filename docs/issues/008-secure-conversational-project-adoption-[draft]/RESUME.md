@@ -11,9 +11,8 @@ modelo de dependências/sensibilidades de capacidades ainda não foi implementad
 
 ## Next Step
 
-Executar um upgrade interativo em CodexBridgeMobile; depois implementar a
-recuperação durável da task 007 e o contrato de credencial anterior à análise da
-task 003.
+Implementar e testar o enriquecimento por provider e o aviso de drift no fluxo
+unificado de adoção; preservar a revisão humana e os documentos já aceitos.
 
 ## Gates
 

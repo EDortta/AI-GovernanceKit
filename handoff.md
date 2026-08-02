@@ -2,6 +2,17 @@
 
 ## Current Status
 
+- work_id: GH-6-simplified-adoption
+- branch: `feature/uc-011/simplified-adoption-flow`
+- status: first implementation stage complete; proposal/apply core pending commit.
+- delivered: normal `install-agents` now produces a consolidated, evidence-based
+  adoption proposal. `--quick` applies generated docs, `--review` is interactive,
+  `--advanced` retains config-session, and CI requires `--non-interactive
+  --accept-generated`. Existing ready project documents are never overwritten.
+- validation: `PYTHONPATH=. pytest -q` → 238 passed, 1 skipped.
+- next: add provider-backed proposal enrichment and upgrade/drift coverage before
+  closing GitHub #6.
+
 - work_id: GH-5-remove-agents
 - branch: `feature/uc-010/remove-agents-safe-plan`
 - status: LLM-assisted extraction complete; pending commit, push, and GitHub close.

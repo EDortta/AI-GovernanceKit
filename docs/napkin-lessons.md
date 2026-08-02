@@ -1,5 +1,9 @@
 # Napkin Lessons
 
+- 2026-08-02: Uma instalação simples não deve esconder consentimento: proposta
+  gerada pode ser a UX padrão, mas automação precisa de `--accept-generated` e
+  documentos completos já aceitos permanecem intocados.
+
 - 2026-08-02: A removal plan must treat provenance as deletion authority, not
   merely evidence. A matching installed-file hash can permit a backup-first
   deletion; modified, unknown, referenced, and symlink paths stay preserved.

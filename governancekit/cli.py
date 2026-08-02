@@ -204,6 +204,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not offer the required-reading-driven scope interview after installation.",
     )
+    adoption_mode = install_parser.add_mutually_exclusive_group()
+    adoption_mode.add_argument("--quick", action="store_true", help="Apply high-confidence generated adoption defaults.")
+    adoption_mode.add_argument("--review", action="store_true", help="Show the consolidated adoption proposal (interactive default).")
+    adoption_mode.add_argument("--advanced", action="store_true", help="Use the granular configuration-session workflow.")
+    install_parser.add_argument("--non-interactive", action="store_true", help="Never prompt; requires --accept-generated to apply generated policy.")
+    install_parser.add_argument("--accept-generated", action="store_true", help="Explicitly accept generated overview and limits in non-interactive mode.")
     track_group = install_parser.add_mutually_exclusive_group()
     track_group.add_argument(
         "--track",
@@ -609,7 +615,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print("Next required local setup (per host/checkout):")
                 print(f"  governancekit --root {root_command} configure")
         if not args.docs_only and not args.skip_project_configuration:
-            if sys.stdin.isatty():
+            if args.non_interactive and not args.accept_generated:
+                print("Adoption proposal not applied: --non-interactive requires --accept-generated.")
+            elif not args.advanced:
+                from .adoption import apply_adoption_proposal, build_adoption_proposal, format_adoption_proposal
+                proposal = build_adoption_proposal(args.root)
+                if args.non_interactive or args.quick:
+                    written = apply_adoption_proposal(proposal)
+                    print("Generated adoption applied: " + (", ".join(written) or "existing project documents preserved"))
+                elif sys.stdin.isatty():
+                    print(format_adoption_proposal(proposal))
+                    if input("Apply these suggestions? [Y/n] ").strip().lower() not in {"n", "no"}:
+                        written = apply_adoption_proposal(proposal)
+                        print("Generated adoption applied: " + (", ".join(written) or "existing project documents preserved"))
+                else:
+                    print(format_adoption_proposal(proposal))
+                    print("Run again with --non-interactive --accept-generated to apply it.")
+            elif sys.stdin.isatty():
                 answer = input("Review project scope now? [Y/n] ").strip().lower()
                 if answer not in {"n", "no"}:
                     from .config_session import format_config_session, start_config_session

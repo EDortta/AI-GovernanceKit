@@ -56,6 +56,7 @@ governancekit --root /project install-agents --upgrade</code></pre>
       <tr><td><code>--track</code></td><td>Keeps kit documentation tracked in Git and saves the choice to <code>.governancekit</code>.</td></tr>
       <tr><td><code>--no-track</code></td><td>Keeps kit documentation out of Git; mutually exclusive with <code>--track</code>.</td></tr>
     </tbody></table>
+    <p>Adoption modes: <code>--review</code> is the interactive default; <code>--quick</code> applies high-confidence generated documents; <code>--advanced</code> retains the granular session flow. Automation must use <code>--non-interactive --accept-generated</code>; generated policy is never accepted implicitly.</p>
   </section>
 
   <section>
