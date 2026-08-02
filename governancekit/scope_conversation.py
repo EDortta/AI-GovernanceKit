@@ -514,6 +514,72 @@ def _detected_providers(root: Path) -> list[ProviderConfig]:
     return providers
 
 
+def _local_credential_references(root: Path) -> list[str]:
+    """List local key-file references without reading their contents."""
+    root = root.resolve()
+    references: list[str] = []
+    for directory in (Path(".credentials/llm"), Path(".credentials")):
+        base = root / directory
+        if not base.is_dir():
+            continue
+        for candidate in sorted(base.glob("*.key")):
+            resolved = candidate.resolve()
+            try:
+                resolved.relative_to(root)
+            except ValueError:
+                continue
+            if resolved.is_file():
+                references.append(candidate.relative_to(root).as_posix())
+    return list(dict.fromkeys(references))
+
+
+def _matching_credential_reference(references: list[str], provider_name: str) -> str:
+    """Return the local key file whose basename matches *provider_name*, if any."""
+    expected = provider_name.strip().lower()
+    return next((reference for reference in references if Path(reference).stem.lower() == expected), "")
+
+
+def _print_local_credential_references(locale: str, references: list[str]) -> None:
+    if not references:
+        return
+    if locale == "pt-BR":
+        print("Arquivos locais de credencial disponíveis (o conteúdo não será lido):")
+    elif locale == "es":
+        print("Archivos locales de credenciales disponibles (no se leerá el contenido):")
+    else:
+        print("Available local credential files (contents will not be read):")
+    for reference in references:
+        print(f"  - {reference}")
+
+
+def _add_detected_providers(providers: list[ProviderConfig], detected: list[ProviderConfig]) -> list[ProviderConfig]:
+    """Keep detected providers not explicitly configured by the operator.
+
+    A manually configured primary keeps priority; automatically added providers
+    with a conflicting primary role become fallbacks.
+    """
+    combined = list(providers)
+    names = {provider.name.lower() for provider in combined}
+    has_primary = any(provider.role == "primary" for provider in combined)
+    for provider in detected:
+        if provider.name.lower() in names:
+            continue
+        role = "fallback" if has_primary and provider.role == "primary" else provider.role
+        combined.append(ProviderConfig(
+            name=provider.name,
+            purpose=provider.purpose,
+            base_url=provider.base_url,
+            model=provider.model,
+            mode=provider.mode,
+            credential_ref=provider.credential_ref,
+            validation=provider.validation,
+            role=role,
+        ))
+        names.add(provider.name.lower())
+        has_primary = has_primary or role == "primary"
+    return combined
+
+
 def _print_detected_providers(locale: str, providers: list[ProviderConfig]) -> None:
     if locale == "pt-BR":
         print("\nCredenciais LLM locais encontradas:")
@@ -605,6 +671,7 @@ def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) 
     if not _yes_no(_message(locale, "configure_providers"), gap=False):
         return [ProviderConfig(name="manual", mode="manual")]
     providers: list[ProviderConfig] = []
+    credential_references = _local_credential_references(root)
     while True:
         name = _ask(_message(locale, "provider_name"), gap=False)
         if not name:
@@ -636,7 +703,11 @@ def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) 
             credential_ref = _write_credential_file(root, name, secret)
         else:
             mode = "env" if method == "env" else "file-ref"
-            default_ref = preset[2] if mode == "env" and preset else ""
+            if mode == "file-ref":
+                _print_local_credential_references(locale, credential_references)
+                default_ref = _matching_credential_reference(credential_references, name)
+            else:
+                default_ref = preset[2] if preset else ""
             credential_ref = ""
             while not credential_ref:
                 label = "Nome da variável de ambiente" if mode == "env" and locale == "pt-BR" else _message(locale, "provider_ref")
@@ -654,7 +725,18 @@ def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) 
         providers.append(ProviderConfig(name=name, purpose=purpose or None, base_url=base_url or None, model=model or None, mode=mode, credential_ref=credential_ref, validation="reference-required", role=role))
         if not _yes_no(_message(locale, "another_provider"), default=False, gap=False):
             break
-    return providers or [ProviderConfig(name="manual", mode="manual")]
+    if not providers:
+        return [ProviderConfig(name="manual", mode="manual")]
+    merged = _add_detected_providers(providers, detected)
+    added = merged[len(providers):]
+    if added:
+        label = "Provedores detectados adicionados como alternativas:" if locale == "pt-BR" else (
+            "Proveedores detectados agregados como alternativas:" if locale == "es" else "Detected providers added as alternatives:"
+        )
+        print(label)
+        for provider in added:
+            print(f"  - {provider.name}: {provider.credential_ref} ({provider.role})")
+    return merged
 
 
 def run_scope_conversation(
@@ -685,12 +767,12 @@ def run_scope_conversation(
     if locale == "pt-BR":
         print("\n" + _message(locale, "llm_title"))
     providers = _collect_providers(root, locale, existing)
-    api_provider = next(
-        (item for item in providers if item.role == "primary" and item.mode in {"env", "file-ref"} and item.base_url and item.model and item.credential_ref),
-        None,
-    )
-    if api_provider:
-        available_agents = ["llm-api", *available_agents]
+    provider_agents = {
+        f"llm-{item.name.lower()}": item
+        for item in providers
+        if item.mode in {"env", "file-ref"} and item.base_url and item.model and item.credential_ref
+    }
+    available_agents = [*provider_agents, *available_agents]
     print(_message(locale, "agents") + (", ".join(available_agents) or _message(locale, "no_agents")))
     if not available_agents:
         raise RuntimeError("no supported scope agent is installed (codex, claude, gemini, or cursor)")
@@ -699,9 +781,10 @@ def run_scope_conversation(
     while selected_agent not in available_agents:
         print("  " + _message(locale, "choose_agent"))
         selected_agent = _ask(_message(locale, "agent"), selected_default, gap=False)
-    _print_analysis_notice(locale, selected_agent, sources, api_provider if selected_agent == "llm-api" else None)
+    api_provider = provider_agents.get(selected_agent)
+    _print_analysis_notice(locale, selected_agent, sources, api_provider)
     proposal: ScopeProposal = propose_project_scope(
-        root, selected_agent, sources, locale=locale, provider=api_provider,
+        root, "llm-api" if api_provider else selected_agent, sources, locale=locale, provider=api_provider,
         allow_project_credential_symlinks=allow_project_credential_symlinks,
     )
     print("\n" + _message(locale, "proposal"))

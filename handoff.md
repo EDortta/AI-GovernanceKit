@@ -1,5 +1,41 @@
 # Handoff
 
+## Current Status — 2026-08-01 local LLM credential selection
+
+- delivered: manual LLM setup now lists available local `.credentials/**/*.key`
+  references without reading their contents, and preselects the key file whose
+  basename matches the chosen provider.
+- delivered: providers already detected but not manually edited are retained as
+  alternatives; a manually selected primary remains primary and, for example,
+  detected NVIDIA is added as fallback without a duplicate interview.
+- validation: `pytest -q tests/test_scope_conversation.py tests/test_agent_scope.py`
+  → 28 passed; `git diff --check` passed.
+- pending: operator should retry the ledgerlab interview with `gpt-4o-mini` and
+  `.credentials/llm/openai.key`; no commit, publish, or consumer-project change.
+
+## Current Status — 2026-08-01 credential symlink interview
+
+- published: GovernanceKit `main` at `0a91cc6`.
+- delivered: LLM credential profiles can use `.credentials/` symlinks during the
+  operator-started `install-agents`/`--upgrade` scope interview; direct scope
+  sessions opt in with `--credentials-allow-symlinks`.
+- safety: approved scope sources remain confined to the project; absolute and
+  parent-traversal credential references remain rejected.
+- validation: `pytest -q` → 231 passed.
+
+## Current Status — 2026-07-31 release follow-up
+
+- published: AI-Agents `v1.1.7` (`3dd5ef1`) and GovernanceKit `v0.2.3` (`36d69f4`).
+- delivered: semantic doctor gates, explicit legacy content migration, full-upgrade
+  manifest pruning, and the published AI-Agents integration contract.
+- validation: GovernanceKit `pytest -q` → 228 passed; `jk-structure` upgraded and
+  `doctor` PASS (security advisories remain advisory).
+- decision: the GovernanceKit source checkout must remain neutral. Do not create
+  `.governancekit-identity.json` there; identity is required only for governed
+  consumer instances.
+- remaining product gap: teach `doctor` to recognize the GovernanceKit source
+  checkout and report host identity as not applicable rather than failing it.
+
 ## Current Status
 
 - work_id: WK-20260729-secure-project-adoption
