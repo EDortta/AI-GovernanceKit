@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .discover import run_discover
-from .project_config import load_project_config
+from .project_config import ProviderConfig, load_project_config
 
 
 @dataclass(frozen=True)
@@ -24,16 +24,43 @@ def _replace_ready(text: str, marker: str) -> str:
     return text.replace(f"{marker}: no", f"{marker}: yes")
 
 
+def _primary_provider(root: Path) -> ProviderConfig | None:
+    config = load_project_config(root)
+    if config is None:
+        return None
+    for provider in config.providers:
+        if provider.role == "primary" and provider.mode in {"env", "file-ref"} and provider.base_url and provider.model and provider.credential_ref:
+            return provider
+    return None
+
+
 def build_adoption_proposal(root: Path) -> AdoptionProposal:
     root = root.resolve()
     discovery = run_discover(root)
     evidence = [*discovery.governance_files, *discovery.frameworks, *discovery.package_managers]
     stack = ", ".join([*discovery.frameworks, *discovery.languages]) or "not detected"
     commands = ", ".join(discovery.automation_commands) or "not detected"
+    unresolved = ["deployment target"]
+    llm_summary = ""
+    provider = _primary_provider(root)
+    if provider:
+        # Reuse the hardened scope adapter: it confines sources, treats content as
+        # data, validates returned JSON, and never persists credentials.
+        from .agent_scope import propose_project_scope
+        from .scope_conversation import load_required_reading
+        sources, missing = load_required_reading(root)
+        try:
+            proposed = propose_project_scope(root, "llm-api", sources, provider=provider)
+            llm_summary = proposed.summary
+            evidence.extend(item for domain in proposed.domains for item in domain.evidence)
+            unresolved.extend(proposed.questions)
+        except RuntimeError as exc:
+            unresolved.append(f"configured provider could not enrich proposal: {exc}")
+        unresolved.extend(missing)
     overview = "\n".join((
         "# Software Overview", "", "## Metadata", "", "- project_context_ready: yes", "",
         "## Evidence-based proposal", "", f"- Project: {root.name}", f"- Detected stack: {stack}",
-        f"- Automation: {commands}", "", "## Known unknowns", "", "- Deployment target was not inferred; review before treating this as binding policy.", "",
+        f"- Automation: {commands}", *( ("- LLM scope proposal: " + llm_summary,) if llm_summary else ()), "", "## Known unknowns", "", *[f"- {item}" for item in unresolved], "",
     ))
     limits = "\n".join((
         "# Agent Operational Limits", "", "## Metadata", "", "- limits_ready: yes", "",
@@ -42,7 +69,7 @@ def build_adoption_proposal(root: Path) -> AdoptionProposal:
         "- Review database, deployment, and compatibility changes before application.", "",
         "## Detected recommendations", "", f"- Validate with: {commands}.", "",
     ))
-    return AdoptionProposal(root, overview, limits, evidence, ["deployment target"])
+    return AdoptionProposal(root, overview, limits, evidence, unresolved)
 
 
 def apply_adoption_proposal(proposal: AdoptionProposal) -> list[str]:

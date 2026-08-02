@@ -15,6 +15,10 @@
 - delivered next: upgrades com configuração aceita agora detectam frameworks,
   linguagens e gerenciadores novos como drift consultivo, sem reescrever política.
 - validation: `PYTHONPATH=. pytest -q` → 239 passed, 1 skipped.
+- delivered next: a proposta unificada usa o provider primário configurado, quando
+  disponível, por meio do adaptador read-only já validado. Resumo, domínios e
+  evidências viram proposta; falha de provider é pendência e não bloqueia adoção.
+- validation: `PYTHONPATH=. pytest -q` → 240 passed, 1 skipped.
 - next: add provider-backed proposal enrichment and upgrade/drift coverage before
   closing GitHub #6.
 
