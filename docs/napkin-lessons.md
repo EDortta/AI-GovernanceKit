@@ -1,5 +1,9 @@
 # Napkin Lessons
 
+- 2026-08-02: Drift de projeto é evidência nova, não autorização para reescrever
+  decisões aceitas. No upgrade, mostre a diferença e deixe a atualização de
+  documentação como ação explícita.
+
 - 2026-08-02: A ajuda raiz deve ensinar o caminho normal antes de listar o
   poder da ferramenta. Marcar superfícies especializadas como avançadas preserva
   descoberta sem transformar a primeira execução em um manual interno.

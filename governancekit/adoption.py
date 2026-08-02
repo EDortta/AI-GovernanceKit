@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .discover import run_discover
+from .project_config import load_project_config
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,24 @@ def apply_adoption_proposal(proposal: AdoptionProposal) -> list[str]:
         path.write_text(content, encoding="utf-8")
         written.append(rel)
     return written
+
+
+def detect_project_drift(root: Path) -> list[str]:
+    """Report new observable project facts without rewriting accepted policy."""
+    root = root.resolve()
+    accepted = load_project_config(root)
+    if accepted is None:
+        return []
+    discovered = run_discover(root)
+    drift: list[str] = []
+    for label, current, recorded in (
+        ("framework", set(discovered.frameworks), set(accepted.frameworks)),
+        ("language", set(discovered.languages), set(accepted.languages)),
+        ("package manager", set(discovered.package_managers), set(accepted.package_managers)),
+    ):
+        for value in sorted(current - recorded):
+            drift.append(f"new {label} detected: {value}")
+    return drift
 
 
 def format_adoption_proposal(proposal: AdoptionProposal) -> str:

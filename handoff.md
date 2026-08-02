@@ -12,6 +12,9 @@
 - validation: `PYTHONPATH=. pytest -q` → 238 passed, 1 skipped.
 - delivered next: help raiz reorganizado em "Start here" e "Advanced commands";
   comandos avançados continuam disponíveis e apontam para sua ajuda específica.
+- delivered next: upgrades com configuração aceita agora detectam frameworks,
+  linguagens e gerenciadores novos como drift consultivo, sem reescrever política.
+- validation: `PYTHONPATH=. pytest -q` → 239 passed, 1 skipped.
 - next: add provider-backed proposal enrichment and upgrade/drift coverage before
   closing GitHub #6.
 

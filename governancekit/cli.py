@@ -566,6 +566,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if result.awt_message:
             for line in result.awt_message.splitlines():
                 print(f"awt: {line}")
+        if args.upgrade:
+            from .adoption import detect_project_drift
+            drift = detect_project_drift(args.root)
+            if drift:
+                print("Project drift detected (advisory; accepted documents were not changed):")
+                for item in drift:
+                    print(f"  - {item}")
         if not args.docs_only:
             from .identity import load_identity
 
