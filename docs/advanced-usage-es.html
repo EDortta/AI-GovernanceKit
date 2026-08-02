@@ -176,6 +176,13 @@ governancekit context telemetry prune --manifest PATH</code></pre>
   </section>
 
   <section>
+    <h2><code>remove-agents</code></h2>
+    <pre><code>governancekit --root /proyecto remove-agents plan --json
+governancekit --root /proyecto remove-agents apply --plan .gk/remove-agents-plan.json</code></pre>
+    <p>Solo se elimina un archivo sin cambios que coincide con el manifiesto. Los archivos modificados, desconocidos, referenciados o enlaces simbólicos se conservan. La aplicación crea copia en <code>.gk/remove-agents-backup/</code>.</p>
+  </section>
+
+  <section>
     <h2>Secuencias comunes</h2>
     <pre><code># Primera configuración
 governancekit --root /proyecto install-agents

@@ -1,5 +1,9 @@
 # Napkin Lessons
 
+- 2026-08-02: A removal plan must treat provenance as deletion authority, not
+  merely evidence. A matching installed-file hash can permit a backup-first
+  deletion; modified, unknown, referenced, and symlink paths stay preserved.
+
 - 2026-07-27: A tokenizer can count its own encoding precisely without predicting
   another model's billing tokens. Report tokenizer and estimate mode separately;
   never translate library precision into universal model precision.

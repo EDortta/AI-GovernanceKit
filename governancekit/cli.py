@@ -9,6 +9,7 @@ from typing import Sequence
 
 from .doctor import DoctorResult, run_doctor
 from .context import ContextError, build_context, format_context
+from .path_safety import UnsafePathError
 
 
 _ROOT_HELP_EPILOG = """Common command options:
@@ -31,6 +32,8 @@ _ROOT_HELP_EPILOG = """Common command options:
   install-agents
     --upgrade, --docs-only, --force, --ref REF, --repo OWNER/REPO,
     --install-awt, --track, --no-track
+  remove-agents plan|apply
+    --json, --output PATH, --plan PATH
   configure
     --set KEY=VALUE, --operator-name NAME, --host-id ID, --instance-path PATH,
     --sibling-path PATH, --assigned-ports PORTS, --branch-ownership BRANCH
@@ -220,6 +223,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Keep the kit documentation (.docs/) out of git. Saved to .governancekit.",
     )
+
+    remove_parser = subparsers.add_parser(
+        "remove-agents",
+        help="Conservatively plan or apply removal of manifest-proven AI-Agents files.",
+    )
+    remove_commands = remove_parser.add_subparsers(dest="remove_command", required=True)
+    remove_plan = remove_commands.add_parser("plan", help="Inspect provenance and write a reviewable plan.")
+    remove_plan.add_argument("--json", dest="as_json", action="store_true")
+    remove_plan.add_argument("--output", type=Path, help="Plan output below --root (default: .gk/remove-agents-plan.json).")
+    remove_apply = remove_commands.add_parser("apply", help="Apply only manifest-verified removals after backup.")
+    remove_apply.add_argument("--plan", type=Path, help="Reviewed plan below --root (default: .gk/remove-agents-plan.json).")
+    remove_apply.add_argument("--json", dest="as_json", action="store_true")
 
     configure_parser = subparsers.add_parser(
         "configure",
@@ -626,6 +641,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 root_command = shlex.quote(str(args.root.resolve()))
                 print(f"Run: governancekit --root {root_command} config-session start --interactive to review project scope.")
+        return 0
+
+    if args.command == "remove-agents":
+        from .remove_agents import (
+            apply_removal_plan,
+            build_removal_plan,
+            format_removal_plan,
+            load_removal_plan,
+            write_removal_plan,
+        )
+        try:
+            if args.remove_command == "plan":
+                plan = build_removal_plan(args.root)
+                output = write_removal_plan(args.root, plan, args.output)
+                payload = plan.as_dict() | {"plan_path": str(output)}
+                print(json.dumps(payload, sort_keys=True, ensure_ascii=False) if args.as_json else format_removal_plan(plan) + f"\nPlan written: {output}")
+                return 0
+            plan = load_removal_plan(args.root, args.plan)
+            result = apply_removal_plan(args.root, plan)
+        except (OSError, ValueError, UnsafePathError) as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        payload = {"backup_dir": str(result.backup_dir), "removed": result.removed, "preserved": result.preserved}
+        if args.as_json:
+            print(json.dumps(payload, sort_keys=True, ensure_ascii=False))
+        else:
+            print("AI GovernanceKit remove-agents apply")
+            print(f"Backup: {result.backup_dir}")
+            for item in result.removed:
+                print(f"  removed: {item}")
+            if not result.removed:
+                print("  no files were eligible for automatic removal")
         return 0
 
     if args.command == "configure":

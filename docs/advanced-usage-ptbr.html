@@ -166,6 +166,13 @@ governancekit --root /projeto voice-integration detect --json</code></pre>
   </section>
 
   <section>
+    <h2><code>remove-agents</code></h2>
+    <pre><code>governancekit --root /projeto remove-agents plan --json
+governancekit --root /projeto remove-agents apply --plan .gk/remove-agents-plan.json</code></pre>
+    <p>Só um arquivo inalterado que corresponde ao manifesto é removido. Arquivos modificados, desconhecidos, referenciados ou links simbólicos permanecem. A aplicação cria backup em <code>.gk/remove-agents-backup/</code>.</p>
+  </section>
+
+  <section>
     <h2>Sequências usuais</h2>
     <h3>Primeira configuração</h3>
     <pre><code>governancekit --root /projeto install-agents

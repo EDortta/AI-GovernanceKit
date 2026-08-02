@@ -196,6 +196,13 @@ governancekit context telemetry prune --manifest PATH</code></pre>
   </section>
 
   <section>
+    <h2><code>remove-agents</code></h2>
+    <pre><code>governancekit --root /project remove-agents plan --json
+governancekit --root /project remove-agents apply --plan .gk/remove-agents-plan.json</code></pre>
+    <p>Only an unchanged file matching the installation manifest is removed. Modified, unknown, referenced, and symlink paths remain. Apply backs up every affected file under <code>.gk/remove-agents-backup/</code>.</p>
+  </section>
+
+  <section>
     <h2>Common sequences</h2>
     <pre><code># First setup
 governancekit --root /project install-agents
