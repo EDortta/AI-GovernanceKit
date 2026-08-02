@@ -1,5 +1,9 @@
 # Napkin Lessons
 
+- 2026-08-02: A ajuda raiz deve ensinar o caminho normal antes de listar o
+  poder da ferramenta. Marcar superfícies especializadas como avançadas preserva
+  descoberta sem transformar a primeira execução em um manual interno.
+
 - 2026-08-02: Uma instalação simples não deve esconder consentimento: proposta
   gerada pode ser a UX padrão, mas automação precisa de `--accept-generated` e
   documentos completos já aceitos permanecem intocados.

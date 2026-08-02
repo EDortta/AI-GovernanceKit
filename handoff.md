@@ -10,6 +10,8 @@
   `--advanced` retains config-session, and CI requires `--non-interactive
   --accept-generated`. Existing ready project documents are never overwritten.
 - validation: `PYTHONPATH=. pytest -q` → 238 passed, 1 skipped.
+- delivered next: help raiz reorganizado em "Start here" e "Advanced commands";
+  comandos avançados continuam disponíveis e apontam para sua ajuda específica.
 - next: add provider-backed proposal enrichment and upgrade/drift coverage before
   closing GitHub #6.
 

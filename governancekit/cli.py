@@ -12,63 +12,31 @@ from .context import ContextError, build_context, format_context
 from .path_safety import UnsafePathError
 
 
-_ROOT_HELP_EPILOG = """Common command options:
-  Target a project explicitly
-    governancekit --root /absolute/path COMMAND [OPTIONS]
-    --root is global and must precede the command; it defaults to the current directory.
+_ROOT_HELP_EPILOG = """Start here:
+  governancekit --root /project install-agents
+  governancekit --root /project doctor
+  governancekit --root /project resume
 
-  doctor
-    --json
-  discover
-    --json
-  map
-    --output PATH, --all
-  context inspect
-    --task TASK, --risk RISK, --issue PATH, --manifest PATH, --json
-  context build
-    --task TASK, --risk RISK, --issue PATH, --manifest PATH, --json, --telemetry
-  context telemetry prune
-    --manifest PATH
-  install-agents
-    --upgrade, --docs-only, --force, --ref REF, --repo OWNER/REPO,
-    --install-awt, --track, --no-track
-  remove-agents plan|apply
-    --with-llm, --json, --output PATH, --plan PATH, --accept-project-extractions
-  configure
-    --set KEY=VALUE, --operator-name NAME, --host-id ID, --instance-path PATH,
-    --sibling-path PATH, --assigned-ports PORTS, --branch-ownership BRANCH
-  configure-project plan|apply
-    --project-name NAME, --domain NAME, --capability NAME, --agent NAME,
-    --provider NAME[:MODE[:CREDENTIAL_REF[:ROLE]]], --json
-  configure-project show
-    --json
-  classify-change plan|apply
-    --summary TEXT, --label LABEL, --rationale TEXT, --domain NAME,
-    --capability NAME, --compatibility TEXT, --residual-risk TEXT, --json
-  classify-change show
-    --json
-  bootstrap-issue
-    --epic-number NNN, --epic-title TEXT, --task-title TEXT, --owner NAME,
-    --related-commit REF
-  config-session start
-    --project-name NAME, --domain NAME, --capability NAME, --agent NAME,
-    --provider NAME[:MODE[:CREDENTIAL_REF[:ROLE]]], --interactive, --json
-  config-session approve
-    --approval TOKEN, --json
-  config-session show
-    --json
-  install-hooks
-    --hook-type NAME, --force, --json
-  voice-integration detect
-    --json
+Use --root before the command to target another project. It defaults to the current directory.
 
-Use `governancekit <command> -h` for full command-specific help."""
+Advanced commands:
+  configure              Fill kit placeholders and local host identity.
+  configure-project      Inspect or edit project configuration directly.
+  config-session         Run the resumable granular configuration workflow.
+  classify-change        Record an architectural classification.
+  context                Inspect, build, or prune deterministic task context.
+  remove-agents          Plan or apply conservative kit de-adoption.
+  bootstrap-issue        Create local issue artifacts.
+  install-hooks          Install optional local Git hooks.
+  voice-integration      Inspect optional voice integration.
+
+Use `governancekit <command> -h` for a command's full help, including advanced commands."""
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="governancekit",
-        description="Validate and orchestrate AI GovernanceKit workflows.",
+        description="Governed project adoption and day-to-day readiness checks.",
         epilog=_ROOT_HELP_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -128,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     context_parser = subparsers.add_parser(
-        "context", help="Inspect or build a deterministic task context."
+        "context", help="Advanced: deterministic task context tools (see below)."
     )
     context_commands = context_parser.add_subparsers(dest="context_command", required=True)
     for command in ("inspect", "build"):
@@ -231,8 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     remove_parser = subparsers.add_parser(
-        "remove-agents",
-        help="Conservatively plan or apply removal of manifest-proven AI-Agents files.",
+        "remove-agents", help="Advanced: conservative kit de-adoption (see below).",
     )
     remove_commands = remove_parser.add_subparsers(dest="remove_command", required=True)
     remove_plan = remove_commands.add_parser("plan", help="Inspect provenance and write a reviewable plan.")
@@ -245,8 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
     remove_apply.add_argument("--accept-project-extractions", action="store_true", help="Confirm review of every LLM-proposed extraction in the plan.")
 
     configure_parser = subparsers.add_parser(
-        "configure",
-        help="Fill managed kit placeholders and configure this host/checkout identity.",
+        "configure", help="Advanced: placeholders and local host identity (see below).",
     )
     configure_parser.add_argument(
         "--set",
@@ -267,8 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
     identity_group.add_argument("--branch-ownership", dest="branch_ownership", metavar="BRANCH")
 
     project_parser = subparsers.add_parser(
-        "configure-project",
-        help="Plan or apply a shareable project adoption/configuration state.",
+        "configure-project", help="Advanced: direct project configuration (see below).",
     )
     project_commands = project_parser.add_subparsers(dest="project_command", required=True)
     for name in ("plan", "apply"):
@@ -291,8 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     classify_parser = subparsers.add_parser(
-        "classify-change",
-        help="Record the required classification for an architectural or structural change.",
+        "classify-change", help="Advanced: architectural classification (see below).",
     )
     classify_commands = classify_parser.add_subparsers(
         dest="classification_command", required=True
@@ -312,8 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     bootstrap_parser = subparsers.add_parser(
-        "bootstrap-issue",
-        help="Create local epic/task scaffolding from installed issue templates.",
+        "bootstrap-issue", help="Advanced: local issue scaffolding (see below).",
     )
     bootstrap_parser.add_argument("--epic-number", required=True, metavar="NNN")
     bootstrap_parser.add_argument("--epic-title", required=True)
@@ -322,8 +285,7 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap_parser.add_argument("--related-commit", default="planned")
 
     session_parser = subparsers.add_parser(
-        "config-session",
-        help="Start, inspect, approve, and apply a resumable configuration session.",
+        "config-session", help="Advanced: resumable granular configuration (see below).",
     )
     session_commands = session_parser.add_subparsers(dest="session_command", required=True)
     start_parser = session_commands.add_parser("start")
@@ -356,16 +318,14 @@ def build_parser() -> argparse.ArgumentParser:
     session_commands.add_parser("apply")
 
     hooks_parser = subparsers.add_parser(
-        "install-hooks",
-        help="Install optional local git hooks that enforce GovernanceKit checks.",
+        "install-hooks", help="Advanced: optional local Git hooks (see below).",
     )
     hooks_parser.add_argument("--hook-type", default="pre-commit")
     hooks_parser.add_argument("--force", action="store_true")
     hooks_parser.add_argument("--json", dest="as_json", action="store_true")
 
     voice_parser = subparsers.add_parser(
-        "voice-integration",
-        help="Detect optional AI-ListenToMeOnCLI availability.",
+        "voice-integration", help="Advanced: optional voice integration (see below).",
     )
     voice_commands = voice_parser.add_subparsers(dest="voice_command", required=True)
     voice_commands.add_parser("detect").add_argument("--json", dest="as_json", action="store_true")
