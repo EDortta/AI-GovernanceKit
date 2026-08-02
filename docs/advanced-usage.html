@@ -197,9 +197,9 @@ governancekit context telemetry prune --manifest PATH</code></pre>
 
   <section>
     <h2><code>remove-agents</code></h2>
-    <pre><code>governancekit --root /project remove-agents plan --json
-governancekit --root /project remove-agents apply --plan .gk/remove-agents-plan.json</code></pre>
-    <p>Only an unchanged file matching the installation manifest is removed. Modified, unknown, referenced, and symlink paths remain. Apply backs up every affected file under <code>.gk/remove-agents-backup/</code>.</p>
+    <pre><code>governancekit --root /project remove-agents plan --with-llm --json
+governancekit --root /project remove-agents apply --plan .gk/remove-agents-plan.json --accept-project-extractions</code></pre>
+    <p>Only an unchanged file matching the installation manifest is removed. With <code>--with-llm</code>, a configured primary provider may propose splitting project-specific text from a modified kit file. Review the exact plan first: applying an extraction requires <code>--accept-project-extractions</code>, writes it beneath <code>docs/project-rules/</code>, indexes it in required reading, and backs up every affected file under <code>.gk/remove-agents-backup/</code>.</p>
   </section>
 
   <section>

@@ -4,12 +4,18 @@
 
 - work_id: GH-5-remove-agents
 - branch: `feature/uc-010/remove-agents-safe-plan`
-- status: implementation complete; pending commit, push, and GitHub close.
+- status: LLM-assisted extraction complete; pending commit, push, and GitHub close.
 - delivered: `remove-agents plan` inventories only safe regular files below the
   selected root and writes `.gk/remove-agents-plan.json`; `apply` deletes only
   manifest-hash-identical, unreferenced files after a per-file backup and restore
   manifest. Modified, unknown, referenced, and symlink paths are preserved.
 - validation: `PYTHONPATH=. pytest -q` → 236 passed.
+- delivered next: `remove-agents plan --with-llm` sends only a modified, unreferenced
+  candidate to the configured primary provider and records a structured split. Apply
+  requires `--accept-project-extractions`, writes operator-owned content under
+  `docs/project-rules/ai-agents-extracted/`, updates required reading, replaces the
+  kit file with its proposed reusable remainder, and backs up the original first.
+- validation: `PYTHONPATH=. pytest -q` → 237 passed.
 - next: commit and push this branch, then close GitHub #5; start #6 separately.
 
 - work_id: WK-20260729-secure-project-adoption

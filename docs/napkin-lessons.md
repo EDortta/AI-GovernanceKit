@@ -4,6 +4,10 @@
   merely evidence. A matching installed-file hash can permit a backup-first
   deletion; modified, unknown, referenced, and symlink paths stay preserved.
 
+- 2026-08-02: Semantic extraction needs a distinct operator acceptance flag even
+  after plan review. A configured LLM may propose the split, but it cannot decide
+  that project content is moved or that the kit remainder replaces the source.
+
 - 2026-07-27: A tokenizer can count its own encoding precisely without predicting
   another model's billing tokens. Report tokenizer and estimate mode separately;
   never translate library precision into universal model precision.

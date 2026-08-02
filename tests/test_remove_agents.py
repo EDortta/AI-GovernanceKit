@@ -80,3 +80,29 @@ def test_plan_output_cannot_escape_root(tmp_path) -> None:
         assert "outside --root" in str(exc)
     else:
         raise AssertionError("expected output outside root to be refused")
+
+
+def test_llm_extraction_moves_project_content_only_after_explicit_acceptance(tmp_path) -> None:
+    target = make_installed(tmp_path, content="generic kit\nLOCAL DECISION\n")
+    (tmp_path / ".gk/project-config.json").write_text(
+        json.dumps({"providers": [{"name": "test", "mode": "env", "credential_ref": "TEST_KEY", "base_url": "https://example.invalid/v1", "model": "test", "role": "primary"}]}),
+        encoding="utf-8",
+    )
+    plan = build_removal_plan(
+        tmp_path, with_llm=True,
+        extractor=lambda *_args: ("LOCAL DECISION\n", "generic kit\n", 0.9),
+    )
+    item = next(item for item in plan.items if item.path == ".docs/agents/programmer.md")
+    assert item.action == "extract-project-content"
+    try:
+        apply_removal_plan(tmp_path, plan)
+    except ValueError as exc:
+        assert "--accept-project-extractions" in str(exc)
+    else:
+        raise AssertionError("explicit acceptance must be required")
+    result = apply_removal_plan(tmp_path, plan, accept_project_extractions=True)
+    assert target.read_text(encoding="utf-8") == "generic kit\n"
+    extracted = tmp_path / item.project_destination
+    assert extracted.read_text(encoding="utf-8") == "LOCAL DECISION\n"
+    assert str(item.project_destination) in (tmp_path / "docs/required-reading.md").read_text(encoding="utf-8")
+    assert result.extracted == [item.project_destination]

@@ -167,9 +167,9 @@ governancekit --root /projeto voice-integration detect --json</code></pre>
 
   <section>
     <h2><code>remove-agents</code></h2>
-    <pre><code>governancekit --root /projeto remove-agents plan --json
-governancekit --root /projeto remove-agents apply --plan .gk/remove-agents-plan.json</code></pre>
-    <p>Só um arquivo inalterado que corresponde ao manifesto é removido. Arquivos modificados, desconhecidos, referenciados ou links simbólicos permanecem. A aplicação cria backup em <code>.gk/remove-agents-backup/</code>.</p>
+    <pre><code>governancekit --root /projeto remove-agents plan --with-llm --json
+governancekit --root /projeto remove-agents apply --plan .gk/remove-agents-plan.json --accept-project-extractions</code></pre>
+    <p>Com <code>--with-llm</code>, o provedor primário configurado pode propor a separação de conteúdo local. Revise o plano: a aplicação exige <code>--accept-project-extractions</code>, escreve o conteúdo do projeto em <code>docs/project-rules/</code>, registra a leitura e cria backup.</p>
   </section>
 
   <section>

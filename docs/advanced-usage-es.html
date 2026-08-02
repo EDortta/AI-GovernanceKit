@@ -177,9 +177,9 @@ governancekit context telemetry prune --manifest PATH</code></pre>
 
   <section>
     <h2><code>remove-agents</code></h2>
-    <pre><code>governancekit --root /proyecto remove-agents plan --json
-governancekit --root /proyecto remove-agents apply --plan .gk/remove-agents-plan.json</code></pre>
-    <p>Solo se elimina un archivo sin cambios que coincide con el manifiesto. Los archivos modificados, desconocidos, referenciados o enlaces simbólicos se conservan. La aplicación crea copia en <code>.gk/remove-agents-backup/</code>.</p>
+    <pre><code>governancekit --root /proyecto remove-agents plan --with-llm --json
+governancekit --root /proyecto remove-agents apply --plan .gk/remove-agents-plan.json --accept-project-extractions</code></pre>
+    <p>Con <code>--with-llm</code>, el proveedor primario configurado puede proponer la separación de contenido local. Revise el plan: aplicar exige <code>--accept-project-extractions</code>, escribe el contenido del proyecto en <code>docs/project-rules/</code>, registra la lectura y crea una copia.</p>
   </section>
 
   <section>
