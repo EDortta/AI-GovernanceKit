@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .discover import run_discover
 from .project_config import ProviderConfig, load_project_config
@@ -44,9 +45,14 @@ def provider_label(provider: ProviderConfig) -> str:
     return f"{provider.name} / {provider.model}"
 
 
-def build_adoption_proposal(root: Path, *, enrich_with_llm: bool = False) -> AdoptionProposal:
+def build_adoption_proposal(
+    root: Path,
+    *,
+    enrich_with_llm: bool = False,
+    on_top_level_directory: Callable[[Path], None] | None = None,
+) -> AdoptionProposal:
     root = root.resolve()
-    discovery = run_discover(root)
+    discovery = run_discover(root, on_top_level_directory)
     evidence = [*discovery.governance_files, *discovery.frameworks, *discovery.package_managers]
     stack = ", ".join([*discovery.frameworks, *discovery.languages]) or "not detected"
     commands = ", ".join(discovery.automation_commands) or "not detected"
@@ -99,13 +105,15 @@ def apply_adoption_proposal(proposal: AdoptionProposal) -> list[str]:
     return written
 
 
-def detect_project_drift(root: Path) -> list[str]:
+def detect_project_drift(
+    root: Path, *, on_top_level_directory: Callable[[Path], None] | None = None
+) -> list[str]:
     """Report new observable project facts without rewriting accepted policy."""
     root = root.resolve()
     accepted = load_project_config(root)
     if accepted is None:
         return []
-    discovered = run_discover(root)
+    discovered = run_discover(root, on_top_level_directory)
     drift: list[str] = []
     for label, current, recorded in (
         ("framework", set(discovered.frameworks), set(accepted.frameworks)),

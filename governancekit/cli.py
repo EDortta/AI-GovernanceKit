@@ -569,7 +569,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"awt: {line}")
         if args.upgrade:
             from .adoption import detect_project_drift
-            drift = detect_project_drift(args.root)
+
+            print(
+                "Analyzing project files for upgrade drift; this can take several "
+                "minutes in a large project..."
+            )
+            drift = detect_project_drift(
+                args.root,
+                on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
+            )
             if drift:
                 print("Project drift detected (advisory; accepted documents were not changed):")
                 for item in drift:
@@ -593,7 +601,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     format_adoption_proposal,
                     provider_label,
                 )
-                proposal = build_adoption_proposal(args.root)
+                print(
+                    "Preparing the project adoption proposal from project files; this "
+                    "can take several minutes in a large project..."
+                )
+                proposal = build_adoption_proposal(
+                    args.root,
+                    on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
+                )
                 if args.non_interactive or args.quick:
                     written = apply_adoption_proposal(proposal)
                     print("Generated adoption applied: " + (", ".join(written) or "existing project documents preserved"))
@@ -605,7 +620,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                             f"{provider_label(provider)} to enrich this proposal? [y/N] "
                         ).strip().lower()
                         if answer in {"y", "yes"}:
-                            proposal = build_adoption_proposal(args.root, enrich_with_llm=True)
+                            print(
+                                "Consulting configured LLM provider "
+                                f"{provider_label(provider)}; this can take up to 90 seconds..."
+                            )
+                            proposal = build_adoption_proposal(
+                                args.root,
+                                enrich_with_llm=True,
+                                on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
+                            )
                     print(format_adoption_proposal(proposal))
                     if input("Apply these suggestions? [Y/n] ").strip().lower() not in {"n", "no"}:
                         written = apply_adoption_proposal(proposal)

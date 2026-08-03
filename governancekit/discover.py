@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Callable, Iterable, Iterator
 
 from .codemap import SKIP_DIRS
 
@@ -67,20 +69,31 @@ class DiscoveryReport:
         return data
 
 
-def _iter_project_files(root: Path):
-    for path in root.rglob("*"):
-        rel_parts = path.relative_to(root).parts
-        if any(part in SKIP_DIRS for part in rel_parts):
-            continue
-        if ".git" in rel_parts:
-            continue
-        if path.is_file():
-            yield path
+ScanProgress = Callable[[Path], None]
 
 
-def _detect_languages(root: Path) -> dict[str, int]:
+def _iter_project_files(root: Path, on_top_level_directory: ScanProgress | None = None) -> Iterator[Path]:
+    """Yield project files without descending into ignored or nested Git roots."""
+    root = root.resolve()
+    for current, directory_names, file_names in os.walk(root, topdown=True, followlinks=False):
+        current_path = Path(current)
+        children: list[str] = []
+        for name in sorted(directory_names):
+            child = current_path / name
+            if name == ".git" or name in SKIP_DIRS or (child / ".git").exists():
+                continue
+            children.append(name)
+            if current_path == root and on_top_level_directory is not None:
+                on_top_level_directory(child.relative_to(root))
+        directory_names[:] = children
+        for name in sorted(file_names):
+            if name != ".git":
+                yield current_path / name
+
+
+def _detect_languages(paths: Iterable[Path]) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for path in _iter_project_files(root):
+    for path in paths:
         language = _LANGUAGE_SUFFIXES.get(path.suffix.lower())
         if language is None:
             continue
@@ -193,9 +206,10 @@ def _detect_agents(root: Path) -> list[str]:
     return sorted(dict.fromkeys(found))
 
 
-def _project_state(root: Path, governance_files: list[str]) -> tuple[str, list[str]]:
+def _project_state(
+    root: Path, governance_files: list[str], all_files: list[Path]
+) -> tuple[str, list[str]]:
     notes: list[str] = []
-    all_files = list(_iter_project_files(root))
     if not all_files:
         notes.append("directory is empty")
         return "new", notes
@@ -213,11 +227,12 @@ def _project_state(root: Path, governance_files: list[str]) -> tuple[str, list[s
     return "new", notes
 
 
-def run_discover(root: Path) -> DiscoveryReport:
+def run_discover(root: Path, on_top_level_directory: ScanProgress | None = None) -> DiscoveryReport:
     root = root.resolve()
-    languages = _detect_languages(root)
+    all_files = list(_iter_project_files(root, on_top_level_directory))
+    languages = _detect_languages(all_files)
     governance_files = _governance_files(root)
-    project_state, notes = _project_state(root, governance_files)
+    project_state, notes = _project_state(root, governance_files, all_files)
     return DiscoveryReport(
         root=root,
         project_state=project_state,

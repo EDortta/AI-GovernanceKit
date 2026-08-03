@@ -79,3 +79,21 @@ def test_human_format_is_stable(tmp_path: Path) -> None:
     assert "AI GovernanceKit discover" in output
     assert "project state: existing" in output
     assert "languages: go (1)" in output
+
+
+def test_discovery_reports_top_level_folders_and_skips_nested_git_roots(tmp_path: Path) -> None:
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "main.py").write_text("print('ok')\n", encoding="utf-8")
+    nested = tmp_path / "vendor-project"
+    (nested / ".git").mkdir(parents=True)
+    (nested / "ignored.py").write_text("print('nested')\n", encoding="utf-8")
+    linked_worktree = tmp_path / "linked-worktree"
+    linked_worktree.mkdir()
+    (linked_worktree / ".git").write_text("gitdir: /tmp/elsewhere\n", encoding="utf-8")
+    (linked_worktree / "ignored.py").write_text("print('linked')\n", encoding="utf-8")
+    seen: list[Path] = []
+
+    report = run_discover(tmp_path, on_top_level_directory=seen.append)
+
+    assert report.languages == {"python": 1}
+    assert seen == [Path("app")]
