@@ -1,5 +1,13 @@
 # Napkin Lessons
 
+- 2026-08-02: Discovery must make its bounded scope visible. Report direct
+  project folders only and prune nested Git roots before file enumeration, so a
+  parent project never silently classifies another project's source.
+
+- 2026-08-02: Recursive discovery is observable work, not an instant prompt.
+  Announce it before scanning and state a realistic duration, especially before
+  a second LLM-backed analysis can begin.
+
 - 2026-08-02: Print the runtime version before an interactive installer begins,
   so captured terminal output identifies the exact CLI behavior under review.
 

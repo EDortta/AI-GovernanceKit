@@ -14,7 +14,12 @@
   avoiding the misleading “selected agent” attribution.
 - security: no credential value, endpoint response body, or project content is
   logged; existing protected-reference handling remains unchanged.
-- validation: `PYTHONPATH=. pytest -q` → 244 passed; `git diff --check` passed.
+- delivered next: before upgrade drift or adoption discovery begins, the CLI
+  announces that a large project may take several minutes; accepted LLM
+  enrichment announces the configured provider/model and the 90-second bound.
+- delivered next: discovery emits each scanned first-level directory and prunes
+  nested Git repositories and linked worktrees before reading their source.
+- validation: `PYTHONPATH=. pytest -q` → 246 passed; `git diff --check` passed.
 - next: review the pending feature diff, then commit/push only with explicit
   authorization.
 

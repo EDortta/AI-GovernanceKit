@@ -91,6 +91,21 @@ def test_install_agents_prints_identity_setup_for_incomplete_identity(monkeypatc
     assert "Next required local setup (per host/checkout):" in stdout.getvalue()
 
 
+def test_upgrade_announces_project_analysis_duration(monkeypatch, tmp_path) -> None:
+    result = InstallResult(target=tmp_path, upgraded=True)
+    monkeypatch.setattr(
+        "governancekit.install_agents.run_install_agents", lambda *_args, **_kwargs: result
+    )
+    monkeypatch.setattr("governancekit.adoption.detect_project_drift", lambda *_args, **_kwargs: [])
+    stdout = io.StringIO()
+
+    with redirect_stdout(stdout):
+        code = cli.main(["--root", str(tmp_path), "install-agents", "--upgrade", "--skip-project-configuration"])
+
+    assert code == 0
+    assert "Analyzing project files for upgrade drift; this can take several minutes in a large project..." in stdout.getvalue()
+
+
 def test_install_agents_does_not_report_optional_awt_as_manual_step(
     monkeypatch, tmp_path
 ) -> None:

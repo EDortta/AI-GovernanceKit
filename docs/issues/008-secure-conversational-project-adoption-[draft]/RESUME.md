@@ -8,14 +8,19 @@ fontes, workspace temporária para o agente, schema estrito e slug Unicode.
 No fluxo simplificado, o provider primário agora só enriquece a proposta após
 consentimento explícito, identificado por provider/model; erro de resposta
 também mantém essa identificação.
+O upgrade anuncia a análise de drift/proposta antes de varrer arquivos e avisa
+o limite de 90 segundos antes da consulta opcional ao provider.
+A descoberta mostra apenas diretórios de primeiro nível e não entra em raízes
+Git aninhadas, incluindo worktrees cujo `.git` é um arquivo.
 O épico permanece aberto: não há recuperação durável no meio da entrevista,
 configuração de provider ainda ocorre depois de escolher o agente de escopo e o
 modelo de dependências/sensibilidades de capacidades ainda não foi implementado.
 
 ## Next Step (DO THIS FIRST)
 
-Revisar e publicar a mudança de consentimento explícito do provider/model no
-fluxo unificado de adoção; preservar a revisão humana e os documentos já aceitos.
+Revisar e publicar as mudanças de consentimento do provider/model, aviso de
+duração e descoberta visível/confinada no fluxo unificado de adoção; preservar
+a revisão humana e os documentos já aceitos.
 
 ## Gates
 
