@@ -116,6 +116,16 @@ governancekit --root /projeto doctor --json</code></pre>
   </section>
 
   <section>
+    <h2><code>migrate-activity-monitor</code></h2>
+    <pre><code>governancekit migrate-activity-monitor [--legacy-path PATH] [--state-home PATH]</code></pre>
+    <p>Copia ou mescla <code>~/Sync/agent-status.json</code> no estado XDG canônico, sem apagar o arquivo legado. O destino padrão é <code>$XDG_STATE_HOME/governancekit/agent-status.json</code> ou <code>~/.local/state/...</code>.</p>
+    <table><tbody>
+      <tr><td><code>--legacy-path PATH</code></td><td>Substitui a origem legada padrão.</td></tr>
+      <tr><td><code>--state-home PATH</code></td><td>Substitui a raiz de estado XDG do destino.</td></tr>
+    </tbody></table>
+  </section>
+
+  <section>
     <h2><code>resume</code></h2>
     <pre><code>governancekit --root /projeto resume</code></pre>
     <p>Mostra trabalho ativo, branch, próximo passo, identidade <code>operador@host</code> e alertas de colisão com checkout irmão. Não possui parâmetros próprios.</p>

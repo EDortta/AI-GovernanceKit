@@ -86,6 +86,8 @@ governancekit --root /project install-agents --upgrade</code></pre>
       <tr><td><code>discover --json</code></td><td>Inspects the repository read-only and reports project shape, detected agents, and governance artifacts as JSON.</td></tr>
       <tr><td><code>map --output PATH</code></td><td>Writes the code map to a chosen path; default is <code>docs/codemap.md</code>.</td></tr>
       <tr><td><code>map --all</code></td><td>Includes private, single-underscore Python symbols.</td></tr>
+      <tr><td><code>migrate-activity-monitor --legacy-path PATH</code></td><td>Copies or merges a legacy monitor; defaults to <code>~/Sync/agent-status.json</code> and preserves that source.</td></tr>
+      <tr><td><code>migrate-activity-monitor --state-home PATH</code></td><td>Overrides the XDG state home; by default uses <code>$XDG_STATE_HOME</code> or <code>~/.local/state</code>.</td></tr>
       <tr><td><code>resume</code></td><td>Shows active work, next step, handoff, identity, branch, and collision warnings.</td></tr>
     </tbody></table>
   </section>

@@ -136,6 +136,7 @@ Run commands directly from the repository:
 python3 -m governancekit resume   # print active session context
 python3 -m governancekit doctor   # validate governance scaffold
 python3 -m governancekit map      # generate docs/codemap.md
+python3 -m governancekit migrate-activity-monitor  # copy ~/Sync/agent-status.json into XDG state
 python3 -m governancekit discover # inspect whether this looks new or existing
 python3 -m governancekit configure --set OPERATOR_NAME=Ann  # fill kit variables across docs
 python3 -m governancekit install-hooks --hook-type pre-commit
@@ -198,6 +199,11 @@ governancekit voice-integration detect          # detect optional voice integrat
 summary, detected governance contracts, ignored paths, entry points, file tree,
 and Python symbol index. `doctor` asks for regeneration when the map is stale or
 does not have those usable layers.
+
+`migrate-activity-monitor` moves the legacy monitor convention into the XDG
+state location (`$XDG_STATE_HOME/governancekit/agent-status.json`, falling back
+to `~/.local/state/...`). It copies or merges sessions idempotently and preserves
+`~/Sync/agent-status.json` for existing users and tools.
 
 For CI, `scripts/validate-governance.sh /repo/path` runs `doctor --json` and
 `discover --json` together so pipelines can fail on mandatory governance drift

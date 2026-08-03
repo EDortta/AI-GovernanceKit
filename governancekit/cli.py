@@ -29,6 +29,7 @@ Advanced commands:
   remove-agents          Plan or apply conservative kit de-adoption.
   bootstrap-issue        Create local issue artifacts.
   install-hooks          Install optional local Git hooks.
+  migrate-activity-monitor  Migrate the legacy Sync activity monitor to XDG state.
   voice-integration      Inspect optional voice integration.
 
 Use `governancekit <command> -h` for a command's full help, including advanced commands."""
@@ -94,6 +95,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser(
         "resume", help="Print session-start context from RESUME.md and handoff.md."
+    )
+
+    monitor_parser = subparsers.add_parser(
+        "migrate-activity-monitor",
+        help="Copy/merge ~/Sync/agent-status.json into XDG state without deleting the legacy file.",
+    )
+    monitor_parser.add_argument(
+        "--legacy-path", type=Path, default=None,
+        help="Legacy monitor path (default: ~/Sync/agent-status.json).",
+    )
+    monitor_parser.add_argument(
+        "--state-home", type=Path, default=None,
+        help="XDG state-home override (default: $XDG_STATE_HOME or ~/.local/state).",
     )
 
     context_parser = subparsers.add_parser(
@@ -508,6 +522,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = run_resume(args.root)
         print(format_resume(result))
         return 0 if result.next_step else 1
+
+    if args.command == "migrate-activity-monitor":
+        from .activity_monitor import ActivityMonitorError, migrate_activity_monitor
+
+        try:
+            result = migrate_activity_monitor(
+                source=args.legacy_path,
+                state_home=args.state_home,
+            )
+        except ActivityMonitorError as error:
+            print(f"Activity monitor migration failed: {error}")
+            return 1
+        action = "updated" if result.wrote_destination else "already current"
+        print(f"Activity monitor {action}: {result.destination}")
+        print(
+            f"  imported {result.imported_sessions} session(s); "
+            f"{result.duplicate_sessions} duplicate(s); legacy source preserved: {result.source}"
+        )
+        return 0
 
     if args.command == "install-agents":
         modes = [args.force, args.upgrade, args.docs_only]

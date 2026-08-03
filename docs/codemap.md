@@ -5,8 +5,8 @@
 
 ## Summary
 
-- 53 file(s) · 420 symbol(s) indexed
-- Languages: config (1), python (50), shell (2)
+- 55 file(s) · 431 symbol(s) indexed
+- Languages: config (1), python (52), shell (2)
 - Top-level areas: `.`, `governancekit`, `scripts`, `tests`
 
 ## Governance
@@ -32,6 +32,7 @@
 governancekit/
   __init__.py  — "AI GovernanceKit runtime tools."
   __main__.py
+  activity_monitor.py  — "Migration support for the local agent activity monitor."
   adoption.py  — "Evidence-based, review-first project adoption used by ``install-agents``."
   agent_scope.py  — "Read-only LLM proposals for project scope adoption."
   classification.py  — "Architecture change classification workflow."
@@ -59,6 +60,7 @@ scripts/
   notify-nexo.sh
   validate-governance.sh
 tests/
+  test_activity_monitor.py
   test_adoption.py
   test_advanced_usage_docs.py
   test_agent_scope.py
@@ -88,6 +90,17 @@ tests/
 ```
 
 ## Symbol Index
+
+### `governancekit/activity_monitor.py`
+
+> Migration support for the local agent activity monitor.
+
+- **`ActivityMonitorError`** *(class)* — "The activity-monitor document is missing, unsafe, or malformed."
+- **`ActivityMonitorMigration`** *(class)*
+- `default_state_home()` — "Resolve the XDG state directory without creating it."
+- `canonical_monitor_path()`
+- `legacy_sync_monitor_path()`
+- `migrate_activity_monitor()` — "Copy/merge legacy sessions into XDG state without deleting the source."
 
 ### `governancekit/adoption.py`
 
@@ -326,6 +339,14 @@ tests/
   - `as_dict(self)` *(method)*
 - `detect_voice_integration(root)`
 - `format_voice_integration(status)`
+
+### `tests/test_activity_monitor.py`
+
+- **`ActivityMonitorMigrationTests`** *(class)*
+  - `test_uses_xdg_state_home_when_present(self)` *(method)*
+  - `test_migrates_without_removing_legacy_source(self)` *(method)*
+  - `test_merges_new_sessions_and_is_idempotent(self)` *(method)*
+  - `test_rejects_malformed_monitor(self)` *(method)*
 
 ### `tests/test_adoption.py`
 

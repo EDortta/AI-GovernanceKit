@@ -82,6 +82,8 @@ governancekit --root /proyecto install-agents --upgrade</code></pre>
       <tr><td><code>doctor --json</code></td><td>Produce resultados estructurados para CI.</td></tr>
       <tr><td><code>map --output PATH</code></td><td>Escribe el mapa en otra ruta; por defecto <code>docs/codemap.md</code>.</td></tr>
       <tr><td><code>map --all</code></td><td>Incluye símbolos Python privados con guion bajo.</td></tr>
+      <tr><td><code>migrate-activity-monitor --legacy-path PATH</code></td><td>Copia o fusiona el monitor heredado; por defecto usa <code>~/Sync/agent-status.json</code> y conserva esa fuente.</td></tr>
+      <tr><td><code>migrate-activity-monitor --state-home PATH</code></td><td>Reemplaza la raíz de estado XDG; por defecto usa <code>$XDG_STATE_HOME</code> o <code>~/.local/state</code>.</td></tr>
       <tr><td><code>resume</code></td><td>Muestra trabajo activo, próximo paso, handoff, identidad, branch y alertas.</td></tr>
     </tbody></table>
   </section>
