@@ -1,5 +1,13 @@
 # Napkin Lessons
 
+- 2026-08-02: Print the runtime version before an interactive installer begins,
+  so captured terminal output identifies the exact CLI behavior under review.
+
+- 2026-08-02: A configured provider is not consent to invoke it. In an
+  interactive adoption flow, name the provider/model and ask before sending
+  project sources; if it fails, attribute the failure to that provider/model,
+  not to an invisible “selected agent”.
+
 - 2026-08-02: Um provider configurado pode enriquecer uma proposta normal, mas
   sua indisponibilidade não transforma instalação em falha. Preserve a descoberta
   determinística, registre a lacuna e mantenha a aceitação humana como gate.

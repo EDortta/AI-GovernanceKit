@@ -5,9 +5,15 @@ from contextlib import redirect_stdout
 
 import pytest
 
+from governancekit import __version__
 from governancekit import cli, install_agents
 from governancekit.doctor import CheckResult, DoctorResult
 from governancekit.install_agents import InstallResult
+
+
+class _InteractiveStdin:
+    def isatty(self) -> bool:
+        return True
 
 
 def test_main_without_command_prints_expanded_help() -> None:
@@ -63,6 +69,7 @@ def test_install_agents_prints_identity_setup_for_unconfigured_host(monkeypatch,
 
     output = stdout.getvalue()
     assert code == 0
+    assert output.startswith(f"AI GovernanceKit {__version__} · install-agents\n")
     assert "Next required local setup (per host/checkout):" in output
     assert f"governancekit --root {tmp_path} configure" in output
 
@@ -121,6 +128,37 @@ def test_install_agents_silently_skips_optional_awt(monkeypatch, tmp_path) -> No
 
     assert not result.awt_installed
     assert result.awt_message is None
+
+
+def test_install_agents_asks_before_using_configured_llm(monkeypatch, tmp_path) -> None:
+    result = InstallResult(target=tmp_path, upgraded=True)
+    monkeypatch.setattr(
+        "governancekit.install_agents.run_install_agents", lambda *_args, **_kwargs: result
+    )
+    state = tmp_path / ".gk"
+    state.mkdir()
+    (state / "project-config.json").write_text(
+        '{"providers": [{"name": "openai", "mode": "env", "credential_ref": "TEST_KEY", "base_url": "https://example.invalid/v1", "model": "gpt-test", "role": "primary"}]}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli.sys, "stdin", _InteractiveStdin())
+    answers = iter(["n", "n"])
+    prompts: list[str] = []
+    monkeypatch.setattr("builtins.input", lambda prompt: (prompts.append(prompt), next(answers))[1])
+    monkeypatch.setattr(
+        "governancekit.agent_scope.propose_project_scope",
+        lambda *_args, **_kwargs: pytest.fail("LLM must not run without confirmation"),
+    )
+    stdout = io.StringIO()
+
+    with redirect_stdout(stdout):
+        code = cli.main(["--root", str(tmp_path), "install-agents"])
+
+    assert code == 0
+    assert any(
+        prompt.startswith("Use configured LLM provider openai / gpt-test to enrich this proposal? [y/N]")
+        for prompt in prompts
+    )
 
 
 def test_docs_only_does_not_modify_root_gitignore(monkeypatch, tmp_path) -> None:

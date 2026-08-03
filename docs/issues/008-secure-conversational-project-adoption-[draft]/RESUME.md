@@ -5,14 +5,17 @@
 Implementação-base entregue e validada: locale operacional, diálogo guiado,
 provider com finalidade/papel, defaults de sessão pendente, confinamento de
 fontes, workspace temporária para o agente, schema estrito e slug Unicode.
+No fluxo simplificado, o provider primário agora só enriquece a proposta após
+consentimento explícito, identificado por provider/model; erro de resposta
+também mantém essa identificação.
 O épico permanece aberto: não há recuperação durável no meio da entrevista,
 configuração de provider ainda ocorre depois de escolher o agente de escopo e o
 modelo de dependências/sensibilidades de capacidades ainda não foi implementado.
 
-## Next Step
+## Next Step (DO THIS FIRST)
 
-Implementar e testar o enriquecimento por provider e o aviso de drift no fluxo
-unificado de adoção; preservar a revisão humana e os documentos já aceitos.
+Revisar e publicar a mudança de consentimento explícito do provider/model no
+fluxo unificado de adoção; preservar a revisão humana e os documentos já aceitos.
 
 ## Gates
 

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from . import __version__
 from .doctor import DoctorResult, run_doctor
 from .context import ContextError, build_context, format_context
 from .path_safety import UnsafePathError
@@ -512,6 +513,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         modes = [args.force, args.upgrade, args.docs_only]
         if sum(bool(m) for m in modes) > 1:
             parser.error("--force, --upgrade, and --docs-only are mutually exclusive.")
+        print(f"AI GovernanceKit {__version__} · install-agents")
         from .install_agents import run_install_agents
         try:
             result = run_install_agents(
@@ -529,7 +531,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"ERROR: {exc}", flush=True)
             return 1
         action = "Upgraded" if result.upgraded else "Installed"
-        print(f"AI GovernanceKit install-agents")
         print(f"{action} {len(result.paths_installed)} path(s) into: {result.target}")
         for p in result.paths_installed:
             print(f"  {p}")
@@ -585,12 +586,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.non_interactive and not args.accept_generated:
                 print("Adoption proposal not applied: --non-interactive requires --accept-generated.")
             elif not args.advanced:
-                from .adoption import apply_adoption_proposal, build_adoption_proposal, format_adoption_proposal
+                from .adoption import (
+                    apply_adoption_proposal,
+                    build_adoption_proposal,
+                    configured_adoption_provider,
+                    format_adoption_proposal,
+                    provider_label,
+                )
                 proposal = build_adoption_proposal(args.root)
                 if args.non_interactive or args.quick:
                     written = apply_adoption_proposal(proposal)
                     print("Generated adoption applied: " + (", ".join(written) or "existing project documents preserved"))
                 elif sys.stdin.isatty():
+                    provider = configured_adoption_provider(args.root)
+                    if provider:
+                        answer = input(
+                            "Use configured LLM provider "
+                            f"{provider_label(provider)} to enrich this proposal? [y/N] "
+                        ).strip().lower()
+                        if answer in {"y", "yes"}:
+                            proposal = build_adoption_proposal(args.root, enrich_with_llm=True)
                     print(format_adoption_proposal(proposal))
                     if input("Apply these suggestions? [Y/n] ").strip().lower() not in {"n", "no"}:
                         written = apply_adoption_proposal(proposal)

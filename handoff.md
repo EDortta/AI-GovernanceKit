@@ -3,6 +3,22 @@
 ## Current Status
 
 - work_id: GH-6-simplified-adoption
+- branch: `feature/uc-012/confirm-llm-adoption`
+- status: provider consent and failure attribution implemented; pending review,
+  commit, and push.
+- delivered: interactive `install-agents` now builds a deterministic proposal
+  first, names the configured `provider / model`, and asks before any API scope
+  analysis. Declining keeps LLM enrichment off; quick and non-interactive paths
+  remain deterministic. The command prints the GovernanceKit version before
+  installation prompts. Provider errors name the configured provider/model,
+  avoiding the misleading “selected agent” attribution.
+- security: no credential value, endpoint response body, or project content is
+  logged; existing protected-reference handling remains unchanged.
+- validation: `PYTHONPATH=. pytest -q` → 244 passed; `git diff --check` passed.
+- next: review the pending feature diff, then commit/push only with explicit
+  authorization.
+
+- work_id: GH-6-simplified-adoption
 - branch: `feature/uc-011/simplified-adoption-flow`
 - status: first implementation stage complete; proposal/apply core pending commit.
 - delivered: normal `install-agents` now produces a consolidated, evidence-based
