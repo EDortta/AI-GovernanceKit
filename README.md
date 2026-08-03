@@ -194,7 +194,10 @@ governancekit voice-integration detect          # detect optional voice integrat
 
 `doctor` validates required governance files, readiness flags, active issue structure, resume next step, and tracked secret-file paths. It also hints when `docs/codemap.md` is missing or stale.
 
-`map` traverses the project, extracts the Python symbol tree via the standard-library `ast` module, and writes a human- and agent-readable Markdown document.
+`map` writes a layered, human- and agent-readable Markdown document: a project
+summary, detected governance contracts, ignored paths, entry points, file tree,
+and Python symbol index. `doctor` asks for regeneration when the map is stale or
+does not have those usable layers.
 
 For CI, `scripts/validate-governance.sh /repo/path` runs `doctor --json` and
 `discover --json` together so pipelines can fail on mandatory governance drift

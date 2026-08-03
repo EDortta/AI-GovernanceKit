@@ -63,6 +63,7 @@ def run_doctor(root: Path) -> DoctorResult:
         ),
         _check_required_reading(repo_root),
         _check_content_migration(repo_root),
+        _check_legacy_rule_traps(repo_root),
         _check_manifest_drift(repo_root),
         _check_active_issue(repo_root),
         _check_resume_next_step(repo_root),
@@ -466,6 +467,25 @@ def _check_content_migration(root: Path) -> CheckResult:
     return CheckResult("content migration", True, "no orphaned legacy agent contracts")
 
 
+def _check_legacy_rule_traps(root: Path) -> CheckResult:
+    """Surface rule files outside the canonical, indexed load path.
+
+    A completed content migration may intentionally retain its backup for audit,
+    so neither finding blocks readiness.  They remain visible because IDEs can
+    load a nested ``documents/AGENTS.md`` while GovernanceKit only indexes the
+    root contract and ``docs/required-reading.md``.
+    """
+    findings: list[str] = []
+    if (root / _MIGRATION_BACKUP_DIR).is_dir():
+        findings.append(f"{_MIGRATION_BACKUP_DIR}/ retained for audit")
+    nested_agents = root / "documents" / "AGENTS.md"
+    if nested_agents.is_file():
+        findings.append("documents/AGENTS.md may be loaded by IDE rules outside required-reading")
+    if findings:
+        return CheckResult("legacy rule traps", False, "; ".join(findings), advisory=True)
+    return CheckResult("legacy rule traps", True, "no legacy rule files outside the canonical load path", advisory=True)
+
+
 def _check_manifest_drift(root: Path) -> CheckResult:
     path = root / ".gk" / "manifest.json"
     if not path.is_file():
@@ -675,6 +695,21 @@ def _check_codemap(root: Path) -> CheckResult:
             "codemap",
             False,
             f"docs/codemap.md missing — run '{_command(root, 'map')}' to generate it",
+            advisory=True,
+        )
+    try:
+        content = codemap.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        return CheckResult("codemap", False, f"docs/codemap.md unreadable: {error}", advisory=True)
+    required_sections = ("## Summary", "## Governance", "## Ignored Paths", "## File Tree")
+    missing_sections = [section for section in required_sections if section not in content]
+    if missing_sections:
+        return CheckResult(
+            "codemap",
+            False,
+            "docs/codemap.md uses an obsolete or incomplete format (missing: "
+            + ", ".join(missing_sections)
+            + f") — run '{_command(root, 'map')}'",
             advisory=True,
         )
     since = codemap.stat().st_mtime

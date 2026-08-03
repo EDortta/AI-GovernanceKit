@@ -100,6 +100,8 @@ class MapResult:
     output_path: Path
     files: tuple[FileEntry, ...]
     entry_points: tuple[EntryPoint, ...]
+    governance_files: tuple[Path, ...]
+    ignored_patterns: tuple[str, ...]
 
     @property
     def file_count(self) -> int:
@@ -139,6 +141,8 @@ def run_map(
         output_path=output,
         files=tuple(_collect_files(root, include_private, output, gitignore_patterns)),
         entry_points=tuple(_detect_entry_points(root)),
+        governance_files=tuple(_governance_files(root)),
+        ignored_patterns=tuple(gitignore_patterns),
     )
 
     safe_path(root, output.parent).mkdir(parents=True, exist_ok=True)
@@ -398,6 +402,22 @@ def _detect_entry_points(root: Path) -> list[EntryPoint]:
     return entry_points
 
 
+_GOVERNANCE_PATHS: tuple[str, ...] = (
+    'AGENTS.md',
+    'docs/required-reading.md',
+    'docs/project-rules.md',
+    '.docs/software-overview.md',
+    '.docs/limits.md',
+    '.docs/governancekit-integration.json',
+    '.gk/project-config.json',
+)
+
+
+def _governance_files(root: Path) -> list[Path]:
+    """Return the installed governance contracts that an agent should notice first."""
+    return [Path(rel) for rel in _GOVERNANCE_PATHS if (root / rel).is_file()]
+
+
 # ── Markdown rendering ─────────────────────────────────────────────────────────
 
 def _render_markdown(result: MapResult) -> str:
@@ -409,9 +429,28 @@ def _render_markdown(result: MapResult) -> str:
         f'> Generated: {result.generated_at} · Root: `{result.root}`',
         f'> Refresh: `governancekit --root {shlex.quote(str(result.root))} map`',
         '',
-        f'{result.file_count} file(s) · {result.symbol_count} symbol(s) indexed',
+        '## Summary',
+        '',
+        f'- {result.file_count} file(s) · {result.symbol_count} symbol(s) indexed',
+        f'- Languages: {_render_language_summary(result.files)}',
+        f'- Top-level areas: {_render_top_level_areas(result.files)}',
         '',
     ]
+
+    lines += ['## Governance', '']
+    if result.governance_files:
+        lines.extend(f'- `{path.as_posix()}`' for path in result.governance_files)
+    else:
+        lines.append('- No GovernanceKit/AI-Agents contract files detected.')
+    lines.append('')
+
+    lines += ['## Ignored Paths', '']
+    lines.append('- Built-in: ' + ', '.join(f'`{name}`' for name in sorted(SKIP_DIRS)))
+    if result.ignored_patterns:
+        lines.append('- `.gitignore`: ' + ', '.join(f'`{pattern}`' for pattern in result.ignored_patterns))
+    else:
+        lines.append('- `.gitignore`: none')
+    lines.append('')
 
     if result.entry_points:
         lines += ['## Entry Points', '']
@@ -430,6 +469,18 @@ def _render_markdown(result: MapResult) -> str:
             lines += _render_file_symbols(entry)
 
     return '\n'.join(lines) + '\n'
+
+
+def _render_language_summary(files: tuple[FileEntry, ...]) -> str:
+    counts: dict[str, int] = {}
+    for entry in files:
+        counts[entry.language] = counts.get(entry.language, 0) + 1
+    return ', '.join(f'{language} ({count})' for language, count in sorted(counts.items())) or 'none'
+
+
+def _render_top_level_areas(files: tuple[FileEntry, ...]) -> str:
+    areas = sorted({entry.path.parts[0] if len(entry.path.parts) > 1 else '.' for entry in files})
+    return ', '.join(f'`{area}`' for area in areas) or 'none'
 
 
 def _render_tree(files: tuple[FileEntry, ...]) -> list[str]:

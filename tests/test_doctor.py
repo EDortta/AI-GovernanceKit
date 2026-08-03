@@ -76,6 +76,23 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("docs/required-reading.md", failed_check_names(result))
             self.assertIn("content migration", failed_check_names(result))
 
+    def test_legacy_rule_traps_warn_without_blocking_ready_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / ".docs-migration-bak").mkdir()
+            nested = root / "documents"
+            nested.mkdir()
+            (nested / "AGENTS.md").write_text("# legacy IDE rules\n", encoding="utf-8")
+
+            result = run_doctor(root)
+
+            check = next(c for c in result.checks if c.name == "legacy rule traps")
+            self.assertFalse(check.passed)
+            self.assertTrue(check.advisory)
+            self.assertTrue(result.ok, result.checks)
+            self.assertIn("documents/AGENTS.md", check.message)
+
     def test_required_reading_fails_for_missing_listed_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -129,6 +146,20 @@ class DoctorTests(unittest.TestCase):
             result = run_doctor(root)
 
             self.assertIn("docs/required-reading.md", failed_check_names(result))
+
+    def test_codemap_requires_current_layered_format(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            codemap = root / "docs" / "codemap.md"
+            codemap.write_text("# Code Map\n\n## File Tree\n", encoding="utf-8")
+
+            result = run_doctor(root)
+
+            check = next(c for c in result.checks if c.name == "codemap")
+            self.assertFalse(check.passed)
+            self.assertTrue(check.advisory)
+            self.assertIn("obsolete", check.message)
 
 
     def test_missing_identity_file_fails(self) -> None:

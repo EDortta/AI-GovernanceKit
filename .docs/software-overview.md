@@ -42,7 +42,7 @@ The current scope is repository bootstrap plus two executable CLI commands:
 - create traceable local issue artifacts
 - prepare resumable workflow files
 - `governancekit doctor` — validate the governance scaffold (files, readiness flags, active issue, secrets)
-- `governancekit map` — generate `docs/codemap.md`, a persistent Markdown code index (file tree, entry points, Python symbol index) for AI agents to read at session start instead of re-scanning source files
+- `governancekit map` — generate `docs/codemap.md`, a layered persistent Markdown code index (summary, governance contracts, ignored paths, entry points, file tree, Python symbol index) for AI agents to read at session start instead of re-scanning source files
 - `governancekit resume` — print the active work session at a glance (work_id, branch, status, next step from RESUME.md, recent handoff entry); run at session start by both agents and humans
 - `governancekit install-agents` — install/update the AI-Agents kit; `--upgrade` refreshes all kit-owned files, `--docs-only` refreshes just kit docs, fresh install installs kit docs to `.docs/` and seeds the project-owned `docs/` folder
 - `governancekit configure` — fill `[PLACEHOLDER]` kit variables across all docs without reinstalling (interactive or `--set KEY=VALUE`)

@@ -198,6 +198,22 @@ class RunMapTests(unittest.TestCase):
             content = result.output_path.read_text(encoding="utf-8")
             self.assertIn("run", content)
 
+    def test_output_has_summary_governance_and_ignored_layers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._make_project(root)
+            (root / "AGENTS.md").write_text("# Contract\n", encoding="utf-8")
+            (root / ".gitignore").write_text("local/\n", encoding="utf-8")
+
+            result = run_map(root)
+            content = result.output_path.read_text(encoding="utf-8")
+
+            self.assertIn("## Summary", content)
+            self.assertIn("## Governance", content)
+            self.assertIn("`AGENTS.md`", content)
+            self.assertIn("## Ignored Paths", content)
+            self.assertIn("`local/`", content)
+
     def test_custom_output_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
