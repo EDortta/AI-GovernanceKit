@@ -1,5 +1,21 @@
 # Napkin Lessons
 
+- 2026-08-02: Um provider configurado pode enriquecer uma proposta normal, mas
+  sua indisponibilidade não transforma instalação em falha. Preserve a descoberta
+  determinística, registre a lacuna e mantenha a aceitação humana como gate.
+
+- 2026-08-02: Drift de projeto é evidência nova, não autorização para reescrever
+  decisões aceitas. No upgrade, mostre a diferença e deixe a atualização de
+  documentação como ação explícita.
+
+- 2026-08-02: A ajuda raiz deve ensinar o caminho normal antes de listar o
+  poder da ferramenta. Marcar superfícies especializadas como avançadas preserva
+  descoberta sem transformar a primeira execução em um manual interno.
+
+- 2026-08-02: Uma instalação simples não deve esconder consentimento: proposta
+  gerada pode ser a UX padrão, mas automação precisa de `--accept-generated` e
+  documentos completos já aceitos permanecem intocados.
+
 - 2026-08-02: A removal plan must treat provenance as deletion authority, not
   merely evidence. A matching installed-file hash can permit a backup-first
   deletion; modified, unknown, referenced, and symlink paths stay preserved.
