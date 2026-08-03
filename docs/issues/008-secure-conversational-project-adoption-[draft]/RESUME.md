@@ -21,9 +21,10 @@ modelo de dependências/sensibilidades de capacidades ainda não foi implementad
 
 ## Next Step (DO THIS FIRST)
 
-Revisar e publicar consentimento do provider/model, aviso de duração,
-descoberta visível/confinada e explicação operacional de falhas LLM no fluxo
-unificado de adoção; preservar a revisão humana e os documentos já aceitos.
+Executar uma atualização interativa real em checkout consumidor grande e revisar
+o scan visível, o consentimento do LLM e qualquer aviso operacional antes de
+iniciar os itens restantes do épico; preservar a revisão humana e documentos
+já aceitos.
 
 ## Gates
 

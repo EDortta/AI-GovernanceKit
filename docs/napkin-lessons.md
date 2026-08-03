@@ -1,5 +1,9 @@
 # Napkin Lessons
 
+- 2026-08-02: Fechar uma melhoria de UX exige registrar o comportamento
+  efetivamente publicado e deixar a próxima validação real explícita; testes não
+  substituem observação em uma árvore grande de consumidor.
+
 - 2026-08-02: A rejected LLM proposal is an operator-visible exception, not a
   generic open item. State the provider/model, the contract violated, and the
   safe next decision without making the operator infer whether writing proceeds.

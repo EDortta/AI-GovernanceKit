@@ -3,9 +3,8 @@
 ## Current Status
 
 - work_id: GH-6-simplified-adoption
-- branch: `feature/uc-012/confirm-llm-adoption`
-- status: provider consent and failure attribution implemented; pending review,
-  commit, and push.
+- branch: `main`
+- status: published and installed locally; session closed.
 - delivered: interactive `install-agents` now builds a deterministic proposal
   first, names the configured `provider / model`, and asks before any API scope
   analysis. Declining keeps LLM enrichment off; quick and non-interactive paths
@@ -22,9 +21,13 @@
 - delivered next: an LLM response rejected for invalid evidence is a highlighted
   operator warning, not an item hidden in an unresolved comma-list. It identifies
   provider/model, expected `path: reason` evidence, and the safe `n` action.
+- published: merge commits `3f96377`, `c9e277f`, and `e3f771c` integrated the
+  consent/version, visible bounded discovery, and actionable LLM-warning changes;
+  `origin/main` is synchronized and the local package was reinstalled.
 - validation: `PYTHONPATH=. pytest -q` → 247 passed; `git diff --check` passed.
-- next: review the pending feature diff, then commit/push only with explicit
-  authorization.
+- next: run one real interactive upgrade on a large consumer checkout and review
+  the visible scan, the optional LLM prompt, and any operator warning before
+  starting the remaining adoption-epic work.
 
 - work_id: GH-6-simplified-adoption
 - branch: `feature/uc-011/simplified-adoption-flow`
