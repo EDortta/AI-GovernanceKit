@@ -40,7 +40,50 @@ def test_configured_primary_llm_enriches_proposal_without_persisting_credentials
     state.mkdir()
     (state / "project-config.json").write_text(json.dumps({"providers": [{"name": "test", "mode": "env", "credential_ref": "TEST_KEY", "base_url": "https://example.invalid/v1", "model": "test", "role": "primary"}]}), encoding="utf-8")
     monkeypatch.setattr("governancekit.agent_scope.propose_project_scope", lambda *_args, **_kwargs: ScopeProposal("LLM summary", [ProposedDomain("core", ["serve"], ["README.md: documented"])], ["confirm deploy"]))
-    proposal = build_adoption_proposal(tmp_path)
+    proposal = build_adoption_proposal(tmp_path, enrich_with_llm=True)
     assert "LLM scope proposal: LLM summary" in proposal.overview
     assert "confirm deploy" in proposal.unresolved
     assert "README.md: documented" in proposal.evidence
+
+
+def test_configured_primary_llm_is_not_invoked_without_explicit_enrichment(tmp_path, monkeypatch) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
+    state = tmp_path / ".gk"
+    state.mkdir()
+    (state / "project-config.json").write_text(
+        json.dumps({"providers": [{"name": "test", "mode": "env", "credential_ref": "TEST_KEY", "base_url": "https://example.invalid/v1", "model": "test", "role": "primary"}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "governancekit.agent_scope.propose_project_scope",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("LLM must not run")),
+    )
+
+    proposal = build_adoption_proposal(tmp_path)
+
+    assert "LLM scope proposal" not in proposal.overview
+
+
+def test_provider_failure_names_configured_provider_and_model(tmp_path, monkeypatch) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
+    state = tmp_path / ".gk"
+    state.mkdir()
+    (state / "project-config.json").write_text(
+        json.dumps({"providers": [{"name": "openai", "mode": "env", "credential_ref": "TEST_KEY", "base_url": "https://example.invalid/v1", "model": "gpt-test", "role": "primary"}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "governancekit.agent_scope.propose_project_scope",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("selected agent returned invalid JSON for the scope proposal")),
+    )
+
+    proposal = build_adoption_proposal(tmp_path, enrich_with_llm=True)
+
+    assert any(
+        "configured LLM provider openai / gpt-test could not enrich proposal" in item
+        for item in proposal.unresolved
+    )

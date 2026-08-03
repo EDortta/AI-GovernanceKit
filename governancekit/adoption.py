@@ -34,7 +34,17 @@ def _primary_provider(root: Path) -> ProviderConfig | None:
     return None
 
 
-def build_adoption_proposal(root: Path) -> AdoptionProposal:
+def configured_adoption_provider(root: Path) -> ProviderConfig | None:
+    """Return the eligible primary provider without invoking it."""
+    return _primary_provider(root.resolve())
+
+
+def provider_label(provider: ProviderConfig) -> str:
+    """Render only the non-secret provider identity shown to an operator."""
+    return f"{provider.name} / {provider.model}"
+
+
+def build_adoption_proposal(root: Path, *, enrich_with_llm: bool = False) -> AdoptionProposal:
     root = root.resolve()
     discovery = run_discover(root)
     evidence = [*discovery.governance_files, *discovery.frameworks, *discovery.package_managers]
@@ -42,8 +52,8 @@ def build_adoption_proposal(root: Path) -> AdoptionProposal:
     commands = ", ".join(discovery.automation_commands) or "not detected"
     unresolved = ["deployment target"]
     llm_summary = ""
-    provider = _primary_provider(root)
-    if provider:
+    provider = configured_adoption_provider(root)
+    if provider and enrich_with_llm:
         # Reuse the hardened scope adapter: it confines sources, treats content as
         # data, validates returned JSON, and never persists credentials.
         from .agent_scope import propose_project_scope
@@ -55,7 +65,9 @@ def build_adoption_proposal(root: Path) -> AdoptionProposal:
             evidence.extend(item for domain in proposed.domains for item in domain.evidence)
             unresolved.extend(proposed.questions)
         except RuntimeError as exc:
-            unresolved.append(f"configured provider could not enrich proposal: {exc}")
+            unresolved.append(
+                f"configured LLM provider {provider_label(provider)} could not enrich proposal: {exc}"
+            )
         unresolved.extend(missing)
     overview = "\n".join((
         "# Software Overview", "", "## Metadata", "", "- project_context_ready: yes", "",
