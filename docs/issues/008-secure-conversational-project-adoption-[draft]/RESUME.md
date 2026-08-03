@@ -12,15 +12,18 @@ O upgrade anuncia a análise de drift/proposta antes de varrer arquivos e avisa
 o limite de 90 segundos antes da consulta opcional ao provider.
 A descoberta mostra apenas diretórios de primeiro nível e não entra em raízes
 Git aninhadas, incluindo worktrees cujo `.git` é um arquivo.
+Falhas de enriquecimento LLM são apresentadas como aviso destacado com
+provider/model, causa traduzida, formato de evidência esperado e orientação de
+aceitar somente a proposta determinística ou responder `n` para não escrever.
 O épico permanece aberto: não há recuperação durável no meio da entrevista,
 configuração de provider ainda ocorre depois de escolher o agente de escopo e o
 modelo de dependências/sensibilidades de capacidades ainda não foi implementado.
 
 ## Next Step (DO THIS FIRST)
 
-Revisar e publicar as mudanças de consentimento do provider/model, aviso de
-duração e descoberta visível/confinada no fluxo unificado de adoção; preservar
-a revisão humana e os documentos já aceitos.
+Revisar e publicar consentimento do provider/model, aviso de duração,
+descoberta visível/confinada e explicação operacional de falhas LLM no fluxo
+unificado de adoção; preservar a revisão humana e os documentos já aceitos.
 
 ## Gates
 

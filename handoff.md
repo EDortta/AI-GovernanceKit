@@ -19,7 +19,10 @@
   enrichment announces the configured provider/model and the 90-second bound.
 - delivered next: discovery emits each scanned first-level directory and prunes
   nested Git repositories and linked worktrees before reading their source.
-- validation: `PYTHONPATH=. pytest -q` → 246 passed; `git diff --check` passed.
+- delivered next: an LLM response rejected for invalid evidence is a highlighted
+  operator warning, not an item hidden in an unresolved comma-list. It identifies
+  provider/model, expected `path: reason` evidence, and the safe `n` action.
+- validation: `PYTHONPATH=. pytest -q` → 247 passed; `git diff --check` passed.
 - next: review the pending feature diff, then commit/push only with explicit
   authorization.
 

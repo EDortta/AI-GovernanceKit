@@ -16,9 +16,26 @@ class AdoptionProposal:
     limits: str
     evidence: list[str]
     unresolved: list[str]
+    llm_warning: "LlmEnrichmentWarning | None" = None
 
     def as_dict(self) -> dict[str, object]:
-        return {"root": str(self.root), "overview": self.overview, "limits": self.limits, "evidence": self.evidence, "unresolved": self.unresolved}
+        return {
+            "root": str(self.root),
+            "overview": self.overview,
+            "limits": self.limits,
+            "evidence": self.evidence,
+            "unresolved": self.unresolved,
+            "llm_warning": self.llm_warning.as_dict() if self.llm_warning else None,
+        }
+
+
+@dataclass(frozen=True)
+class LlmEnrichmentWarning:
+    provider: str
+    reason: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {"provider": self.provider, "reason": self.reason}
 
 
 def _replace_ready(text: str, marker: str) -> str:
@@ -45,6 +62,19 @@ def provider_label(provider: ProviderConfig) -> str:
     return f"{provider.name} / {provider.model}"
 
 
+def _llm_failure_reason(error: RuntimeError) -> str:
+    message = str(error)
+    if message == "selected agent returned invalid evidence":
+        return (
+            "the response's evidence is not a valid non-empty list of unique text entries"
+        )
+    if message == "selected agent returned evidence outside the selected sources":
+        return (
+            "the response cited a file that was not among the approved project sources"
+        )
+    return message
+
+
 def build_adoption_proposal(
     root: Path,
     *,
@@ -58,6 +88,7 @@ def build_adoption_proposal(
     commands = ", ".join(discovery.automation_commands) or "not detected"
     unresolved = ["deployment target"]
     llm_summary = ""
+    llm_warning: LlmEnrichmentWarning | None = None
     provider = configured_adoption_provider(root)
     if provider and enrich_with_llm:
         # Reuse the hardened scope adapter: it confines sources, treats content as
@@ -71,8 +102,8 @@ def build_adoption_proposal(
             evidence.extend(item for domain in proposed.domains for item in domain.evidence)
             unresolved.extend(proposed.questions)
         except RuntimeError as exc:
-            unresolved.append(
-                f"configured LLM provider {provider_label(provider)} could not enrich proposal: {exc}"
+            llm_warning = LlmEnrichmentWarning(
+                provider=provider_label(provider), reason=_llm_failure_reason(exc)
             )
         unresolved.extend(missing)
     overview = "\n".join((
@@ -87,7 +118,7 @@ def build_adoption_proposal(
         "- Review database, deployment, and compatibility changes before application.", "",
         "## Detected recommendations", "", f"- Validate with: {commands}.", "",
     ))
-    return AdoptionProposal(root, overview, limits, evidence, unresolved)
+    return AdoptionProposal(root, overview, limits, evidence, unresolved, llm_warning)
 
 
 def apply_adoption_proposal(proposal: AdoptionProposal) -> list[str]:
@@ -126,4 +157,26 @@ def detect_project_drift(
 
 
 def format_adoption_proposal(proposal: AdoptionProposal) -> str:
-    return "\n".join(["Project adoption proposal", f"Project: {proposal.root.name}", "Evidence: " + (", ".join(proposal.evidence) or "none"), "Unresolved: " + ", ".join(proposal.unresolved), "Apply generated overview and limits?"])
+    lines = [
+        "Project adoption proposal",
+        f"Project: {proposal.root.name}",
+        "Evidence: " + (", ".join(proposal.evidence) or "none"),
+    ]
+    if proposal.unresolved:
+        lines.extend(["Open items:", *(f"  - {item}" for item in proposal.unresolved)])
+    if proposal.llm_warning:
+        lines.extend(
+            [
+                "",
+                "[WARNING] LLM enrichment was skipped; no LLM result will be applied.",
+                f"  Provider/model: {proposal.llm_warning.provider}",
+                f"  Reason: {proposal.llm_warning.reason}.",
+                "  Expected: each domain must cite selected sources as 'path: reason'.",
+                "  How to proceed:",
+                "    1. Review the deterministic proposal above; it remains safe to use.",
+                "    2. Enter n at the next prompt to leave overview and limits unchanged.",
+                "    3. Retry later; if it repeats, correct the configured primary provider/model before retrying.",
+            ]
+        )
+    lines.append("Apply generated overview and limits?")
+    return "\n".join(lines)

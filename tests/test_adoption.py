@@ -1,6 +1,11 @@
 import json
 
-from governancekit.adoption import apply_adoption_proposal, build_adoption_proposal, detect_project_drift
+from governancekit.adoption import (
+    apply_adoption_proposal,
+    build_adoption_proposal,
+    detect_project_drift,
+    format_adoption_proposal,
+)
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
 
 
@@ -83,7 +88,30 @@ def test_provider_failure_names_configured_provider_and_model(tmp_path, monkeypa
 
     proposal = build_adoption_proposal(tmp_path, enrich_with_llm=True)
 
-    assert any(
-        "configured LLM provider openai / gpt-test could not enrich proposal" in item
-        for item in proposal.unresolved
+    assert proposal.llm_warning is not None
+    assert proposal.llm_warning.provider == "openai / gpt-test"
+    output = format_adoption_proposal(proposal)
+    assert "[WARNING] LLM enrichment was skipped" in output
+    assert "Provider/model: openai / gpt-test" in output
+    assert "Enter n at the next prompt to leave overview and limits unchanged" in output
+
+
+def test_invalid_llm_evidence_explains_the_expected_operator_action(tmp_path, monkeypatch) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
+    state = tmp_path / ".gk"
+    state.mkdir()
+    (state / "project-config.json").write_text(
+        json.dumps({"providers": [{"name": "openai", "mode": "env", "credential_ref": "TEST_KEY", "base_url": "https://example.invalid/v1", "model": "gpt-test", "role": "primary"}]}),
+        encoding="utf-8",
     )
+    monkeypatch.setattr(
+        "governancekit.agent_scope.propose_project_scope",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("selected agent returned invalid evidence")),
+    )
+
+    output = format_adoption_proposal(build_adoption_proposal(tmp_path, enrich_with_llm=True))
+
+    assert "evidence is not a valid non-empty list of unique text entries" in output
+    assert "Expected: each domain must cite selected sources as 'path: reason'" in output

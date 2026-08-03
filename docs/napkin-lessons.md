@@ -1,5 +1,9 @@
 # Napkin Lessons
 
+- 2026-08-02: A rejected LLM proposal is an operator-visible exception, not a
+  generic open item. State the provider/model, the contract violated, and the
+  safe next decision without making the operator infer whether writing proceeds.
+
 - 2026-08-02: Discovery must make its bounded scope visible. Report direct
   project folders only and prune nested Git roots before file enumeration, so a
   parent project never silently classifies another project's source.
