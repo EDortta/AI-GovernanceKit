@@ -36,6 +36,20 @@
 Remover as duas mescladas resolve, de passagem, o bloqueio da reescrita de histórico:
 sobrariam dois checkouts em vez de quatro.
 
+### Adendo 18:00 — 18 issues gravadas para amanhã
+
+Preservadas de dois scratchpads de sessão (que não sobrevivem) para épica gêmea
+`docs/issues/010-contract-vs-tool-reconciliation-[draft]/` e a irmã `006-` no AI/Agents:
+
+- **A1–A10** (contrato) e **G1–G5** (ferramenta), origem `AI/CodexBridge`.
+- **B1–B3**, origem `jk-structure`: gates no momento da ação, regra determinística na
+  ferramenta, e o índice de leitura que não alcança `~/.config/`.
+
+O `RESUME.md` da épica traz o cruzamento com o trabalho de hoje — A1 já feito, A2 pela
+metade, A3 confirmada aberta, A10 com runtime pronto e gatilho ausente — e registra que
+**B1 acusa o §1c escrito hoje**: regra de abertura de sessão é o padrão que ela chama de
+decaído. Sem esse cruzamento a crítica de amanhã rediscute defeito fechado.
+
 ### Próximo passo
 
 Operador testa `install-agents --upgrade` no CodexBridge; depois `merge-to-main.sh` e
