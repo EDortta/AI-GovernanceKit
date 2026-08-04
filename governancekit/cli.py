@@ -10,7 +10,7 @@ from typing import Sequence
 from . import __version__
 from .doctor import DoctorResult, run_doctor
 from .context import ContextError, build_context, format_context
-from .path_safety import UnsafePathError
+from .path_safety import UnsafePathError, UnsafeRootError, assert_governable_root
 
 
 _ROOT_HELP_EPILOG = """Start here:
@@ -454,6 +454,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command is None:
         parser.print_help()
         print("\ngovernancekit: error: a command is required")
+        return 2
+
+    try:
+        assert_governable_root(args.root)
+    except UnsafeRootError as exc:
+        print(f"Unsafe --root: {exc}", file=sys.stderr)
         return 2
 
     if args.command == "context":
