@@ -63,15 +63,19 @@ _KIT_DOC_PATHS: list[str] = [
 
 # Kit-provided templates that the PROJECT fills in (readiness flags, overview text).
 # Seeded on a fresh install (with flags reset) but NEVER overwritten on --upgrade,
-# so the project's answers survive. They live under .docs/ (kit location).
-_KIT_SEED_PATHS: list[str] = [
-    "docs/software-overview.md",
-    "docs/limits.md",
-]
+# so the project's answers survive.
+_KIT_SEED_PATHS: list[str] = []
 
 # Project-owned starter files: seeded once into docs/ (the project's territory) and
 # never overwritten. They stay in docs/, not .docs/.
+#
+# software-overview.md and limits.md belong here, not in _KIT_SEED_PATHS: the kit
+# ships a template, but the project writes the content and owns the readiness flags,
+# and the Start Gate reads exactly the file the project maintains. Keeping them under
+# the kit's .docs/ (2026-07-01 to 2026-08-04) split the two apart.
 _PROJECT_SEED_PATHS: list[str] = [
+    "docs/software-overview.md",
+    "docs/limits.md",
     "docs/required-reading.md",
     "docs/project-rules.md",
     "docs/napkin-lessons.md",
@@ -161,8 +165,6 @@ _LEGACY_KIT_DOC_NAMES: list[str] = [
     "articles",
     "icons",
     "governancekit-integration.json",
-    "software-overview.md",
-    "limits.md",
 ]
 
 _MIGRATION_BACKUP_DIR = ".docs-migration-bak"
@@ -327,6 +329,9 @@ def run_install_agents(
         migrated, notes = _migrate_legacy_layout(root)
         result.migrated = migrated
         result.migration_notes = notes
+        readiness_moved, readiness_notes = _migrate_readiness_files_to_docs(root)
+        result.migrated = result.migrated or readiness_moved
+        result.migration_notes.extend(readiness_notes)
         if migrate_content:
             content_migrated, content_notes = _migrate_legacy_content(root)
             result.migrated = result.migrated or content_migrated
@@ -538,12 +543,12 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
 def _reset_readiness_flags(root: Path) -> None:
     for rel, pattern, replacement in [
         (
-            ".docs/software-overview.md",
+            "docs/software-overview.md",
             "- project_context_ready: yes",
             "- project_context_ready: no",
         ),
         (
-            ".docs/limits.md",
+            "docs/limits.md",
             "- limits_ready: yes",
             "- limits_ready: no",
         ),
@@ -912,6 +917,58 @@ def _content_migration_required(root: Path) -> bool:
     project_rules = root / "docs" / "project-rules.md"
     project_rules_dir = root / "docs" / "project-rules"
     return backup_agents.is_dir() and not project_rules.exists() and not project_rules_dir.is_dir()
+
+
+_READINESS_ASIDE_DIR = ".gk/readiness-migration"
+
+
+def _migrate_readiness_files_to_docs(root: Path) -> tuple[bool, list[str]]:
+    """Bring ``software-overview.md`` and ``limits.md`` back from ``.docs/`` to ``docs/``.
+
+    They were classified as kit-owned between 2026-07-01 and 2026-08-04 and installed
+    under ``.docs/``. They are project-owned — the project writes them and owns their
+    readiness flags — so the Start Gate must read them from ``docs/``, which the kit
+    never overwrites.
+
+    Idempotent, and it never destroys content: a symlink is the workaround projects
+    used for this same misfiling, so dropping it completes the migration; a target
+    holding both keeps the ``docs/`` copy and gets the ``.docs/`` one set aside.
+    """
+    notes: list[str] = []
+    moved = False
+    for name in ("software-overview.md", "limits.md"):
+        src = root / ".docs" / name
+        dst = root / "docs" / name
+        if not src.exists() and not src.is_symlink():
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+
+        if src.is_symlink():
+            src.unlink()
+            notes.append(f"readiness: removed .docs/{name} symlink — docs/{name} is authoritative")
+            moved = True
+            continue
+
+        if dst.exists():
+            if src.read_bytes() == dst.read_bytes():
+                src.unlink()
+                notes.append(f"readiness: .docs/{name} was identical to docs/{name} — duplicate removed")
+                moved = True
+                continue
+            aside = root / _READINESS_ASIDE_DIR
+            aside.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(aside / name))
+            notes.append(
+                f"readiness: CONFLICT on {name} — docs/{name} kept as authoritative; "
+                f"the .docs/ copy is at {_READINESS_ASIDE_DIR}/{name} for review"
+            )
+            moved = True
+            continue
+
+        shutil.move(str(src), str(dst))
+        notes.append(f"readiness: .docs/{name} → docs/{name} (project-owned)")
+        moved = True
+    return moved, notes
 
 
 def _migrate_legacy_content(root: Path) -> tuple[bool, list[str]]:

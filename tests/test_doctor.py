@@ -21,12 +21,12 @@ class DoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             write_valid_repo(root)
-            (root / ".docs" / "limits.md").write_text("limits_ready: no\n", encoding="utf-8")
+            (root / "docs" / "limits.md").write_text("limits_ready: no\n", encoding="utf-8")
 
             result = run_doctor(root)
 
             self.assertFalse(result.ok)
-            self.assertIn(".docs/limits.md", failed_check_names(result))
+            self.assertIn("docs/limits.md", failed_check_names(result))
 
     def test_empty_resume_next_step_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -329,13 +329,13 @@ def write_valid_repo(root: Path) -> None:
     (root / "README.md").write_text("# Test Repo\n", encoding="utf-8")
     (root / "handoff.md").write_text("# Handoff\n", encoding="utf-8")
     (root / ".docs").mkdir(parents=True, exist_ok=True)
-    (root / ".docs" / "software-overview.md").write_text(
+    (root / "docs" / "software-overview.md").write_text(
         "project_context_ready: yes\n",
         encoding="utf-8",
     )
-    (root / ".docs" / "limits.md").write_text("limits_ready: yes\n", encoding="utf-8")
+    (root / "docs" / "limits.md").write_text("limits_ready: yes\n", encoding="utf-8")
     (root / "docs" / "required-reading.md").write_text(
-        "# Required Reading\n\n- `.docs/software-overview.md` — context\n",
+        "# Required Reading\n\n- `docs/software-overview.md` — context\n",
         encoding="utf-8",
     )
 

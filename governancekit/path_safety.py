@@ -22,7 +22,7 @@ def _home() -> Path:
 def assert_governable_root(root: Path) -> Path:
     """Return *root* only when it can plausibly be a project directory.
 
-    Agent tooling resolves ``AGENTS.md``/``CLAUDE.md`` and ``.docs/limits.md`` by
+    Agent tooling resolves ``AGENTS.md``/``CLAUDE.md`` and ``docs/limits.md`` by
     walking up from the working directory. A kit installed in ``$HOME`` — or in any
     ancestor of it — is therefore inherited by every directory below: a project with
     no governance of its own stops failing closed and silently resolves to that copy
