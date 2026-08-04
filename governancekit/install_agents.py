@@ -311,6 +311,7 @@ def run_install_agents(
     migrate_content: bool = False,
     track: bool | None = None,
     install_awt: bool = False,
+    allow_unverified: bool = False,
 ) -> InstallResult:
     """Download and install AI-Agents kit into *root*.
 
@@ -356,7 +357,7 @@ def run_install_agents(
             result.migration_notes.extend(content_notes)
 
     with tempfile.TemporaryDirectory() as tmp:
-        src_root = _download(repo, ref, Path(tmp))
+        src_root = _download(repo, ref, Path(tmp), allow_unverified=allow_unverified)
 
         if docs_only or upgrade:
             result.had_state = bool(state)
@@ -441,7 +442,7 @@ def _install_awt(root: Path) -> tuple[bool, str | None]:
 
 # ── download ───────────────────────────────────────────────────────────────────
 
-def _download(repo: str, ref: str, tmp: Path) -> Path:
+def _download(repo: str, ref: str, tmp: Path, *, allow_unverified: bool = False) -> Path:
     url = f"https://codeload.github.com/{repo}/tar.gz/{ref}"
     archive = tmp / "src.tar.gz"
     try:
@@ -458,19 +459,31 @@ def _download(repo: str, ref: str, tmp: Path) -> Path:
                 "Refusing to install — the tarball may have been tampered with or "
                 "the pinned checksum is stale."
             )
-    else:
+    elif allow_unverified:
         print(
-            f"Warning: no known checksum for {repo}@{ref} — installing unverified. "
-            f"Use the default repo/ref for a checksum-verified install.",
+            f"Warning: no known checksum for {repo}@{ref} — installing unverified "
+            "because --allow-unverified was given.",
             file=sys.stderr,
+        )
+    else:
+        # A warning printed into a verbose install is not a decision anyone made. The
+        # kit governs supply chains; it does not get to be looser than what it asks for.
+        raise RuntimeError(
+            f"No known checksum for {repo}@{ref}. Install from a pinned release, or "
+            "pass --allow-unverified to accept an unverified tarball deliberately."
         )
 
     with tarfile.open(archive, "r:gz") as tf:
         _safe_extractall(tf, tmp)
 
-    extracted = [p for p in tmp.iterdir() if p.is_dir() and p.name != archive.name]
+    extracted = sorted(p for p in tmp.iterdir() if p.is_dir() and p.name != archive.name)
     if not extracted:
         raise RuntimeError("Unexpected archive structure — no top-level directory found.")
+    if len(extracted) > 1:
+        # iterdir() order is filesystem-dependent, so picking one would be an arbitrary
+        # choice made silently about which tree gets installed.
+        names = ", ".join(p.name for p in extracted)
+        raise RuntimeError(f"Unexpected archive structure — several top-level directories: {names}")
     return extracted[0]
 
 
