@@ -32,6 +32,26 @@ lá. Verificado agora, no `development` dos dois repos:
 Sem esse cruzamento a crítica de amanhã vai discutir defeitos já corrigidos e, pior,
 pode desfazê-los.
 
+## Segundo conjunto: B1–B3, origem `jk-structure`
+
+Três issues de outra origem, mesmo dia, mesma raiz: `issues/B1-B3-action-gates-and-enforcement.md`.
+Vieram de um incidente de envio de e-mail e trazem uma correção de diagnóstico que
+importa — o agente **tinha lido** o contrato inteiro; o arquivo de regras não estava em
+índice nenhum. O remédio "leia com mais cuidado" não serve.
+
+A tese delas: **ler no Start Gate não protege regra que só fica relevante três horas
+depois**, e a §8c funciona porque ancora o gate na ação, não na abertura.
+
+**Isso critica diretamente o que foi feito hoje.** O §1c que acabei de escrever é uma
+regra de *abertura de sessão* — exatamente o padrão que B1 diz que decai. Ao criticar
+B1 amanhã, criticar o §1c junto: ou ele ganha gate no momento da ação (antes de
+`checkout -b` / `worktree add`), ou herda o mesmo defeito. O hook `SessionStart` que
+instalei ajuda no início e não faz nada às 15h.
+
+Prioridade que o autor sugeriu: **B2** (a que teria evitado o incidente, e a mais
+barata) → **B3** (fecha a descoberta) → **B1** (mais estrutural, maior risco de virar
+ruído).
+
 ## Ordem que o autor sugeriu
 
 `A1+G1` juntas (A1 corrige, G1 impede recorrência; G1 sozinha reprova todo o parque
@@ -41,4 +61,5 @@ instalado) → `A3+G5` → `A5+G3` → `A6` → `A4` → `A7` → `A8, A9, A10, 
 
 Criticar A1 e G1 lado a lado, começando por confirmar se A1 ainda tem trabalho depois
 do que foi feito hoje — se não tiver, G1 passa a ser a issue crítica isolada e a ordem
-sugerida muda.
+sugerida muda. Levar B1 para essa mesma mesa: ela questiona se um gate de abertura
+(§1b, §1c) protege alguma coisa, e isso decide como G1 deve verificar.
