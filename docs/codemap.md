@@ -57,7 +57,7 @@ governancekit/
   voice.py  — "Optional AI-ListenToMeOnCLI integration detection."
 pyproject.toml
 scripts/
-  notify-nexo.sh
+  merge-to-main.sh
   validate-governance.sh
 tests/
   test_activity_monitor.py
