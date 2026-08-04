@@ -67,6 +67,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output results as JSON (useful for CI scripts).",
     )
 
+    author_parser = subparsers.add_parser(
+        "author-context",
+        help="Draft or review docs/software-overview.md and docs/limits.md with the configured LLM.",
+    )
+    author_parser.add_argument(
+        "--json", dest="as_json", action="store_true", help="Output the plan and proposals as JSON."
+    )
+    author_parser.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Report what would be drafted or reviewed, and stop. Calls no provider.",
+    )
+    author_parser.add_argument(
+        "--yes",
+        dest="assume_yes",
+        action="store_true",
+        help="Accept the proposals without prompting. Only for a non-interactive rerun of a reviewed result.",
+    )
+
     discover_parser = subparsers.add_parser(
         "discover",
         help="Inspect a repository read-only and report whether it looks new or existing.",
@@ -497,6 +516,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             print(format_context(result))
         return 1 if result.exceeded or result.hard_violations else 0
+
+    if args.command == "author-context":
+        return _run_author_context(args)
 
     if args.command == "doctor":
         result = run_doctor(args.root)
@@ -1025,3 +1047,119 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser.error(f"unknown command: {args.command}")
     return 2
+
+
+def _confirm(question: str, *, assume_yes: bool) -> bool:
+    """Ask the operator. Non-interactive without --yes means no, never a silent yes."""
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        return False
+    return input(f"{question} [y/N]: ").strip().lower() in {"y", "yes"}
+
+
+def _run_author_context(args) -> int:
+    from .adoption import configured_adoption_provider, provider_label
+    from .context_authoring import (
+        DESCRIPTION_ADVICE,
+        DESCRIPTION_CANDIDATES,
+        build_authoring_plan,
+        confirm_document,
+        draft_documents,
+        review_documents,
+    )
+    from .discover import run_discover
+
+    root = args.root.resolve()
+    discovery = run_discover(root)
+    evidence = [*discovery.frameworks, *discovery.languages, *discovery.package_managers]
+    plan = build_authoring_plan(root, evidence=evidence)
+
+    if getattr(args, "as_json", False) and args.plan_only:
+        print(json.dumps(plan.as_dict(), indent=2, sort_keys=True, ensure_ascii=False))
+        return 0
+
+    print("Context authoring plan:")
+    for doc in plan.documents:
+        print(f"  {doc.rel}: {doc.state.value} -> {doc.action}")
+
+    if plan.needs_description_advice:
+        print()
+        print(DESCRIPTION_ADVICE.format(candidates=", ".join(DESCRIPTION_CANDIDATES)))
+        print()
+        if not _confirm("Continue without a project description?", assume_yes=args.assume_yes):
+            print("Stopped. Write the description first, then run this again.")
+            return 0
+
+    if args.plan_only:
+        return 0
+    if all(doc.action == "skip" for doc in plan.documents):
+        print("Both documents are already marked ready; nothing to do.")
+        return 0
+
+    provider = configured_adoption_provider(root)
+    if provider is None:
+        print(
+            "No primary LLM provider is configured for this project. Run "
+            f"'governancekit --root {root} config-session' to configure one, or write the "
+            "documents by hand.",
+            file=sys.stderr,
+        )
+        return 2
+    if not _confirm(
+        f"Send this project's description to {provider_label(provider)}?", assume_yes=args.assume_yes
+    ):
+        print("Stopped; no provider was called.")
+        return 0
+
+    try:
+        proposals = [*draft_documents(root, plan, provider), *review_documents(root, plan, provider)]
+    except RuntimeError as exc:
+        print(f"Context authoring failed: {exc}", file=sys.stderr)
+        return 2
+
+    if getattr(args, "as_json", False):
+        print(json.dumps([p.as_dict() for p in proposals], indent=2, sort_keys=True, ensure_ascii=False))
+        return 0
+
+    exit_code = 0
+    for proposal in proposals:
+        print()
+        if proposal.action == "review":
+            print(f"Review of {proposal.rel} (your file is untouched):")
+            if not proposal.findings:
+                print("  nothing missing was identified.")
+            for finding in proposal.findings:
+                print(f"  - [{finding.section}] {finding.detail}")
+            question = f"Accept {proposal.rel} as it stands and mark it ready?"
+            content = None
+        else:
+            print(f"Draft for {proposal.rel}:")
+            print("\n".join(f"  {line}" for line in (proposal.content or "").splitlines()))
+            question = f"Accept this draft for {proposal.rel} and mark it ready?"
+            content = proposal.content
+
+        if _confirm(question, assume_yes=args.assume_yes):
+            confirm_document(root, proposal.rel, content=content)
+            print(f"  accepted: {proposal.rel} is now ready.")
+        else:
+            saved = _save_proposal(root, proposal)
+            if saved:
+                print(f"  not accepted. The proposal is at {saved} — edit {proposal.rel} in your IDE.")
+            else:
+                print(f"  not accepted. Edit {proposal.rel} in your IDE, then set its flag yourself.")
+            exit_code = 1
+    return exit_code
+
+
+def _save_proposal(root: Path, proposal) -> str | None:
+    """Keep a rejected draft where the operator can diff it. Reviews have no file."""
+    if not proposal.content:
+        return None
+    from .path_safety import safe_path
+
+    rel = f".gk/context-proposal/{Path(proposal.rel).name}"
+    path = safe_path(root, root / rel)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(proposal.content, encoding="utf-8")
+    return rel

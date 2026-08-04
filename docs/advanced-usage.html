@@ -83,6 +83,10 @@ governancekit --root /project install-agents --upgrade</code></pre>
     <table><thead><tr><th>Command/parameter</th><th>Description</th></tr></thead><tbody>
       <tr><td><code>doctor</code></td><td>Validates governance files, readiness, identity, secrets, state, and sibling-branch warnings.</td></tr>
       <tr><td><code>doctor --json</code></td><td>Outputs structured results for CI.</td></tr>
+      <tr><td><code>author-context</code></td><td>Drafts <code>docs/software-overview.md</code> and <code>docs/limits.md</code> with the project's configured LLM when they are absent or still templates, and reviews them — reporting what is missing, never rewriting — when you already wrote them. Nothing is applied and no readiness flag moves without your confirmation.</td></tr>
+      <tr><td><code>author-context --plan-only</code></td><td>Reports what would be drafted or reviewed and stops. Calls no provider.</td></tr>
+      <tr><td><code>author-context --yes</code></td><td>Accepts the proposals without prompting. Non-interactive runs without it always answer no.</td></tr>
+      <tr><td><code>author-context --json</code></td><td>Outputs the plan or the proposals as JSON.</td></tr>
       <tr><td><code>discover --json</code></td><td>Inspects the repository read-only and reports project shape, detected agents, and governance artifacts as JSON.</td></tr>
       <tr><td><code>map --output PATH</code></td><td>Writes the code map to a chosen path; default is <code>docs/codemap.md</code>.</td></tr>
       <tr><td><code>map --all</code></td><td>Includes private, single-underscore Python symbols.</td></tr>
