@@ -1,5 +1,46 @@
 # Handoff
 
+## [2026-08-04] WK-20260804-concurrency-awareness - ready-for-review
+
+- branch: `development`; `main` intocada; sem push
+
+### Estado
+
+- `governancekit/concurrency.py`: `survey_concurrency()` enumera as frentes abertas
+  DESTE repositório — worktrees vivas e branches com commits fora da integração,
+  deduplicadas — e marca as worktrees sem nada por mesclar como removíveis.
+- `winddown_state()` **implementa o §8c**, que definia `session_winddown_hour` e
+  `session_close_budget` desde maio dizendo que o kit "can surface" e nada surfaceava.
+- Superfícies: comando `concurrency` (`--json`, `--closing`), bloco no `resume`,
+  check advisory no `doctor`.
+- Contrato no AI/Agents: §1c nova, §7 e §8c com referência cruzada, `session-restore`
+  com passo 0 e `session-close` com o passo do que fica aberto.
+- Hook `SessionStart` em `~/.claude/settings.json`, fail-open.
+
+### Validação e pendências
+
+- 310 testes; `run-checks` do AI/Agents verde. Pacote reinstalado; hook exercido nos
+  dois casos (com kit e sem git).
+- O gate de contexto do próprio kit pegou uma regressão minha: a primeira versão do
+  §1c levou `base_contracts` a 8021/8000. Compactado.
+
+### Frentes que ficam abertas para o dia seguinte
+
+- `GovernanceKit` @ `feature/uc-008/credential-root-json-profile` — **+1 commit não
+  mesclado**, perfil de credencial em JSON na raiz. É a única com trabalho real parado.
+- `GovernanceKit-remove-agents` @ `feature/uc-010/remove-agents-safe-plan` — **mesclada;
+  a worktree pode ser removida hoje sem perder nada.**
+- `GovernanceKit/GovernanceKit-adoption-flow` @ `feature/uc-011/simplified-adoption-flow`
+  — **mesclada; a worktree pode ser removida hoje sem perder nada.**
+
+Remover as duas mescladas resolve, de passagem, o bloqueio da reescrita de histórico:
+sobrariam dois checkouts em vez de quatro.
+
+### Próximo passo
+
+Operador testa `install-agents --upgrade` no CodexBridge; depois `merge-to-main.sh` e
+decisão sobre push e sobre a reescrita de histórico.
+
 ## [2026-08-04] WK-20260804-review-findings - ready-for-review
 
 - branch: `development`; `main` intocada; sem push
