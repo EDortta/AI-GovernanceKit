@@ -28,6 +28,27 @@ class DoctorTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertIn("docs/limits.md", failed_check_names(result))
 
+    def test_unfilled_template_prose_does_not_satisfy_the_flag(self) -> None:
+        # Regression: the template the kit ships explains the flag in prose. A
+        # substring check matched that sentence and reported a project ready while
+        # its flag literally said `no`.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "docs" / "limits.md").write_text(
+                "# Agent Operational Limits\n\n"
+                "## Metadata\n\n"
+                "- limits_ready: no\n\n"
+                "When copied into a target project, the programmer must replace these "
+                "limits and set `limits_ready: yes` only after they are accurate.\n",
+                encoding="utf-8",
+            )
+
+            result = run_doctor(root)
+
+            self.assertFalse(result.ok)
+            self.assertIn("docs/limits.md", failed_check_names(result))
+
     def test_empty_resume_next_step_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

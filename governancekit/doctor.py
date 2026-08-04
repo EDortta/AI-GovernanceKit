@@ -356,12 +356,21 @@ def _check_file(root: Path, relative_path: str) -> CheckResult:
 
 
 def _check_ready_flag(root: Path, relative_path: str, flag: str) -> CheckResult:
+    """Check the readiness flag as a metadata LINE, never as a substring.
+
+    The template the kit ships explains the flag in prose — "set `limits_ready: yes`
+    only after they are accurate" — so a substring test matches an untouched template
+    and reports a project ready when its flag literally says ``no``. The shell
+    installer has always anchored this check; this is the same contract.
+    """
     path = root / relative_path
     if not path.is_file():
         return CheckResult(relative_path, False, "missing")
 
+    marker = flag.split(":", 1)[0].strip()
+    pattern = re.compile(rf"^-?[ \t]*{re.escape(marker)}[ \t]*:[ \t]*yes[ \t]*$", re.MULTILINE)
     content = path.read_text(encoding="utf-8")
-    if flag in content:
+    if pattern.search(content):
         return CheckResult(relative_path, True, f"contains `{flag}`")
     return CheckResult(relative_path, False, f"does not contain `{flag}`")
 
