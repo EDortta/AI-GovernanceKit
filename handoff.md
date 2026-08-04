@@ -1,5 +1,37 @@
 # Handoff
 
+## [2026-08-04] WK-20260804-review-findings - ready-for-review
+
+- branch: `development`; `main` intocada; sem push
+
+### Estado
+
+- Cinco achados da revisão fechados: URL do provedor exige https (http só em
+  loopback), redirect cross-host com credencial recusado, tarball sem checksum
+  conhecido agora **recusa** em vez de avisar (`--allow-unverified` aceita de
+  propósito), arquivo com vários diretórios de topo vira erro, `try/except` morto
+  do `remove_agents` removido, e o `main()` de 583 linhas virou tabela de despacho
+  (26 linhas) com dois testes segurando a forma.
+- Este repo saiu do layout antigo: readiness files de `.docs/` para `docs/`,
+  referências atualizadas, codemap regenerado.
+
+### Validação e pendências
+
+- 296 testes. Dois FAIL pré-existentes e não tocados no `doctor` deste checkout:
+  `docs/architecture.md` citado em required-reading mas inexistente, e identidade
+  de host não configurada.
+- **Reescrita de histórico não executada.** Backup verificado em
+  `scratchpad/governancekit-pre-rewrite-20260804.bundle` ("records a complete
+  history"). Motivo da parada: este checkout é um *worktree* de
+  `AI/GovernanceKit/.git`, que tem outros três worktrees vivos com trabalho não
+  mesclado (`uc-008`, `uc-010`, `uc-011`). Reescrever o object store invalidaria os
+  quatro, além de exigir force-push num repo publicado — e não há segredo em jogo,
+  só placeholders.
+
+### Próximo passo
+
+Decidir a reescrita de histórico (4 worktrees + force-push) ou arquivá-la.
+
 ## [2026-08-04] WK-20260804-wa-hub-and-context-authoring - ready-for-review
 
 - branch: `development`; `main` intocada; sem push
