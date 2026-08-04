@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -126,6 +127,56 @@ def _copy_selected_sources(root: Path, destination: Path, sources: list[str]) ->
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
+
+
+class _NoCredentialLeakRedirects(urllib.request.HTTPRedirectHandler):
+    """Refuse a redirect that would carry the Authorization header to another host.
+
+    ``urllib`` rebuilds a redirected request with the original headers and does not
+    check whether the host changed, so a provider endpoint answering 302 would hand
+    the API key to whatever it points at. Same-host redirects stay allowed.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if _host_of(req.full_url) != _host_of(newurl):
+            raise urllib.error.URLError(
+                "refusing a cross-host redirect while sending a credential: "
+                f"{_host_of(req.full_url)} -> {_host_of(newurl)}"
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _host_of(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    return (parsed.hostname or "").lower()
+
+
+def validate_provider_url(base_url: str) -> str:
+    """Return *base_url* only when a credential may safely travel over it.
+
+    A provider URL is operator-typed and never validated anywhere else, so an
+    ``http://`` endpoint would put the API key on the wire in cleartext. Plain HTTP is
+    accepted only for loopback, where there is no wire.
+    """
+    parsed = urllib.parse.urlsplit(base_url)
+    if parsed.scheme == "https":
+        return base_url
+    if parsed.scheme == "http" and (parsed.hostname or "").lower() in _LOOPBACK_HOSTS:
+        return base_url
+    if not parsed.scheme or not parsed.netloc:
+        raise RuntimeError(f"provider base URL is not a valid absolute URL: {base_url!r}")
+    raise RuntimeError(
+        f"refusing to send a credential over {parsed.scheme}://: use https (plain http is "
+        "accepted only for localhost)"
+    )
+
+
+def _urlopen(request: urllib.request.Request, timeout: int):
+    """Single exit to the network, with the credential-preserving redirect refused."""
+    return urllib.request.build_opener(_NoCredentialLeakRedirects).open(request, timeout=timeout)
 
 
 def _provider_failure_detail(error: urllib.error.HTTPError) -> str:
@@ -249,7 +300,7 @@ def request_completion(
         ],
         "temperature": 0,
     }
-    url = provider.base_url.rstrip("/") + "/chat/completions"
+    url = validate_provider_url(provider.base_url).rstrip("/") + "/chat/completions"
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -257,7 +308,7 @@ def request_completion(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=90) as response:
+        with _urlopen(request, timeout=90) as response:
             response_data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"LLM API {purpose} failed ({_provider_failure_detail(exc)})") from exc

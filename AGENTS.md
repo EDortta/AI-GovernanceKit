@@ -21,14 +21,14 @@ Instruction precedence:
 
 Before implementation starts, agents must read:
 
-- `.docs/software-overview.md`
-- `.docs/limits.md`
+- `docs/software-overview.md`
+- `docs/limits.md`
 - `docs/required-reading.md` — and every project-specific document it lists
 
 Implementation may start only when:
 
-- `.docs/software-overview.md` contains `project_context_ready: yes`
-- `.docs/limits.md` contains `limits_ready: yes`
+- `docs/software-overview.md` contains `project_context_ready: yes`
+- `docs/limits.md` contains `limits_ready: yes`
 - `docs/required-reading.md` lists the project docs to read (or `- (none)`)
 
 ## Documentation Ownership

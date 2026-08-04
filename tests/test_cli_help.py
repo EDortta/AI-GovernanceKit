@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import io
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 import pytest
 
@@ -129,7 +130,7 @@ def test_install_agents_does_not_report_optional_awt_as_manual_step(
 
 
 def test_install_agents_silently_skips_optional_awt(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(install_agents, "_download", lambda *_args: tmp_path)
+    monkeypatch.setattr(install_agents, "_download", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr(
         install_agents, "_do_fresh", lambda *_args, **_kwargs: ["scripts/agent-worktree.sh"]
     )
@@ -177,7 +178,7 @@ def test_install_agents_asks_before_using_configured_llm(monkeypatch, tmp_path) 
 
 
 def test_docs_only_does_not_modify_root_gitignore(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(install_agents, "_download", lambda *_args: tmp_path)
+    monkeypatch.setattr(install_agents, "_download", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr(install_agents, "_do_upgrade", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(install_agents, "_ensure_project_docs", lambda *_args: None)
     monkeypatch.setattr(install_agents, "_fill_placeholders", lambda *_args, **_kwargs: {})
@@ -191,3 +192,33 @@ def test_docs_only_does_not_modify_root_gitignore(monkeypatch, tmp_path) -> None
     result = install_agents.run_install_agents(tmp_path, docs_only=True)
 
     assert not result.gitignore_updated
+
+
+def test_every_subcommand_has_a_handler() -> None:
+    # The dispatch used to be a 583-line if/elif chain inside main(), where a new
+    # command could quietly land after a cross-cutting check. A table makes the
+    # omission visible: a parser entry with no handler fails here, not in production.
+    parser = cli.build_parser()
+    subparsers = [
+        action for action in parser._actions if isinstance(action, argparse._SubParsersAction)
+    ]
+    commands = set(subparsers[0].choices)
+
+    assert commands == set(cli._COMMANDS), commands ^ set(cli._COMMANDS)
+
+
+def test_root_guard_runs_before_the_handler(monkeypatch, tmp_path) -> None:
+    # The guard lives in main(), before the dispatch, so it cannot be skipped by a
+    # command that forgets it. Checked on the commands that take no required
+    # sub-arguments; argparse rejects the others before main() is reached at all.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    for command in ("doctor", "discover", "resume", "author-context"):
+        monkeypatch.setitem(
+            cli._COMMANDS, command, lambda _args: pytest.fail(f"{command} ran with --root $HOME")
+        )
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            assert cli.main(["--root", str(home), command]) == 2
+        assert "Unsafe --root" in stderr.getvalue()

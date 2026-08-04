@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from governancekit import install_agents as ia
 
 
@@ -60,3 +62,58 @@ class DownloadChecksumTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_unknown_checksum_refuses_instead_of_warning(tmp_path, monkeypatch):
+    # A warning printed into a verbose install is not a decision anyone made.
+    import governancekit.install_agents as ia
+
+    monkeypatch.setattr(ia.urllib.request, "urlretrieve", lambda url, dest: Path(dest).write_bytes(b"x"))
+
+    with pytest.raises(RuntimeError, match="No known checksum"):
+        ia._download("someone/fork", "main", tmp_path)
+
+
+def test_unknown_checksum_installs_when_explicitly_allowed(tmp_path, monkeypatch):
+    import tarfile
+
+    import governancekit.install_agents as ia
+
+    payload = tmp_path / "payload"
+    (payload / "AI-Agents-main").mkdir(parents=True)
+    (payload / "AI-Agents-main" / "AGENTS.md").write_text("kit\n", encoding="utf-8")
+
+    def fake_retrieve(url, dest):
+        with tarfile.open(dest, "w:gz") as tf:
+            tf.add(payload / "AI-Agents-main", arcname="AI-Agents-main")
+
+    monkeypatch.setattr(ia.urllib.request, "urlretrieve", fake_retrieve)
+    target = tmp_path / "dl"
+    target.mkdir()
+
+    extracted = ia._download("someone/fork", "main", target, allow_unverified=True)
+
+    assert (extracted / "AGENTS.md").read_text() == "kit\n"
+
+
+def test_several_top_level_directories_are_refused(tmp_path, monkeypatch):
+    import tarfile
+
+    import governancekit.install_agents as ia
+
+    payload = tmp_path / "payload"
+    for name in ("one", "two"):
+        (payload / name).mkdir(parents=True)
+        (payload / name / "f.txt").write_text("x", encoding="utf-8")
+
+    def fake_retrieve(url, dest):
+        with tarfile.open(dest, "w:gz") as tf:
+            for name in ("one", "two"):
+                tf.add(payload / name, arcname=name)
+
+    monkeypatch.setattr(ia.urllib.request, "urlretrieve", fake_retrieve)
+    target = tmp_path / "dl"
+    target.mkdir()
+
+    with pytest.raises(RuntimeError, match="several top-level directories"):
+        ia._download("someone/fork", "main", target, allow_unverified=True)

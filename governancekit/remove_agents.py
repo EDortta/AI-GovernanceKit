@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from .agent_scope import _urlopen, validate_provider_url
 from .path_safety import UnsafePathError, safe_path, safe_regular_file
 
 PLAN_RELATIVE_PATH = ".gk/remove-agents-plan.json"
@@ -159,12 +160,12 @@ def _llm_extract(root: Path, rel: str, content: str, provider: dict[str, str]) -
         ),
     }
     request = urllib.request.Request(
-        provider["base_url"].rstrip("/") + "/chat/completions",
+        validate_provider_url(provider["base_url"]).rstrip("/") + "/chat/completions",
         data=json.dumps({"model": provider["model"], "messages": [{"role": "system", "content": "Return JSON only."}, prompt], "temperature": 0}).encode(),
         headers={"Authorization": f"Bearer {secret}", "Content-Type": "application/json"}, method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=90) as response:
+        with _urlopen(request, timeout=90) as response:
             raw = json.loads(response.read().decode())["choices"][0]["message"]["content"]
         result = json.loads(raw)
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
@@ -255,37 +256,34 @@ def apply_removal_plan(root: Path, plan: RemovalPlan, *, accept_project_extracti
         if not safe_regular_file(root, path) or not item.project_content or item.kit_content is None or destination.exists():
             raise UnsafePathError(f"refusing unsafe or conflicting extraction: {item.path}")
         targets.append((item, path))
+    # Every original is copied into backup_dir BEFORE the first destructive write, so a
+    # failure part-way through leaves a complete set of recorded copies to restore from.
     backup_dir.mkdir(parents=True, exist_ok=False)
     copied: list[str] = []
-    try:
-        for item, path in targets:
-            copy_to = safe_path(root, backup_dir / item.path)
-            copy_to.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, copy_to)
-            copied.append(item.path)
-        (backup_dir / "restore-manifest.json").write_text(
-            json.dumps({"root": str(root), "files": copied}, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-        extracted: list[str] = []
-        for item, path in targets:
-            if item.action == "extract-project-content":
-                destination = safe_path(root, root / (item.project_destination or ""))
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.write_text(item.project_content or "", encoding="utf-8")
-                path.write_text(item.kit_content or "", encoding="utf-8")
-                extracted.append(item.project_destination or "")
-            else:
-                path.unlink()
-        if extracted:
-            reading = safe_path(root, root / "docs/required-reading.md")
-            existing = reading.read_text(encoding="utf-8") if reading.exists() else "# Required Reading\n\n"
-            additions = "".join(f"- `{path}` — project-specific content extracted from AI-Agents material\n" for path in extracted if f"`{path}`" not in existing)
-            reading.parent.mkdir(parents=True, exist_ok=True)
-            reading.write_text(existing.rstrip() + "\n" + additions, encoding="utf-8")
-    except Exception:
-        # No original is destroyed before its backup has been written.  A caller can
-        # restore the recorded copies after any unexpected application failure.
-        raise
+    for item, path in targets:
+        copy_to = safe_path(root, backup_dir / item.path)
+        copy_to.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, copy_to)
+        copied.append(item.path)
+    (backup_dir / "restore-manifest.json").write_text(
+        json.dumps({"root": str(root), "files": copied}, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    extracted: list[str] = []
+    for item, path in targets:
+        if item.action == "extract-project-content":
+            destination = safe_path(root, root / (item.project_destination or ""))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(item.project_content or "", encoding="utf-8")
+            path.write_text(item.kit_content or "", encoding="utf-8")
+            extracted.append(item.project_destination or "")
+        else:
+            path.unlink()
+    if extracted:
+        reading = safe_path(root, root / "docs/required-reading.md")
+        existing = reading.read_text(encoding="utf-8") if reading.exists() else "# Required Reading\n\n"
+        additions = "".join(f"- `{path}` — project-specific content extracted from AI-Agents material\n" for path in extracted if f"`{path}`" not in existing)
+        reading.parent.mkdir(parents=True, exist_ok=True)
+        reading.write_text(existing.rstrip() + "\n" + additions, encoding="utf-8")
     return ApplyResult(backup_dir, [item.path for item, _ in targets if item.action == "remove"], [item.path for item in plan.items if item.action == "preserve"], extracted)
 
 
