@@ -36,6 +36,7 @@ class ResumeResult:
     host_id: str = ''
     active_branch: str = ''       # git branch of this checkout
     identity_warning: str = ''    # same-branch / sibling collision warning
+    concurrency: object | None = None  # ConcurrencySurvey: what else is open here
 
 
 # ── public API ─────────────────────────────────────────────────────────────────
@@ -55,6 +56,14 @@ def _load_identity_context(root: Path) -> tuple[str, str, str, str]:
     return identity.operator_name, identity.host_id, active_branch, warning
 
 
+def _survey(root: Path):
+    """What else is open in this repository. Never allowed to break a resume."""
+    from .concurrency import survey_concurrency
+
+    survey = survey_concurrency(root)
+    return survey if survey.available else None
+
+
 def run_resume(root: Path) -> ResumeResult:
     """Assemble session-start context from RESUME.md and handoff.md."""
     root = root.resolve()
@@ -72,6 +81,7 @@ def run_resume(root: Path) -> ResumeResult:
             operator_name=operator_name,
             host_id=host_id,
             active_branch=active_branch,
+            concurrency=_survey(root),
             identity_warning=identity_warning,
         )
 
@@ -98,6 +108,7 @@ def run_resume(root: Path) -> ResumeResult:
         operator_name=operator_name,
         host_id=host_id,
         active_branch=active_branch,
+        concurrency=_survey(root),
         identity_warning=identity_warning,
     )
 
