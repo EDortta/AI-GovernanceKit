@@ -1,5 +1,38 @@
 # Handoff
 
+## [2026-08-04] WK-20260804-wa-hub-and-context-authoring - ready-for-review
+
+- branch: `development`; `main` intocada; sem push
+
+### Estado
+
+- wa-hub desacoplado: `scripts/notify-nexo.sh` e `scripts/governancekit.env.example`
+  removidos (ninguém os chamava). Nenhuma credencial real esteve no histórico — só
+  placeholders `[WA_HUB_KEY]`/`[WA_HUB_DEST]`, então não há rotação a fazer.
+- `doctor` lia o flag de prontidão por substring e casava a prosa do próprio template
+  (`set \`limits_ready: yes\` only after…`), reportando PASS sobre arquivo com `no`.
+  Agora ancorado na LINHA de metadata, como o instalador shell sempre fez.
+- Novo `governancekit author-context`: classifica cada documento
+  (absent/template/authored/ready), RASCUNHA os não escritos com o LLM do projeto,
+  REVISA os escritos pelo operador sem reescrevê-los, e só move o flag para `yes`
+  na confirmação do operador. Sem README/DESCRIPTION, explica por que vale escrever
+  um antes e para.
+- `agent_scope`: extraídos `request_completion()` e `read_confined_sources()` — um
+  único caminho endurecido para o provedor.
+
+### Validação e pendências
+
+- 285 testes. Pacote reinstalado. Fluxo exercido em alvos temporários nos três
+  estados (template→draft, authored→review, sem provider→erro acionável).
+- Pendente de decisão do operador: reescrita de histórico para apagar as referências
+  wa-hub das 8 tags publicadas — quebra os sha256 fixados em `KNOWN_TARBALL_SHA256`.
+- Este repo ainda está no layout antigo (`.docs/limits.md`); a migração reversa só
+  roda no `--upgrade`.
+
+### Próximo passo
+
+Decidir a reescrita de histórico; testar `install-agents --upgrade` no CodexBridge.
+
 ## [2026-08-04] WK-20260804-home-shadow-and-ownership - ready-for-review
 
 - work_id: WK-20260804-refuse-home-root, WK-20260804-readiness-files-are-project-owned,
