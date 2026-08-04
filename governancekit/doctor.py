@@ -53,12 +53,12 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_file(repo_root, "handoff.md"),
         _check_ready_flag(
             repo_root,
-            ".docs/software-overview.md",
+            "docs/software-overview.md",
             "project_context_ready: yes",
         ),
         _check_ready_flag(
             repo_root,
-            ".docs/limits.md",
+            "docs/limits.md",
             "limits_ready: yes",
         ),
         _check_required_reading(repo_root),

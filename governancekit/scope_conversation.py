@@ -15,8 +15,8 @@ from .project_config import ProviderConfig, ProjectConfig, _CONFIG_VERSION, _con
 
 _MANDATORY_SOURCES = (
     "AGENTS.md",
-    ".docs/software-overview.md",
-    ".docs/limits.md",
+    "docs/software-overview.md",
+    "docs/limits.md",
     "docs/project-rules.md",
 )
 _BACKTICK_PATH_RE = re.compile(r"`((?:\.docs|docs)/[^`]+|AGENTS\.md)`")

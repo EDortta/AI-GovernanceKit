@@ -406,8 +406,8 @@ _GOVERNANCE_PATHS: tuple[str, ...] = (
     'AGENTS.md',
     'docs/required-reading.md',
     'docs/project-rules.md',
-    '.docs/software-overview.md',
-    '.docs/limits.md',
+    'docs/software-overview.md',
+    'docs/limits.md',
     '.docs/governancekit-integration.json',
     '.gk/project-config.json',
 )

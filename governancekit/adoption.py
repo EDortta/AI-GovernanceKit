@@ -123,7 +123,7 @@ def build_adoption_proposal(
 
 def apply_adoption_proposal(proposal: AdoptionProposal) -> list[str]:
     written: list[str] = []
-    for rel, content, marker in ((".docs/software-overview.md", proposal.overview, "project_context_ready"), (".docs/limits.md", proposal.limits, "limits_ready")):
+    for rel, content, marker in (("docs/software-overview.md", proposal.overview, "project_context_ready"), ("docs/limits.md", proposal.limits, "limits_ready")):
         path = proposal.root / rel
         old = path.read_text(encoding="utf-8") if path.exists() else ""
         if old and marker in old and f"{marker}: yes" in old:

@@ -29,7 +29,8 @@ class InstallAgentsTests(unittest.TestCase):
     def test_dest_rel_maps_kit_docs_but_not_project(self) -> None:
         # Kit docs relocate to .docs/; project-owned seeds stay in docs/.
         self.assertEqual(ia._dest_rel("docs/agents"), ".docs/agents")
-        self.assertEqual(ia._dest_rel("docs/software-overview.md"), ".docs/software-overview.md")
+        self.assertEqual(ia._dest_rel("docs/software-overview.md"), "docs/software-overview.md")
+        self.assertEqual(ia._dest_rel("docs/limits.md"), "docs/limits.md")
         self.assertEqual(ia._dest_rel("docs/required-reading.md"), "docs/required-reading.md")
         self.assertEqual(ia._dest_rel("AGENTS.md"), "AGENTS.md")
 
@@ -58,10 +59,10 @@ class InstallAgentsTests(unittest.TestCase):
                 '"governancekit": {"version_range": ">=0.2.2,<0.3.0", "required_features": ["version-reporting"]}}\n',
                 encoding="utf-8",
             )
-            (src / ".docs" / "software-overview.md").write_text(
+            (src / "docs").mkdir()
+            (src / "docs" / "software-overview.md").write_text(
                 "- project_context_ready: yes\n", encoding="utf-8"
             )
-            (src / "docs").mkdir()
             (src / "docs" / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
 
             installed = ia._do_fresh(src, dst, force=True)
@@ -69,8 +70,11 @@ class InstallAgentsTests(unittest.TestCase):
             self.assertIn(".docs/governancekit-integration.json", installed)
             self.assertEqual((dst / ".docs" / "agents" / "programmer.md").read_text(), "v3\n")
             self.assertIn('"schema_version": 1', (dst / ".docs" / "governancekit-integration.json").read_text())
-            self.assertEqual((dst / ".docs" / "software-overview.md").read_text().strip(),
+            # Project-owned, so it lands in docs/ — with the flag reset, because the
+            # project must re-answer it for this project.
+            self.assertEqual((dst / "docs" / "software-overview.md").read_text().strip(),
                              "- project_context_ready: no")
+            self.assertFalse((dst / ".docs" / "software-overview.md").exists())
             self.assertEqual((dst / "docs" / "required-reading.md").read_text(), "- (none)\n")
             self.assertFalse((dst / "docs" / "agents").exists())
 
@@ -440,13 +444,15 @@ class InstallAgentsTests(unittest.TestCase):
 
             # Kit docs moved to .docs/
             self.assertTrue((root / ".docs" / "workflows" / "session-close.md").is_file())
-            self.assertTrue((root / ".docs" / "software-overview.md").is_file())
             self.assertTrue((root / ".docs" / "issues" / "README.md").is_file())
             # Project docs promoted to docs/
             self.assertTrue((root / "docs" / "mydoc.md").is_file())
             self.assertFalse((root / "docs" / "project").exists())
-            # Project-owned files stay in docs/
+            # Project-owned files stay in docs/ — including the readiness files, whose
+            # content and flags the project owns even though the kit ships a template.
             self.assertTrue((root / "docs" / "required-reading.md").is_file())
+            self.assertTrue((root / "docs" / "software-overview.md").is_file())
+            self.assertFalse((root / ".docs" / "software-overview.md").exists())
             # Active issue stays in docs/issues/
             self.assertTrue((root / "docs" / "issues" / "001-active-[started]").is_dir())
             # Backup created
