@@ -4,6 +4,7 @@ import argparse
 import json
 import shlex
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
@@ -65,6 +66,19 @@ def build_parser() -> argparse.ArgumentParser:
         dest="as_json",
         action="store_true",
         help="Output results as JSON (useful for CI scripts).",
+    )
+
+    concurrency_parser = subparsers.add_parser(
+        "concurrency",
+        help="Report how many worktrees and unmerged branches are open in this repository.",
+    )
+    concurrency_parser.add_argument(
+        "--json", dest="as_json", action="store_true", help="Output the survey as JSON."
+    )
+    concurrency_parser.add_argument(
+        "--closing",
+        action="store_true",
+        help="Phrase the report for session close: what stays open for the next day.",
     )
 
     author_parser = subparsers.add_parser(
@@ -421,6 +435,12 @@ def format_resume(result) -> str:
         lines.append(f"active branch: {result.active_branch}")
     if result.identity_warning:
         lines.append(f"WARNING: {result.identity_warning}")
+    if getattr(result, "concurrency", None) is not None:
+        from .concurrency import format_survey
+
+        rendered = format_survey(result.concurrency)
+        if rendered:
+            lines += ["", *rendered.splitlines()]
 
     if not result.next_step and not result.work_id:
         lines.append(f"Error: {result.warning}")
@@ -1180,11 +1200,39 @@ def _save_proposal(root: Path, proposal) -> str | None:
     return rel
 
 
+def _run_concurrency(args) -> int:
+    from .concurrency import (
+        format_survey,
+        format_winddown,
+        load_winddown_config,
+        survey_concurrency,
+        winddown_state,
+    )
+
+    survey = survey_concurrency(args.root)
+    hour, budget = load_winddown_config(args.root)
+    state = winddown_state(datetime.now().time(), hour=hour, budget_minutes=budget)
+
+    if getattr(args, "as_json", False):
+        payload = {"concurrency": survey.as_dict(), "winddown": state.as_dict()}
+        print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+        return 0
+
+    if not survey.available:
+        # Not a git repository: nothing to report, and nothing to complain about.
+        return 0
+    print(format_survey(survey, moment="close" if args.closing else "start"))
+    print()
+    print(format_winddown(state))
+    return 0
+
+
 # One entry per command. A cross-cutting check belongs in main(), before this
 # dispatch, where the next command that is added cannot miss it.
 _COMMANDS = {
     "context": _run_context,
     "author-context": _run_author_context,
+    "concurrency": _run_concurrency,
     "doctor": _run_doctor,
     "discover": _run_discover,
     "map": _run_map,

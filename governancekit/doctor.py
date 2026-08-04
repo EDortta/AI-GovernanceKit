@@ -65,6 +65,7 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_content_migration(repo_root),
         _check_legacy_rule_traps(repo_root),
         _check_manifest_drift(repo_root),
+        _check_concurrency(repo_root),
         _check_active_issue(repo_root),
         _check_resume_next_step(repo_root),
         _check_tracked_secret_files(repo_root),
@@ -353,6 +354,32 @@ def _check_file(root: Path, relative_path: str) -> CheckResult:
     if path.is_file():
         return CheckResult(relative_path, True, "found")
     return CheckResult(relative_path, False, "missing")
+
+
+def _check_concurrency(root: Path) -> CheckResult:
+    """Report how many working fronts are open. Advisory: concurrency is a choice.
+
+    How many branches and worktrees run at once is the operator's decision, not a
+    defect — but it must be visible before an operation is priced for one checkout
+    and then meets four.
+    """
+    from .concurrency import survey_concurrency
+
+    survey = survey_concurrency(root)
+    if not survey.available:
+        return CheckResult("concurrency", True, "not a git repository", advisory=True)
+    if survey.beyond_current == 0:
+        return CheckResult("concurrency", True, "nothing open beyond this checkout", advisory=True)
+    detail = ", ".join(
+        f"{item.branch}{'' if item.unmerged else ' (merged)'}"
+        for item in survey.items
+        if not item.is_current
+    )
+    removable = len(survey.removable)
+    message = f"{survey.beyond_current} open beyond this checkout: {detail}"
+    if removable:
+        message += f"\n{removable} worktree(s) hold nothing unmerged and can be removed"
+    return CheckResult("concurrency", True, message, advisory=True)
 
 
 def _check_ready_flag(root: Path, relative_path: str, flag: str) -> CheckResult:
