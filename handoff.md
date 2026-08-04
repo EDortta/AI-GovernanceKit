@@ -1,5 +1,40 @@
 # Handoff
 
+## [2026-08-04] WK-20260804-home-shadow-and-ownership - ready-for-review
+
+- work_id: WK-20260804-refuse-home-root, WK-20260804-readiness-files-are-project-owned,
+  WK-20260804-session-memory-stays-in-development
+- branch: `development` (three feature branches merged; `main` untouched)
+
+### Estado
+
+- `assert_governable_root()` recusa `$HOME`, qualquer ancestral dele e a raiz do
+  filesystem, chamada em `cli.main()` antes do dispatch. Antecedente: um kit
+  instalado em `$HOME` sombreava todo projeto abaixo, para seis ferramentas.
+- `docs/software-overview.md` e `docs/limits.md` voltaram a ser project-owned:
+  `_KIT_SEED_PATHS` vazio, ambos em `_PROJECT_SEED_PATHS`, `_LEGACY_KIT_DOC_NAMES`
+  não os varre mais, e `_migrate_readiness_files_to_docs()` traz de volta os alvos
+  já em `.docs/` (move, remove symlink, ou preserva em `.gk/readiness-migration/`).
+- `_SESSION_MEMORY_TEMPLATES` faz `handoff.md` e `docs/napkin-lessons.md` serem
+  semeados de template vazio — o instalador copiava a memória do próprio kit.
+- `scripts/merge-to-main.sh` + `docs/project-rules.md`: trabalho parte e retorna a
+  `development`; `docs/issues/`, `docs/napkin-lessons.md` e `handoff.md` nunca vão
+  para `main`.
+
+### Validação e pendências
+
+- Suíte: 266 passed. Pacote reinstalado (`pip install --user`), trava e layout novo
+  ativos no binário.
+- `merge-to-main.sh` validado em clone descartável: primeiro merge e segundo merge
+  (com conflito modify/delete) resolvem por remoção; produto chega, `development`
+  intacto. **A `main` real não foi tocada** — aguarda o teste do operador.
+- Sem push em nenhum repo.
+
+### Próximo passo
+
+Operador testa `governancekit install-agents --upgrade` no CodexBridge; depois,
+`scripts/merge-to-main.sh` nos dois repos e decisão sobre push.
+
 ## Current Status
 
 - work_id: GH-6-simplified-adoption
