@@ -76,3 +76,30 @@ def test_readiness_migration_is_idempotent(tmp_path) -> None:
 
     assert not moved
     assert notes == []
+
+
+def test_session_memory_seeds_from_template_not_from_the_kit(tmp_path) -> None:
+    # Regression: a target must never receive this repository's own handoff/lessons.
+    from governancekit.install_agents import _resolve_src
+
+    src = tmp_path / "src"
+    (src / "templates").mkdir(parents=True)
+    (src / "docs").mkdir()
+    (src / "handoff.md").write_text("KIT SESSION HISTORY\n", encoding="utf-8")
+    (src / "docs" / "napkin-lessons.md").write_text("KIT LESSONS\n", encoding="utf-8")
+    (src / "templates" / "handoff.template.md").write_text("# Handoff\n", encoding="utf-8")
+    (src / "templates" / "napkin-lessons.template.md").write_text("# Napkin Lessons\n", encoding="utf-8")
+
+    assert _resolve_src(src, "handoff.md").read_text() == "# Handoff\n"
+    assert _resolve_src(src, "docs/napkin-lessons.md").read_text() == "# Napkin Lessons\n"
+
+
+def test_session_memory_falls_back_when_source_has_no_template(tmp_path) -> None:
+    # An older source tag has no templates/ — the installer must still find a file.
+    from governancekit.install_agents import _resolve_src
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "handoff.md").write_text("LEGACY\n", encoding="utf-8")
+
+    assert _resolve_src(src, "handoff.md").read_text() == "LEGACY\n"

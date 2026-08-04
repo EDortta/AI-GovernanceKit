@@ -266,6 +266,16 @@ def _dest_rel(src_rel: str) -> str:
     return src_rel
 
 
+# Session memory: seeded from an EMPTY template, never from the kit's own copy.
+# Copying the source tree's handoff.md/napkin-lessons.md hands every project this
+# repository's session history as if it were the project's own — the same mistake the
+# kit already fixed for README.md.
+_SESSION_MEMORY_TEMPLATES: dict[str, str] = {
+    "handoff.md": "templates/handoff.template.md",
+    "docs/napkin-lessons.md": "templates/napkin-lessons.template.md",
+}
+
+
 def _resolve_src(src_root: Path, rel: str) -> Path:
     """Resolve where a kit path actually lives in the downloaded source tree.
 
@@ -274,7 +284,15 @@ def _resolve_src(src_root: Path, rel: str) -> Path:
     ``napkin-lessons.md``) stay in ``docs/…``. This prefers the ``.docs/`` location
     when present and falls back to ``docs/`` — so the installer reads correctly from
     both a restructured source and a legacy one.
+
+    Session-memory files resolve to their empty template instead of the source's own
+    file, so a target is never seeded with the kit's history.
     """
+    template = _SESSION_MEMORY_TEMPLATES.get(rel)
+    if template is not None:
+        candidate = src_root / template
+        if candidate.is_file():
+            return candidate
     if rel not in _PROJECT_SEED_PATHS and rel.startswith(_SRC_DOC_PREFIX):
         dotted = src_root / (_DST_DOC_PREFIX + rel[len(_SRC_DOC_PREFIX):])
         if dotted.exists():
