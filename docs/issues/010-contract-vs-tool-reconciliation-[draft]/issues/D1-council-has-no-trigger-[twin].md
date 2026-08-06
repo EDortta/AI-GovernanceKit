@@ -1,5 +1,24 @@
 # Issue D1 — origem: observação do operador, 2026-08-06
 
+> **Resolvida em 2026-08-06** (`WK-20260806-council-commit-gate`). O registro abaixo
+> ficou como estava escrito, com uma correção de diagnóstico em destaque e o fecho no
+> final — a issue errava sobre um ponto de fato, e apagar isso apagaria a lição.
+>
+> **Correção:** este texto afirma que *"não há nenhum momento em que o contrato mande
+> rodar um council"*. Errado. `council.md` §4 — *"When a council runs"* — lista **cinco
+> gatilhos `[MANDATORY]`**: sweep mecânico, contrato compartilhado, `not validated:` em
+> caminho de runtime, release que muda gate, e pedido do operador. Os gatilhos existiam.
+>
+> O defeito real era mais estreito e mais grave: **nada os convocava**, e o próprio
+> arquivo já sabia disso na seção *Enforcement status* — *"a council that nothing
+> convenes is decoration. Nothing in this file convenes it."* Ele adiou o gate esperando
+> registros de rodadas reais, o que era um laço fechado: os registros só existem se
+> councils rodarem. Cinco semanas, zero rodadas.
+>
+> A lição fica: eu diagnostiquei a partir de `grep -i council AGENTS.md` e do índice de
+> leitura, sem ler as 254 linhas do arquivo. É a lente do **claim auditor** aplicada a
+> mim mesmo — uma afirmação sem artefato por trás.
+
 ## D1 — `council.md` existe em todo projeto e nunca roda [alta]
 
 ### Contexto
@@ -83,3 +102,44 @@ Que o council aconteça sozinho quando deve acontecer, e que sua ausência seja 
 - `hooks.py` aceita `pre-push`.
 - `doctor` detecta council sem gate.
 - Uma execução real registrada, com os achados que produziu.
+
+---
+
+## Fecho — o que foi entregue, e onde diverge do que a issue pedia
+
+Decisão do operador: **o gate é no commit de entrega, não no push.** Melhor por três
+motivos — o commit de entrega sempre acontece e é ato do próprio agente; é o passo
+seguinte ao `reviewer.md` retornar não-BLOCKER, que é a ordem que §4 `[PROHIBITED]`
+exige; e o `pre-commit` já existe, enquanto `pre-push` não.
+
+| DoD original | Entregue |
+|---|---|
+| gate no **push** | gate no **commit de entrega** — `AGENTS.md` §7, nomeando `.docs/agents/council.md` sem repetir a regra |
+| critério estreito | os cinco gatilhos de §4, filtrados pelo que um diff staged consegue responder |
+| `hooks.py` aceita `pre-push` | **não feito, e não é mais necessário** — `pre-commit` é o momento certo |
+| `doctor` detecta council sem gate | `_check_council_gate`, **não-advisory**, silencioso fora de um commit |
+| execução real registrada | ver `verification-council-gate-20260806.md` |
+
+Acrescentado, fora do que a issue previa: teto de 2 rodadas e escalação ao operador; a
+porta de mão única para achado que contradiz regra do projeto; registro amarrado a um
+digest do diff staged (um council de ontem não libera o commit de hoje); e `--waive`
+com motivo obrigatório.
+
+### O que a implementação descobriu, e a issue não podia prever
+
+O `pre-commit` que o kit instala **nunca reprovou nada pelo `doctor`**, por dois
+defeitos somados:
+
+1. o hook chama `python3 -m governancekit.cli`, e `cli.py` não tinha guarda
+   `if __name__ == "__main__"` — o módulo importava, não imprimia nada e saía 0;
+2. o veredito era lido por `python3 - <<'PY'`, e o heredoc **substitui** o pipe como
+   stdin, então o leitor nunca via o relatório de qualquer forma.
+
+Os dois passaram despercebidos porque `tests/test_hooks.py` só afirmava sobre o **texto**
+do script — *"a string `governancekit pre-commit blocked` está no arquivo"* — que passa
+para um hook que nunca bloqueia. É a lente do **claim auditor** de novo, e é a segunda
+vez no mesmo dia.
+
+Corrigido, com teste que **executa** o hook e foi verificado por mutação: desligando a
+guarda, o teste falha. A guarda ficou em `cli.py` e não só em `__main__.py` de propósito
+— assim conserta os hooks já gravados em repositórios que não dá para reinstalar daqui.

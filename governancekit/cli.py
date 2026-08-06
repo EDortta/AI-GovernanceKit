@@ -81,6 +81,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Phrase the report for session close: what stays open for the next day.",
     )
 
+    council_parser = subparsers.add_parser(
+        "council",
+        help="Report or record the adversarial council required before a delivery commit.",
+    )
+    council_parser.add_argument(
+        "--json", dest="as_json", action="store_true", help="Output the gate state as JSON."
+    )
+    council_parser.add_argument(
+        "--record", type=Path, default=None,
+        help="Record a council round from a JSON file, bound to the staged diff.",
+    )
+    council_parser.add_argument(
+        "--waive", default=None, metavar="REASON",
+        help="Clear the gate for this staged diff, recording why. A reason is required.",
+    )
+    council_parser.add_argument(
+        "--requested", action="store_true",
+        help="Treat this delivery as one the operator asked a council for (council.md §4).",
+    )
+
     author_parser = subparsers.add_parser(
         "author-context",
         help="Draft or review docs/software-overview.md and docs/limits.md with the configured LLM.",
@@ -1242,10 +1262,99 @@ def _run_concurrency(args) -> int:
 
 # One entry per command. A cross-cutting check belongs in main(), before this
 # dispatch, where the next command that is added cannot miss it.
+def _run_council(args) -> int:
+    from .council import (
+        NOTHING_STAGED,
+        NOT_A_REPO,
+        CouncilError,
+        CouncilRecord,
+        Waiver,
+        detect_triggers,
+        evaluate,
+        record_from_payload,
+        staged_fingerprint,
+        write_record,
+    )
+
+    root = args.root
+    now = datetime.now().isoformat(timespec="seconds")
+
+    if args.record is not None or args.waive is not None:
+        fingerprint = staged_fingerprint(root)
+        if fingerprint is None:
+            print("Nothing is staged; a council round is recorded against a staged diff.")
+            return 1
+        triggers = tuple(
+            trigger.name
+            for trigger in detect_triggers(root, operator_requested=args.requested)
+        )
+        try:
+            if args.waive is not None:
+                reason = args.waive.strip()
+                if not reason:
+                    # An escape with no reason is a silent escape, which is the one
+                    # thing a waiver may never be.
+                    print("A waiver needs a reason. Nothing was recorded.")
+                    return 1
+                record = CouncilRecord(
+                    fingerprint=fingerprint,
+                    round=1,
+                    triggers=triggers,
+                    waiver=Waiver(reason=reason, recorded_at=now),
+                    recorded_at=now,
+                )
+            else:
+                payload = json.loads(args.record.read_text(encoding="utf-8"))
+                record = record_from_payload(
+                    payload, fingerprint=fingerprint, triggers=triggers, recorded_at=now
+                )
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"Could not read the council round: {error}")
+            return 1
+        except CouncilError as error:
+            print(f"Council round rejected: {error}")
+            return 1
+        path = write_record(root, record)
+        print(f"Council round recorded: {path}")
+
+    result = evaluate(root, operator_requested=args.requested)
+
+    if getattr(args, "as_json", False):
+        payload = {
+            "state": result.state,
+            "message": result.message,
+            "fingerprint": result.fingerprint,
+            "triggers": [
+                {"name": t.name, "reason": t.reason, "heuristic": t.heuristic}
+                for t in result.triggers
+            ],
+            "blocks": result.blocks,
+            "record": result.record.as_dict() if result.record else None,
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+        return 0 if not result.blocks else 1
+
+    if result.state in {NOT_A_REPO, NOTHING_STAGED}:
+        print(result.message)
+        return 0
+
+    print(f"Council gate: {result.state}")
+    for trigger in result.triggers:
+        suffix = "  [heuristic]" if trigger.heuristic else ""
+        print(f"  · {trigger.name}: {trigger.reason}{suffix}")
+    if result.triggers:
+        # Named rather than silently absent: a gate that hides its own blind spot
+        # is worse than one that has none.
+        print("  (out of a pre-commit hook's reach: council.md §4's release/tag trigger)")
+    print(f"\n  {result.message}")
+    return 1 if result.blocks else 0
+
+
 _COMMANDS = {
     "context": _run_context,
     "author-context": _run_author_context,
     "concurrency": _run_concurrency,
+    "council": _run_council,
     "doctor": _run_doctor,
     "discover": _run_discover,
     "map": _run_map,
@@ -1261,3 +1370,13 @@ _COMMANDS = {
     "install-hooks": _run_install_hooks,
     "voice-integration": _run_voice_integration,
 }
+
+
+# The pre-commit hook this kit installs invokes `python3 -m governancekit.cli`.
+# Without this guard that command imports the module, runs nothing, prints nothing
+# and exits 0 — so the hook's `doctor` half has been a no-op in every project that
+# ever installed it, while appearing to pass. Keeping the guard here (rather than
+# only in __main__.py) repairs hooks already written into repositories, which
+# cannot be reinstalled from here.
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -66,6 +66,7 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_legacy_rule_traps(repo_root),
         _check_manifest_drift(repo_root),
         _check_concurrency(repo_root),
+        _check_council_gate(repo_root),
         _check_active_issue(repo_root),
         _check_resume_next_step(repo_root),
         _check_tracked_secret_files(repo_root),
@@ -380,6 +381,46 @@ def _check_concurrency(root: Path) -> CheckResult:
     if removable:
         message += f"\n{removable} worktree(s) hold nothing unmerged and can be removed"
     return CheckResult("concurrency", True, message, advisory=True)
+
+
+def _check_council_gate(root: Path) -> CheckResult:
+    """Did a council run against what is staged right now?
+
+    This is the one check that is deliberately **not** advisory, and only ever at
+    the moment of a commit. ``.docs/agents/council.md`` §4 lists five mandatory
+    triggers and then admits that nothing convenes them; the non-advisory verdict
+    is what the ``pre-commit`` hook already filters for, so writing it here gives
+    that file the teeth it says it lacks, without a new hook type.
+
+    Outside a commit it stays quiet. A ``doctor`` run has no staged diff to judge,
+    and a check that failed on absent evidence of an event that has not happened
+    yet would be noise in every other flow the kit has.
+    """
+    from .council import CouncilError, evaluate
+
+    context_ready = _check_ready_flag(
+        root, "docs/software-overview.md", "project_context_ready: yes"
+    ).passed
+    try:
+        result = evaluate(root, context_ready=context_ready)
+    except CouncilError as error:  # a malformed record must not wedge every commit
+        return CheckResult("council gate", True, f"record unreadable: {error}", advisory=True)
+
+    if result.blocks:
+        message = result.message
+        # The contract says the pre-commit hook refuses. That is only true where
+        # `install-hooks` was actually run — it is opt-in, and `install-agents` does
+        # not call it. Say so here rather than let the promise stand unqualified.
+        if not (root / ".git" / "hooks" / "pre-commit").is_file():
+            message += (
+                "\n(no pre-commit hook installed here, so this only blocks via doctor: "
+                "run `governancekit install-hooks` to gate the commit itself)"
+            )
+        return CheckResult("council gate", False, message)
+    # Everything that does not block is advisory, including NOT_SELECTABLE: that one
+    # is real, but it belongs to the readiness check above. Failing twice for one
+    # cause teaches people to ignore both messages.
+    return CheckResult("council gate", True, result.message, advisory=True)
 
 
 def _check_ready_flag(root: Path, relative_path: str, flag: str) -> CheckResult:

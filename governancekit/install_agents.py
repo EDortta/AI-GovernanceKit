@@ -792,7 +792,11 @@ def _write_state(
         "operator.json\n"
         "secrets.json\n"
         "context-telemetry.jsonl\n"
-        "overwritten/\n",
+        "overwritten/\n"
+        # Council records key off a local staged diff, which means nothing to anyone
+        # else once the commit lands. The durable record is the prose council.md §4
+        # requires in docs/napkin-lessons.md and the active RESUME.md.
+        "council/\n",
         encoding="utf-8",
     )
 

@@ -130,7 +130,17 @@ fechada por inteiro:
 | **A10** | runtime (`concurrency`, `winddown_state`) | o **gatilho** |
 | **G2** | — | **causa isolada**: o upgrade reescreve `AGENTS.md` e **não toca** no `governancekit-integration.json` |
 | **C1 §8a / C2 item 6** | **fechado** — registro em `$XDG_STATE_HOME/ai-agents/`, dados migrados (`WK-20260806-activity-registry-xdg`) | — |
-| **D1** *(nova)* | — | `council.md` existe em todo projeto e **nada nunca o roda** |
+| **D1** | **fechada** — gate no commit de entrega (`WK-20260806-council-commit-gate`) | — |
+
+**Primeira rodada de council já registrada**, contra a própria entrega do gate:
+3 lentes, 3 achados fechados, 3 perguntas em aberto. Detalhe em
+`verification-council-gate-20260806.md`. Fecha o `not validated:` que o
+`.docs/agents/council.md` carregava desde 01/07.
+
+**Defeito grave encontrado ao implementar:** o `pre-commit` que o kit instala **nunca
+reprovou nada pelo `doctor`** — sem guarda `__main__` em `cli.py`, e o veredito lido por
+um heredoc que substituía o pipe. Corrigido, com teste que executa o hook e foi
+verificado por mutação. Todo projeto que rodou `install-hooks` estava sem essa metade.
 
 Verificação do parque instalado: `verification-codexbridge-20260806.md` (somente leitura,
 depois do upgrade que o operador rodou às 12:36).

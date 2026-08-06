@@ -87,6 +87,10 @@ governancekit --root /project install-agents --upgrade</code></pre>
       <tr><td><code>concurrency</code></td><td>Reports every working front open in this repository — live worktrees and branches carrying commits the integration branch lacks — marks the one this session sits on, flags the worktrees that hold nothing unmerged and can be removed, and states the runway left before the wind-down hard stop.</td></tr>
       <tr><td><code>concurrency --closing</code></td><td>Same survey, phrased for session close: what stays open for the next day.</td></tr>
       <tr><td><code>concurrency --json</code></td><td>Outputs the survey and the wind-down state as JSON.</td></tr>
+      <tr><td><code>council --record FILE</code></td><td>Records a council round from a JSON file, bound to the staged diff. The fingerprint and trigger list come from the tool, never from the file.</td></tr>
+      <tr><td><code>council --waive REASON</code></td><td>Clears the gate for the staged diff and records why. A reason is required — a waiver without one would be a silent escape.</td></tr>
+      <tr><td><code>council --requested</code></td><td>Treats this delivery as one the operator asked a council for (<code>council.md</code> §4).</td></tr>
+      <tr><td><code>council --json</code></td><td>Outputs the gate state, triggers, and record as JSON; exits non-zero when the gate blocks.</td></tr>
       <tr><td><code>author-context</code></td><td>Drafts <code>docs/software-overview.md</code> and <code>docs/limits.md</code> with the project's configured LLM when they are absent or still templates, and reviews them — reporting what is missing, never rewriting — when you already wrote them. Nothing is applied and no readiness flag moves without your confirmation.</td></tr>
       <tr><td><code>author-context --plan-only</code></td><td>Reports what would be drafted or reviewed and stops. Calls no provider.</td></tr>
       <tr><td><code>author-context --yes</code></td><td>Accepts the proposals without prompting. Non-interactive runs without it always answer no.</td></tr>
