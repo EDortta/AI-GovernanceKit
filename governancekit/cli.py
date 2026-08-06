@@ -132,15 +132,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     monitor_parser = subparsers.add_parser(
         "migrate-activity-monitor",
-        help="Copy/merge ~/Sync/agent-status.json into XDG state without deleting the legacy file.",
+        help="Merge legacy agent-status.json copies into XDG state without deleting them.",
     )
     monitor_parser.add_argument(
         "--legacy-path", type=Path, default=None,
-        help="Legacy monitor path (default: ~/Sync/agent-status.json).",
+        help="Single legacy monitor path (default: every known legacy location).",
     )
     monitor_parser.add_argument(
         "--state-home", type=Path, default=None,
         help="XDG state-home override (default: $XDG_STATE_HOME or ~/.local/state).",
+    )
+    monitor_parser.add_argument(
+        "--include-log", action="store_true",
+        help="Also move ~/Sync/agent-log.md to XDG state (refused if a canonical log exists).",
     )
 
     context_parser = subparsers.add_parser(
@@ -554,22 +558,31 @@ def _run_resume(args) -> int:
 
 
 def _run_migrate_activity_monitor(args) -> int:
-    from .activity_monitor import ActivityMonitorError, migrate_activity_monitor
+    from .activity_monitor import (
+        ActivityMonitorError,
+        migrate_activity_log,
+        migrate_activity_monitor,
+    )
 
     try:
         result = migrate_activity_monitor(
             source=args.legacy_path,
             state_home=args.state_home,
         )
+        log = migrate_activity_log(state_home=args.state_home) if args.include_log else None
     except ActivityMonitorError as error:
         print(f"Activity monitor migration failed: {error}")
         return 1
     action = "updated" if result.wrote_destination else "already current"
     print(f"Activity monitor {action}: {result.destination}")
+    sources = ", ".join(str(path) for path in result.sources) or "none found"
     print(
         f"  imported {result.imported_sessions} session(s); "
-        f"{result.duplicate_sessions} duplicate(s); legacy source preserved: {result.source}"
+        f"{result.duplicate_sessions} duplicate(s); legacy source(s) preserved: {sources}"
     )
+    if log is not None:
+        state = "moved to" if log.moved else "not moved"
+        print(f"Activity log {state} {log.destination} ({log.reason})")
     return 0
 
 
