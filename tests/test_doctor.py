@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -342,6 +343,74 @@ class DoctorTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertIn("tracked secrets", failed_check_names(result))
+
+
+class CouncilGateDoctorTests(unittest.TestCase):
+    """The one non-advisory check that only ever speaks at commit time."""
+
+    def _repo(self, root: Path) -> None:
+        write_valid_repo(root)
+        # Becoming a git repository activates the secret-ignore check, which is
+        # unrelated to this gate but would otherwise sink `result.ok`.
+        (root / ".gitignore").write_text(".env\n.env.*\n.credentials/\n", encoding="utf-8")
+        for args in (
+            ("init", "-q"),
+            ("config", "user.email", "council@test"),
+            ("config", "user.name", "council"),
+        ):
+            subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+    def test_outside_a_commit_the_gate_is_silent_and_advisory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._repo(root)
+
+            result = run_doctor(root)
+
+            gate = next(check for check in result.checks if check.name == "council gate")
+            self.assertTrue(gate.advisory)
+            self.assertTrue(result.ok, result.checks)
+
+    def test_a_staged_contract_change_without_a_round_fails_doctor(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._repo(root)
+            (root / ".docs" / "agents").mkdir(parents=True, exist_ok=True)
+            (root / ".docs" / "agents" / "reviewer.md").write_text("# reviewer\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "add", "--", ".docs/agents/reviewer.md"],
+                cwd=root, check=True, capture_output=True,
+            )
+
+            result = run_doctor(root)
+
+            gate = next(check for check in result.checks if check.name == "council gate")
+            self.assertFalse(gate.advisory, "the gate must be able to block a commit")
+            self.assertFalse(gate.passed)
+            self.assertFalse(result.ok)
+            self.assertIn("council gate", failed_check_names(result))
+
+    def test_an_unreadable_record_never_wedges_the_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._repo(root)
+            (root / "AGENTS.md").write_text("# contract, revised\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "add", "--", "AGENTS.md"], cwd=root, check=True, capture_output=True
+            )
+            from governancekit.council import record_path, staged_fingerprint
+
+            fingerprint = staged_fingerprint(root)
+            assert fingerprint is not None
+            path = record_path(root, fingerprint)
+            path.parent.mkdir(parents=True)
+            path.write_text("{ not json", encoding="utf-8")
+
+            result = run_doctor(root)
+
+            gate = next(check for check in result.checks if check.name == "council gate")
+            self.assertTrue(gate.advisory)
+            self.assertTrue(gate.passed)
 
 
 def write_valid_repo(root: Path) -> None:
