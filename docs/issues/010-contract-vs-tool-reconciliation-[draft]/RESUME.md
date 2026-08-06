@@ -52,6 +52,39 @@ Prioridade que o autor sugeriu: **B2** (a que teria evitado o incidente, e a mai
 barata) → **B3** (fecha a descoberta) → **B1** (mais estrutural, maior risco de virar
 ruído).
 
+## Terceiro conjunto: C1–C2, origem `jk-structure` (2026-08-06)
+
+`issues/C1-C2-shared-working-tree-[twin].md` — **duas sessões `claude-code` na mesma pasta e
+na mesma branch**. Verbatim + crítica verificada contra o código, no mesmo arquivo.
+
+O ponto: §1c e `survey_concurrency()` modelam concorrência como **topologia de git**, e
+topologia não conta processos. `is_current` (`concurrency.py:194`) compara caminho com
+`root` — duas sessões no mesmo diretório produzem survey idêntico ao de uma, e o fecho
+(`:322`) afirma exclusividade que não existe. Confirmado no código.
+
+Achados da crítica que **não estavam nas issues** e valem mais que parte delas:
+
+- `_unmerged_count` (`concurrency.py:127`) lê só refs locais, e **falha vira `0`** — que
+  é o predicado de `removable` (`:67`). Erro de leitura sai como *"merged — this worktree
+  can be removed"*. Fail-open na direção perigosa, na linha mais acionável do relatório.
+- O lease proposto em `<git-dir>` cai no dir **privado** da worktree; para a coluna de
+  sessões aparecer em cada linha da tabela ele tem de morar em `--git-common-dir`,
+  chaveado pelo caminho da worktree.
+- Heartbeat por idade é o critério mais fraco; `os.kill(pid, 0)` + `hostname` responde
+  agora. E **quem toca o heartbeat** decide se a feature funciona: tem de ser efeito
+  colateral de todo comando `governancekit`, nunca disciplina do agente — senão herda o
+  defeito do B1.
+- Caminho do registro: são **três** declarações, não duas. O `CLAUDE.md` global do
+  operador também diz `~/Sync/agent-status.json`. O contrato (XDG, inexistente na
+  máquina) é o outlier — é ele que se corrige.
+
+**C1 valida B1 de forma independente.** A §7 que C1 propõe — proibir `git add -A`,
+reconferir `HEAD` antes do commit, `fetch` antes de afirmar push — são três gates no
+momento da ação, vindos de outro incidente e de outro autor. B1 sobe na ordem.
+
+E reformula o §1c: frente aberta = *trabalho não mesclado* **ou** *agente vivo*, com o
+git como uma das duas fontes. Antes de lease, o §1c precisa de gate de ação.
+
 ## Ordem que o autor sugeriu
 
 `A1+G1` juntas (A1 corrige, G1 impede recorrência; G1 sozinha reprova todo o parque
@@ -63,3 +96,9 @@ Criticar A1 e G1 lado a lado, começando por confirmar se A1 ainda tem trabalho 
 do que foi feito hoje — se não tiver, G1 passa a ser a issue crítica isolada e a ordem
 sugerida muda. Levar B1 para essa mesma mesa: ela questiona se um gate de abertura
 (§1b, §1c) protege alguma coisa, e isso decide como G1 deve verificar.
+
+**Atualizado 2026-08-06 pela crítica de C1/C2:** a mesa de B1 ganhou a §7 de C1 (três
+gates de ação, de outro incidente e outro autor). Duas decisões antes de escrever
+código: (a) proibir `git add -A` **incondicionalmente** — maior atrito, maior retorno;
+(b) corrigir `_unmerged_count`, que hoje transforma falha de leitura em
+*"pode ser removida"* num relatório que já mostramos ao operador.
