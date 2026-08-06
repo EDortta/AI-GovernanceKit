@@ -116,3 +116,18 @@ gates de ação, de outro incidente e outro autor). Duas decisões antes de escr
 código: (a) proibir `git add -A` **incondicionalmente** — maior atrito, maior retorno;
 (b) corrigir `_unmerged_count`, que hoje transforma falha de leitura em
 *"pode ser removida"* num relatório que já mostramos ao operador.
+
+### Placar em 2026-08-06, fim do dia
+
+**20 issues abertas** — A1–A10 (10), G1–G5 (5), B1–B3 (3), C1–C2 (2). Nenhuma fechada
+por inteiro; três com trabalho já dentro:
+
+| | Feito | Falta |
+|---|---|---|
+| **A1** | refs `.docs/` → `docs/` no `development` | confirmar contra o kit **instalado** |
+| **A2** | o `.sh` foi alinhado ao destino `docs/` | a decisão de **aposentar** o `.sh` |
+| **A10** | runtime (`concurrency`, `winddown_state`) | o **gatilho** |
+| **C1 §8a / C2 item 6** | **fechado** — registro em `$XDG_STATE_HOME/ai-agents/`, dados migrados (`WK-20260806-activity-registry-xdg`) | — |
+
+O resto de C1 e C2 (lease, dois eixos, render, §7) segue aberto e é o corpo principal
+das duas.
