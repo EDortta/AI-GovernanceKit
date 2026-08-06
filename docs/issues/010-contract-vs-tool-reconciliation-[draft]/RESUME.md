@@ -119,15 +119,26 @@ código: (a) proibir `git add -A` **incondicionalmente** — maior atrito, maior
 
 ### Placar em 2026-08-06, fim do dia
 
-**20 issues abertas** — A1–A10 (10), G1–G5 (5), B1–B3 (3), C1–C2 (2). Nenhuma fechada
-por inteiro; três com trabalho já dentro:
+**21 issues abertas** — A1–A10 (10), G1–G5 (5), B1–B3 (3), C1–C2 (2), D1 (1). Nenhuma
+fechada por inteiro:
 
 | | Feito | Falta |
 |---|---|---|
-| **A1** | refs `.docs/` → `docs/` no `development` | confirmar contra o kit **instalado** |
+| **A1** | refs `.docs/` → `docs/`; **verificado no CodexBridge instalado** | — (fechada na prática) |
 | **A2** | o `.sh` foi alinhado ao destino `docs/` | a decisão de **aposentar** o `.sh` |
+| **A3** | — | **confirmado em campo**: `.gitignore` do CodexBridge não cobre `.env` |
 | **A10** | runtime (`concurrency`, `winddown_state`) | o **gatilho** |
+| **G2** | — | **causa isolada**: o upgrade reescreve `AGENTS.md` e **não toca** no `governancekit-integration.json` |
 | **C1 §8a / C2 item 6** | **fechado** — registro em `$XDG_STATE_HOME/ai-agents/`, dados migrados (`WK-20260806-activity-registry-xdg`) | — |
+| **D1** *(nova)* | — | `council.md` existe em todo projeto e **nada nunca o roda** |
+
+Verificação do parque instalado: `verification-codexbridge-20260806.md` (somente leitura,
+depois do upgrade que o operador rodou às 12:36).
+
+**Pendência que não é issue:** `handoff.md` e `docs/napkin-lessons.md` do CodexBridge
+carregam memória de sessão do **AI/Agents**, vazada na instalação de 04/08. Os templates
+impedem novos vazamentos e não reparam este. Reparo exige decisão humana — pode haver
+conteúdo legítimo do CodexBridge por cima.
 
 O resto de C1 e C2 (lease, dois eixos, render, §7) segue aberto e é o corpo principal
 das duas.
