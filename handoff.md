@@ -1,5 +1,86 @@
 # Handoff
 
+## [2026-08-06] WK-20260806-council-commit-gate + crítica A1/G1/B1 - ready-for-review
+
+- branch: `development` (`feature/uc-012/council-commit-gate` mesclada); `main` intocada;
+  sem push
+
+### Entregue
+
+- **`governancekit/council.py`** (novo) — gate de council no commit de entrega. Registro
+  amarrado ao **sha256 do diff staged** (council de ontem não libera o commit de hoje;
+  emenda invalida a rodada), gatilhos detectáveis (`.docs/`, `AGENTS.md`, `templates/`,
+  `not validated:` ancorado, sweep por contagem, pedido do operador), teto de 2 rodadas
+  com escalação, waiver explícito e registrado. Estados em `.gk/council/<fingerprint>.json`.
+- **`doctor.py::_check_council_gate`** — não-advisory só quando bloqueia; **silencioso
+  quando nada está staged**; `CouncilError` nunca trava um commit.
+- **`cli.py`** — subcomando `council` (`--json`, `--record`, `--waive`, `--requested`).
+- **Dois defeitos graves no `pre-commit` que o kit instala** — ele **nunca reprovou nada
+  pelo `doctor`**: (1) `cli.py` não tinha guarda `__main__`, então `python3 -m
+  governancekit.cli` importava, não imprimia e saía 0; (2) o veredito era lido por
+  `python3 - <<'PY'`, onde o heredoc **substitui o pipe** como stdin. A guarda foi para o
+  `cli.py` (não só no `__main__.py`) para reparar hooks já escritos em repositórios, sem
+  reinstalar. Teste que **executa** o hook, verificado por mutação.
+- 342 testes verdes.
+
+### Crítica de A1, G1 e B1 (feita hoje, não implementada)
+
+Detalhe em `docs/issues/010-contract-vs-tool-reconciliation-[draft]/RESUME.md`. O que
+recai **sobre este repositório**:
+
+- **A1 depende de um elo que é nosso.** `install_agents.py:21` — `DEFAULT_REF = "v1.1.7"`
+  mais a tabela `KNOWN_TARBALL_SHA256`, que só conhece até v1.1.7. Enquanto isso não
+  subir, a correção de caminhos do AI-Agents **não chega a projeto nenhum**: o CodexBridge
+  rodou upgrade hoje às 17:15 e recebeu o texto velho, com o §1b apontando para `.docs/`.
+  Não existe tag `v1.1.8` (nem local, nem no remoto), embora o AI-Agents já declare
+  `ref: v1.1.8`. O pin de checksum faz isso falhar **fechado** — comportamento certo.
+- **G1 (contract coherence) cresce de caminhos para caminhos + versões.** `doctor` no
+  CodexBridge diz `[PASS] contract v1.1.6 is compatible` (lido do
+  `.docs/governancekit-integration.json`) enquanto o `.gk/manifest.json` ao lado registra
+  `ref: v1.1.7` — a ferramenta discordando dela mesma. Isso absorve o G2. Entra como
+  `HINT` que nomeia o remédio; vira `FAIL` quando a cadeia da A1 fechar, senão acende
+  vermelho sem saída.
+- **Comparar hashes do manifest NÃO substitui G1**: o `AGENTS.md` do CodexBridge bate com
+  o hash dele — instalado fielmente e errado. Achado lateral: `_check_manifest_drift`
+  (`doctor.py:566`) só confere **presença** e nunca compara os sha256 que guarda.
+- **B1 refutada** ⇒ o que muda aqui: as três gates da §7 do C1 (`git add -A`, reconferir
+  `HEAD`, `fetch` antes de afirmar push) são detectáveis por máquina e viram trabalho de
+  **hook**, não de prosa.
+
+### Blockers/Risks
+
+- `_unmerged_count` (`concurrency.py:127`) lê só refs locais e **falha vira `0`**, que é o
+  predicado de `removable`. O relatório de hoje diz que `uc-010` e `uc-011` são removíveis;
+  uma falha de leitura diria o mesmo. Decisão pendente do operador.
+- Worktrees `uc-010` e `uc-011` mescladas e não removidas; `uc-008` com +1 commit.
+- Reescrita de histórico ainda pendente de decisão (bundle em
+  `scratchpad/governancekit-pre-rewrite-20260804.bundle`).
+
+### Files changed
+
+- `governancekit/{council.py,cli.py,doctor.py,hooks.py,activity_monitor.py}`
+- `tests/{test_council.py,test_doctor.py,test_hooks.py}`, `docs/advanced-usage.html`
+- `docs/issues/010-contract-vs-tool-reconciliation-[draft]/{RESUME.md,verification-*.md,issues/D1-*.md}`
+
+### Checks/Tests executed
+
+- `pytest` -> 342 passed
+- `git commit` real em repo de rascunho -> matriz completa do gate (bloqueia, libera,
+  emenda re-bloqueia, waiver sem motivo recusado, rodada 3 recusada na gravação)
+- `doctor` read-only contra `AI/CodexBridge` -> reproduz G1, G2 e A3 em campo
+
+### Related commits
+
+- `51be26b`, merge `484b508` (sem push)
+
+### Suggested restart prompt
+
+- "Continue work_id WK-20260804-governancekit-contract-reassessment. Read AGENTS.md,
+  docs/software-overview.md, docs/limits.md e
+  `docs/issues/010-contract-vs-tool-reconciliation-[draft]/RESUME.md`. A crítica de
+  A1/G1/B1 está feita; o elo que trava tudo é `DEFAULT_REF` em `install_agents.py:21`,
+  e ele depende de uma tag que o operador precisa autorizar."
+
 ## [2026-08-04] WK-20260804-concurrency-awareness - ready-for-review
 
 - branch: `development`; `main` intocada; sem push

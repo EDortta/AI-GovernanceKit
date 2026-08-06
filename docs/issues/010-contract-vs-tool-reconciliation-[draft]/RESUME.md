@@ -104,18 +104,117 @@ git como uma das duas fontes. Antes de lease, o §1c precisa de gate de ação.
 `A1+G1` juntas (A1 corrige, G1 impede recorrência; G1 sozinha reprova todo o parque
 instalado) → `A3+G5` → `A5+G3` → `A6` → `A4` → `A7` → `A8, A9, A10, G4`.
 
-## Next Step (DO THIS FIRST)
+## Crítica de A1, G1 e B1 — feita em 2026-08-06 (fim do dia)
 
-Criticar A1 e G1 lado a lado, começando por confirmar se A1 ainda tem trabalho depois
-do que foi feito hoje — se não tiver, G1 passa a ser a issue crítica isolada e a ordem
-sugerida muda. Levar B1 para essa mesma mesa: ela questiona se um gate de abertura
-(§1b, §1c) protege alguma coisa, e isso decide como G1 deve verificar.
+Nada foi implementado. Três conclusões, todas verificadas contra o parque instalado.
 
-**Atualizado 2026-08-06 pela crítica de C1/C2:** a mesa de B1 ganhou a §7 de C1 (três
-gates de ação, de outro incidente e outro autor). Duas decisões antes de escrever
-código: (a) proibir `git add -A` **incondicionalmente** — maior atrito, maior retorno;
-(b) corrigir `_unmerged_count`, que hoje transforma falha de leitura em
-*"pode ser removida"* num relatório que já mostramos ao operador.
+### A1 — **REABERTA**. O placar anterior estava errado
+
+O `AGENTS.md` do CodexBridge, reescrito em 2026-08-06 17:15 com `ref: v1.1.7` no
+`.gk/manifest.json`, **ainda nomeia `.docs/software-overview.md`** nas linhas 40, 99,
+100, 113, 114. O §1b segue inoperante lá, dois dias depois da issue e depois de um
+upgrade rodado hoje.
+
+O que eu havia verificado em 06/08 foi que **os arquivos** estão em `docs/` — não que o
+**texto do gate** aponta para `docs/`. A linha "fechada na prática" do placar abaixo saiu
+dessa verificação incompleta.
+
+A cadeia de publicação tem **quatro elos**, e a A1 só cobre o primeiro:
+
+| elo | estado |
+|---|---|
+| 1. fonte AI-Agents corrigida | ✅ 04/08 |
+| 2. tag publicada | ❌ **não existe `v1.1.8`** — nem local nem no remoto. `fb9f253` (17:23 de hoje) declara a versão sem cortar a tag |
+| 3. GovernanceKit aponta para ela | ❌ `install_agents.py:21` `DEFAULT_REF = "v1.1.7"` + `KNOWN_TARBALL_SHA256` só até v1.1.7 |
+| 4. projeto roda upgrade | ✅ rodou — e recebeu o texto velho |
+
+Consequências para a issue: o critério de aceitação (`grep` na fonte) **não prova nada**
+e passa a ser *"num projeto governado, §1b nomeia os caminhos que o `doctor` verifica"*.
+E o **elo 3 é do GovernanceKit** — A1 não fecha dentro do repo onde foi escrita.
+O pin de checksum faz o elo 2/3 falhar **fechado**, que é o comportamento certo.
+
+### G1 — sobe de prioridade; escopo cresce de caminhos para caminhos **e versões**
+
+`doctor` read-only no CodexBridge, hoje, com o código de `development`:
+
+```
+[PASS] docs/software-overview.md: contains `project_context_ready: yes`
+[PASS] AI-Agents integration contract: contract v1.1.6 is compatible with GovernanceKit 0.2.3
+```
+
+Duas incoerências num relatório verde: a que G1 descreve, e uma que ela **não** cobre —
+`v1.1.6` sai do `.docs/governancekit-integration.json` enquanto o `.gk/manifest.json` ao
+lado registra `ref: v1.1.7`. Não é contrato-contra-ferramenta: é a **ferramenta
+discordando dela mesma**, e carimbando `PASS` na linha que compara as duas. Isso absorve
+o G2.
+
+Três pontos de desenho:
+
+- **Comparar hashes do manifest não substitui G1.** O `AGENTS.md` do CodexBridge **bate
+  com o hash dele**: foi instalado fielmente e está errado. Drift pega arquivo
+  adulterado; coerência pega contrato fiel e obsoleto — que é o defeito deste épico.
+  (Achado lateral: `_check_manifest_drift`, `doctor.py:566`, só confere **presença** e
+  nunca compara os sha256 que guarda.)
+- **Gerar o texto a partir da constante não serve** porque as duas fontes vivem em
+  repositórios com ciclos de release diferentes. A verificação cruzada é a reconciliação
+  honesta — G1 está certa como está.
+- **O `Operations` da G1 subestima.** Com a cadeia da A1 quebrada, G1 como `FAIL` acende
+  vermelho em todo projeto **sem remédio disponível**. Entra como `HINT` que **nomeia o
+  remédio** (`upgrade to >= vX`) e vira `FAIL` no release em que os quatro elos fecharem.
+
+### B1 — refutada pelo próprio incidente que a originou
+
+A §3b do `AGENTS.md` diz, `[MANDATORY]`, desde `bbf2871` (**27/07, oito dias antes do
+incidente**) e presente nas v1.1.6 e v1.1.7:
+
+> *"No external effect without explicit confirmation. Sending a message (WhatsApp,
+> e-mail, push, webhook) … is never fired on the agent's own initiative."*
+
+Está no `AGENTS.md` do `jk-structure` (kit v1.1.7), o projeto onde o e-mail saiu. O
+agente leu as 538 linhas — ele mesmo diz — e enviou. **A regra que a B1 propõe criar já
+existia, era `[MANDATORY]`, cobria e-mail por nome, foi lida e não disparou.**
+
+A leitura que a B1 faz da §8c está errada no ponto que importa: a §8c não funciona por
+ser ancorada na **ação**, e sim na **resposta** — *"leia o relógio no início de cada
+resposta"*, incondicional, sem reconhecer classe nenhuma. Um gate que começa com *"quando
+você for enviar um e-mail"* tem como pré-condição o agente **perceber a classe da ação**,
+e perceber a classe falha junto com lembrar da regra.
+
+Experimento controlado, entregue hoje: o `council.md` tinha **cinco gatilhos
+`[MANDATORY]` em prosa** — cinco semanas, zero rodadas. O que o fez rodar foi mover a
+detecção para dentro da ferramenta (`detect_triggers`) e o bloqueio para o `pre-commit`.
+Prosa: 0. Máquina: bloqueou na primeira tentativa. É a tese da **B2**, verificada em
+campo, contra a da B1. E o modo de falha do excesso de gates não é ruído — é **silêncio**:
+os cinco gatilhos nunca incomodaram ninguém.
+
+**B1 reduzida a um item:** um gate **incondicional** de entrega, que nomeia arquivos em
+vez de repetir regras — e que já existe desde hoje (bullet do council na §7). As três
+gates da §7 do C1 (`git add -A`, reconferir `HEAD`, `fetch` antes de afirmar push) são
+todas detectáveis por máquina e migram para a **B2**. O e-mail idem (`send.py` lendo o
+`contacts.md`). **B3 confirmado vivo:** `contacts` não aparece no `required-reading.md`
+nem no `AGENTS.md` do `jk-structure` — a falha que causou o incidente foi de
+**descoberta**, não de disciplina.
+
+## Next Step (DO THIS FIRST) — ordem revista em 2026-08-06
+
+1. **A1 elos 2–3** — cortar a tag e apontar `DEFAULT_REF` + checksum para ela. É o único
+   trabalho que conserta o parque. **Bloqueado: exige push, decisão do operador.**
+2. **B3** — sobe de terceiro para segundo: é a falha que causou o incidente e é a mais
+   barata (`grep` + entrada no índice).
+3. **G1 como `HINT`**, já vendo incoerência de versão (absorve G2).
+4. **B2** — inventário de regras determinísticas, `send.py` primeiro.
+5. **G1 vira `FAIL`** quando os quatro elos fecharem.
+6. **B1** — fechada como subsumida, ou reduzida ao item único acima.
+
+**Duas decisões do operador, pendentes desde a crítica de C1/C2:** (a) proibir
+`git add -A` — pela crítica da B1, **no hook**, não na prosa; (b) corrigir
+`_unmerged_count` (`concurrency.py:127`), que transforma falha de leitura em
+*"pode ser removida"* — o mesmo relatório que mostramos ao operador hoje diz que duas
+worktrees são removíveis.
+
+**Alerta de concorrência:** `fb9f253` ("cut v1.1.8") foi commitado às 17:23:46 de
+2026-08-06, durante esta sessão e por outro escritor, e `origin/development` já aponta
+para ele — **o repositório foi empurrado**. É o cenário do C1 acontecendo ao vivo.
 
 ### Placar em 2026-08-06, fim do dia
 
@@ -124,7 +223,7 @@ fechada por inteiro:
 
 | | Feito | Falta |
 |---|---|---|
-| **A1** | refs `.docs/` → `docs/`; **verificado no CodexBridge instalado** | — (fechada na prática) |
+| **A1** | refs `.docs/` → `docs/` **na fonte** | **REABERTA** — elos 2–3 (tag + `DEFAULT_REF`/checksum). O `AGENTS.md` do CodexBridge ainda nomeia `.docs/`. Ver a crítica acima |
 | **A2** | o `.sh` foi alinhado ao destino `docs/` | a decisão de **aposentar** o `.sh` |
 | **A3** | — | **confirmado em campo**: `.gitignore` do CodexBridge não cobre `.env` |
 | **A10** | runtime (`concurrency`, `winddown_state`) | o **gatilho** |
