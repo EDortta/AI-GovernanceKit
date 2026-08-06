@@ -210,19 +210,109 @@ lease.
 
 1. **§7 de C1** — os três gates. Incondicionais, sem detecção, sem código novo no kit. Eliminam a
    classe inteira dos efeitos 1–3. Fazer junto com **B1**, que é a mesma forma.
-2. **§8a de C1, item 6 de C2** — reconciliar o caminho do registro para `~/Sync`. Duas linhas de
-   contrato; hoje a documentação aponta para um diretório inexistente.
+2. **§8a de C1, item 6 de C2** — reconciliar os **quatro** caminhos em
+   `${XDG_STATE_HOME:-$HOME/.local/state}/ai-agents/`, com merge das duas cópias divergentes.
+   Não é edição de duas linhas de contrato: ver "(a)" abaixo para o alcance real.
 3. **`_unmerged_count`** — falha deixar de virar `removable`, e a leitura declarar-se local. Defeito
    ativo em código que já mostramos ao operador.
 4. **Lease** (C2, itens 1–3, 5, 7, 8) — com `--git-common-dir`, `pid`+`hostname`, e heartbeat como
    efeito colateral da ferramenta.
 5. **Item 4 de C2** (ordem no hook) — trivial, entra junto com o lease.
 
+## Decisões do operador, 2026-08-06 — e o que a verificação achou depois
+
+O operador decidiu duas coisas: **(a)** o registro sai de `~/Sync` e vai para `$HOME/.local`
+ou equivalente; **(b)** são **dois cuidados concomitantes**, o do git e o da sessão — não
+um substituindo o outro.
+
+### (a) Não são dois caminhos. São quatro, e três existem em disco com conteúdo divergente
+
+A issue relatou "contrato diz XDG, ferramenta diz `~/Sync`". A verificação achou mais:
+
+| # | Caminho | Quem declara | Estado real |
+|---|---|---|---|
+| 1 | `~/Sync/agent-status.json` | `agent-worktree.sh:41`, `monitor/monitor.py:53-55`, `CLAUDE.md` global | **vivo** — é o que os agentes escrevem hoje |
+| 2 | `${XDG_STATE_HOME:-~/.local/state}/ai-agents/` | `AGENTS.md:385` | **não existe** |
+| 3 | `~/.local/state/governancekit/agent-status.json` | `activity_monitor.py:17` (`MONITOR_RELATIVE_PATH`) | **existe, congelado em 2026-08-03 10:35** |
+| 4 | `~/Sync/agent-log.md` | `CLAUDE.md` global, `monitor.py` | vivo, 282 KB de histórico |
+
+Os dois caminhos XDG **discordam entre si** (`ai-agents/` vs `governancekit/`) — nem essa
+metade estava reconciliada. E o #3 guarda três sessões mortas de julho (`AI/hub`,
+`wa-hub`, `cursor`): a migração de `activity_monitor.py` rodou uma vez e nada mais
+escreveu ali. Hoje o parque tem **duas cópias divergentes** do mesmo registro.
+
+**O argumento que sustentava `~/Sync` não se sustenta: a pasta não é sincronizada.** O
+Syncthing está rodando e tem três folders declarados — `~/Sync/Documents`,
+`~/Sync/Projects` e um terceiro apontando para `~` que **não tem o marcador `.stfolder`**
+e portanto não sincroniza. `~/Sync/agent-status.json` está na raiz de `~/Sync`, fora de
+`Documents` e de `Projects`. Nunca saiu desta máquina. Mudar para XDG não perde nada.
+
+**Resolução: `${XDG_STATE_HOME:-$HOME/.local/state}/ai-agents/`.** É o que o `AGENTS.md`
+já diz, e é o diretório certo pela especificação XDG Base Directory:
+
+- `XDG_STATE_HOME` (`~/.local/state`) — estado que **persiste entre execuções**, não é
+  portátil e não é grave perder: logs, histórico, estado corrente. É a definição literal
+  de `agent-status.json` e `agent-log.md`.
+- `XDG_CONFIG_HOME` (`~/.config`) — **não**: configuração é o que o humano edita.
+- `XDG_DATA_HOME` (`~/.local/share`) — **não**: dado que o usuário sentiria falta.
+- `XDG_CACHE_HOME` (`~/.cache`) — **não**: descartável, e o log não é.
+- `XDG_RUNTIME_DIR` (`/run/user/1000`, existe e é `0700`) — é onde o padrão põe pid/lock,
+  e é **apagado no logout**. Isso resolveria as lápides sozinho, mas só vale para o
+  eixo-sessão local; ver (b).
+
+E `ai-agents/`, não `governancekit/`: o registro é **cross-tool** — `cursor`, `codex` e
+`claude-code` escrevem nele — e quem o define é o **contrato**, não o kit. `activity_monitor.py:17`
+é que se alinha. O kit é um dos escritores, não o dono.
+
+Migração: mesclar #1 e #3 em #2 por união de sessões (nunca sobrescrever), mover o
+`agent-log.md` preservando os 282 KB, e deixar leitura de fallback nos caminhos velhos
+por um período. Alcance: `AGENTS.md`, `.docs/workflows/parallel-worktrees.md`,
+`scripts/agent-worktree.sh` (nos **três** repos que o carregam), `activity_monitor.py`,
+`monitor/monitor.py` + `patch-agents.py`, e o `CLAUDE.md` global do operador.
+
+### (b) Dois eixos, ortogonais — nem um substitui o outro
+
+Correção ao que escrevi acima ("a unidade real é a sessão"): errado. São dois eixos, e a
+célula perigosa é justamente a que **nenhum dos dois enxerga sozinho**.
+
+| | sem sessão viva | com sessão viva |
+|---|---|---|
+| **sem trabalho não mesclado** | worktree removível hoje | sessão trabalhando limpo |
+| **com trabalho não mesclado** | trabalho estacionado — ninguém cuidando | frente ativa normal |
+| **N sessões, 1 worktree** | — | **o incidente**: nenhum eixo isolado vê |
+
+Consequências de desenho:
+
+- **Eixo git** — *o que existe no repositório*. Derivado, recalculado a cada execução,
+  **nada persistido**. É `survey_concurrency()` como está, com `_unmerged_count` corrigido.
+- **Eixo sessão** — *quem está operando agora*. Persistido, com tempo de vida. Duas
+  superfícies distintas, e é aqui que (a) se aplica só à segunda:
+  - **detecção, local ao repo**: `<git-common-dir>/governancekit/sessions/<id>.json`. Não
+    toca `$HOME`, nunca entra no índice, morre com o repositório. É o que responde
+    "quantas sessões nesta pasta".
+  - **relato, cross-project**: `${XDG_STATE_HOME}/ai-agents/agent-status.json`. É o que o
+    monitor lê.
+
+`ConcurrencySurvey` passa a compor os dois: cada `OpenItem` do eixo git ganha as sessões
+do eixo sessão, e existe um estado — sessão viva sem item de git correspondente — que hoje
+não tem onde aparecer. `shared_tree` é uma leitura da composição, não um campo de origem.
+
+O `§1c` fica com as duas definições explícitas, e não com uma no lugar da outra: frente
+aberta é worktree viva **ou** branch não mesclada **ou** sessão viva sobre a árvore.
+
+Ambos os eixos ganham `pid` + `hostname`: o eixo sessão para liveness (`os.kill(pid, 0)`
+no mesmo host, idade de heartbeat como degradação), o registro cross-project para o
+monitor poder marcar *presumido morto* em vez de acumular lápides.
+
 ## Aberto, para o operador decidir
 
 - **Proibir `git add -A` incondicionalmente** no §7 muda o hábito em todo projeto governado, inclusive
   onde não há concorrência nenhuma. É o ponto de maior atrito da proposta e o de maior retorno.
-- **A entrada `cursor` de 31/07**: a política proposta (reportar, nunca apagar) é a correta e coincide
-  com o `CLAUDE.md` global. Mas ninguém vai remover essa entrada — o processo não existe mais. Ou
-  existe um comando explícito de limpeza operado por humano, ou o registro acumula lápides para
-  sempre.
+- **A entrada `cursor` de 31/07** — e as de `AI/hub` e `wa-hub` na cópia XDG, de julho. A política
+  proposta (reportar, nunca apagar) é a correta e coincide com o `CLAUDE.md` global. Mas ninguém vai
+  remover essas entradas: os processos não existem mais. Com `pid` + `hostname` o registro passa a
+  **saber** que estão mortas; falta decidir se um comando explícito de limpeza as remove, ou se
+  ficam como lápides marcadas para sempre.
+- **A migração toca `$HOME` e cinco repositórios**, incluindo o `CLAUDE.md` global do operador e o
+  `scripts/agent-worktree.sh` de `CodexBridge` e `CodexBridgeMobile`. Nada disso foi feito — só
+  registrado. Precisa de autorização, e do teste do CodexBridge concluído antes.

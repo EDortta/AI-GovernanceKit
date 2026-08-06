@@ -74,9 +74,23 @@ Achados da crítica que **não estavam nas issues** e valem mais que parte delas
   agora. E **quem toca o heartbeat** decide se a feature funciona: tem de ser efeito
   colateral de todo comando `governancekit`, nunca disciplina do agente — senão herda o
   defeito do B1.
-- Caminho do registro: são **três** declarações, não duas. O `CLAUDE.md` global do
-  operador também diz `~/Sync/agent-status.json`. O contrato (XDG, inexistente na
-  máquina) é o outlier — é ele que se corrige.
+- Caminho do registro: são **quatro** caminhos, três em disco, **duas cópias divergentes**
+  (`~/Sync/agent-status.json` viva; `~/.local/state/governancekit/agent-status.json`
+  congelada em 03/08 com três sessões mortas de julho). E os dois caminhos XDG discordam
+  entre si — `ai-agents/` no contrato, `governancekit/` no `activity_monitor.py`.
+
+**Decidido pelo operador em 2026-08-06** (detalhe em `issues/C1-C2-…`):
+
+- **Registro vai para `${XDG_STATE_HOME:-$HOME/.local/state}/ai-agents/`** — que é o que o
+  `AGENTS.md:385` já diz. O argumento que sustentava `~/Sync` caiu na verificação: a pasta
+  **não é sincronizada** (o Syncthing sincroniza `~/Sync/Documents` e `~/Sync/Projects`; o
+  arquivo está na raiz, fora dos dois). Corrige-se a ferramenta, não o contrato.
+- **Dois eixos concomitantes, ortogonais** — git (o que existe no repositório; derivado,
+  nada persistido) e sessão (quem opera agora; persistido, com tempo de vida). Nenhum
+  substitui o outro: a célula do incidente — N sessões, 1 worktree — é invisível a cada um
+  isoladamente. `§1c` fica com as três definições de frente aberta, não com uma trocada.
+- Eixo sessão tem duas superfícies: **detecção** em `<git-common-dir>/governancekit/sessions/`
+  (não toca `$HOME`, nunca entra no índice) e **relato** cross-project no XDG.
 
 **C1 valida B1 de forma independente.** A §7 que C1 propõe — proibir `git add -A`,
 reconferir `HEAD` antes do commit, `fetch` antes de afirmar push — são três gates no
