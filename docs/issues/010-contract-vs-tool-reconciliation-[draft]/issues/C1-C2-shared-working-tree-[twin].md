@@ -264,11 +264,25 @@ E `ai-agents/`, não `governancekit/`: o registro é **cross-tool** — `cursor`
 `claude-code` escrevem nele — e quem o define é o **contrato**, não o kit. `activity_monitor.py:17`
 é que se alinha. O kit é um dos escritores, não o dono.
 
-Migração: mesclar #1 e #3 em #2 por união de sessões (nunca sobrescrever), mover o
-`agent-log.md` preservando os 282 KB, e deixar leitura de fallback nos caminhos velhos
-por um período. Alcance: `AGENTS.md`, `.docs/workflows/parallel-worktrees.md`,
-`scripts/agent-worktree.sh` (nos **três** repos que o carregam), `activity_monitor.py`,
-`monitor/monitor.py` + `patch-agents.py`, e o `CLAUDE.md` global do operador.
+**Executado em 2026-08-06** (`WK-20260806-activity-registry-xdg`), com autorização do
+operador:
+
+- `migrate_activity_monitor` passou a mesclar **todas** as origens legadas conhecidas em
+  vez de uma, pulando as ausentes, sem apagar nenhuma. Rodado: 4 sessões importadas,
+  1 duplicata, das duas cópias divergentes.
+- `migrate_activity_log` (novo) moveu os 4.338 linhas / 282 KB do `agent-log.md`. **Move,
+  não mescla**: prosa append-only não tem fronteira de registro que uma máquina possa
+  respeitar. Recusa quando já existe log canônico.
+- As duas cópias legadas ficaram parkeadas como `*.migrated-20260806` — nada foi apagado,
+  e um escritor não migrado que recrie o arquivo velho fica visível em vez de silencioso.
+- Fallback de leitura para `~/Sync` mantido em `agent-worktree.sh` e `monitor.py`, para
+  máquina não migrada continuar funcionando.
+- `AGENTS.md` §8a não mudou: já estava certo. Mudaram `scripts/agent-worktree.sh`,
+  `activity_monitor.py` + `cli.py` + testes + `advanced-usage.html`, `monitor/monitor.py`
+  + `patch-agents.py` + `README.md`, e o `CLAUDE.md` global do operador.
+- **Não** tocado: `scripts/agent-worktree.sh` de `CodexBridge` e `CodexBridgeMobile` —
+  são cópias instaladas do kit e recebem a correção pelo upgrade. Até lá leem o legado,
+  que agora não existe: degradam para não exibir detentores, sem erro.
 
 ### (b) Dois eixos, ortogonais — nem um substitui o outro
 
