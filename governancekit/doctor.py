@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import subprocess
@@ -72,6 +73,8 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_tracked_secret_files(repo_root),
         _check_gitignore_secrets(repo_root),
         _check_gitignore_secret_coverage(repo_root),
+        _check_local_reading_sources(repo_root),
+        _check_local_sources_indexed(repo_root),
         _check_project_config(repo_root),
         _check_agents_integration_contract(repo_root),
         _check_host_identity(repo_root),
@@ -825,6 +828,293 @@ def _ignored(root: Path, probe: str) -> bool | None:
     if completed.returncode == 1:
         return False
     return None
+
+
+# ── B3: reading sources that live outside the checkout ────────────────────────────
+#
+# `docs/required-reading.md` calls itself "the single index", and it indexed only files
+# in the repository. Real operating rules live outside it on purpose — a recipient list
+# or a credential agenda must not be tracked. On 2026-08-04 an agent that had read the
+# whole contract could not find a project's e-mail recipients, because they live under
+# `~/.config/` and nothing the contract told it to read mentioned the file.
+#
+# What is indexed is the path and one line of purpose. Never the content: the reason
+# these files are outside the repository is that their content must not be copied into
+# it, and an index that quotes them would defeat the arrangement it exists to describe.
+_LOCAL_SOURCES_HEADING_RE = re.compile(
+    r"^[ \t]{0,3}#{2,4}[ \t]+.*\b(fontes locais|local sources)\b", re.IGNORECASE
+)
+_ANY_HEADING_RE = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+\S")
+# Tolerant on purpose: leading indentation, backticks optional, and any number of
+# trailing columns. A stricter row regex made every table-authoring slip parse as zero
+# rows, and zero rows is reported as "no local sources indexed" — a clean green that
+# is indistinguishable from a required entry the check never saw.
+_LOCAL_SOURCE_ROW_RE = re.compile(
+    r"^[ \t]*\|\s*`?([^`|]+?)`?\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*(?:\|.*)?\|\s*$"
+)
+_OPTIONAL_WORDS = ("opcional", "optional")
+_INDEX_REL = "docs/required-reading.md"
+
+# An indexed source is an operator-local file. Restricting the shape keeps the index
+# from becoming an existence oracle: `docs/required-reading.md` is tracked and anyone
+# can propose a row, and a row naming `/etc/shadow` would turn doctor's own message
+# into a probe of whatever machine runs it.
+_HOME_RELATIVE_RE = re.compile(r"^(~/|\$\{?(?:HOME|XDG_[A-Z_]+)\}?/)")
+
+
+@dataclass(frozen=True)
+class LocalSource:
+    path: str
+    optional: bool
+    purpose: str
+
+    @property
+    def expanded(self) -> Path:
+        return Path(os.path.expandvars(self.path)).expanduser()
+
+    def exists(self) -> bool:
+        """`.exists()` that cannot take the whole `doctor` down with it.
+
+        pathlib re-raises anything outside ENOENT/ENOTDIR/ELOOP, so a credential
+        mounted 0400 under a root-owned directory — the ordinary shape of a Docker or
+        Kubernetes secret — raised PermissionError straight out of the check list. One
+        unreadable row killed every other check and the process exited on a traceback
+        instead of a verdict. A gate that crashes reports nothing at all.
+        """
+        try:
+            return self.expanded.exists()
+        except OSError:
+            # Unreadable is not absent: the operator has the file, this process
+            # cannot stat it. Treating it as present keeps the check from failing a
+            # correct setup for a permission it never needed.
+            return True
+
+
+def _parse_local_sources(root: Path) -> tuple[list[LocalSource], list[str]]:
+    """Return the indexed local sources, and the rows that could not be read.
+
+    Rows are `| path | obrigatório/opcional | purpose |`. The second value is the
+    reason this returns a pair: a table the parser cannot read used to be reported as
+    an empty table, so a required entry that a stray column or a missing backtick
+    hid from the parser produced a clean green. Unreadable and absent must not look
+    the same — that is how a gate stops gating without anyone noticing.
+    """
+    index = root / _INDEX_REL
+    if not index.is_file():
+        return [], []
+    inside = False
+    seen_table_line = False
+    found: list[LocalSource] = []
+    rejected: list[str] = []
+    for line in index.read_text(encoding="utf-8", errors="replace").splitlines():
+        if _ANY_HEADING_RE.match(line):
+            inside = bool(_LOCAL_SOURCES_HEADING_RE.match(line))
+            continue
+        if not inside or not line.strip():
+            continue
+        if not line.lstrip().startswith("|"):
+            continue
+        seen_table_line = True
+        row = _LOCAL_SOURCE_ROW_RE.match(line)
+        if not row:
+            rejected.append(line.strip())
+            continue
+        path, requirement, purpose = (group.strip() for group in row.groups())
+        if set(path) <= {"-", ":", " "}:  # the |---|---| separator
+            continue
+        if path.lower() in {"caminho", "path"}:  # the header row
+            continue
+        if not purpose:
+            rejected.append(line.strip())
+            continue
+        if not _HOME_RELATIVE_RE.match(path) or ".." in Path(path).parts:
+            rejected.append(line.strip())
+            continue
+        found.append(LocalSource(
+            path=path,
+            optional=any(word in requirement.lower() for word in _OPTIONAL_WORDS),
+            purpose=purpose,
+        ))
+    if seen_table_line and not found and not rejected:
+        rejected.append("the section has a table but no readable rows")
+    return found, rejected
+
+
+def _local_sources(root: Path) -> list[LocalSource]:
+    return _parse_local_sources(root)[0]
+
+
+def _check_local_reading_sources(root: Path) -> CheckResult:
+    """Every indexed local source exists — required ones fail, optional ones hint."""
+    name = "local reading sources"
+    sources, rejected = _parse_local_sources(root)
+    if rejected:
+        shown = "; ".join(rejected[:2])
+        return CheckResult(
+            name,
+            False,
+            f"{_INDEX_REL} has rows under `Fontes locais` this check cannot read, so "
+            f"they are not being verified: {shown}. Rows are "
+            f"`| ~/path | obrigatório\\|opcional | purpose |`, and the path must be "
+            f"under the operator's home.",
+            advisory=True,
+        )
+    if not sources:
+        return CheckResult(name, True, "no local sources indexed", advisory=True)
+
+    missing_required = [s.path for s in sources if not s.optional and not s.exists()]
+    missing_optional = [s.path for s in sources if s.optional and not s.exists()]
+
+    if missing_required:
+        return CheckResult(
+            name,
+            False,
+            f"{_INDEX_REL} indexes local sources that are absent here: "
+            f"{', '.join(missing_required)}. Provide them, or mark the row `opcional` "
+            f"if the work can proceed without it.",
+        )
+    if missing_optional:
+        return CheckResult(
+            name,
+            True,
+            f"optional local sources absent on this machine: {', '.join(missing_optional)}",
+            advisory=True,
+        )
+    return CheckResult(name, True, f"{len(sources)} local source(s) indexed and present")
+
+
+# A path that looks like an operator-local file: `~/...`, or `$HOME/...`, or an
+# XDG-style state directory. Deliberately narrow — an absolute path under `/etc` or
+# `/opt` is usually a deployment target, not something an agent is told to read.
+#
+# Backticks are NOT required. They were, and the council found the hole: AGENTS.md
+# cites the 2026-08-04 incident file inside a ```bash fence, unquoted, four times.
+# Isolating that citation made the check report "every local path is indexed" — so
+# the fix closed the incident only because the same file happened to appear in an
+# adjacent table too. Showing a path in a shell example is the most natural way to
+# document "run this", and a detector that only sees prose misses the documentation
+# people actually write.
+_LOCAL_PATH_RE = re.compile(
+    r"[`\s(\"']((?:~|\$\{?(?:HOME|XDG_[A-Z_]+)\}?)/[^`\s)\"',;]+)"
+)
+_CONTRACT_GLOBS = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    # Maintained mirrors of the same contract for other tool ecosystems. They carry
+    # the same citations, and a local path added to only one of them would otherwise
+    # never be seen.
+    "GEMINI.md",
+    ".cursorrules",
+    ".github/copilot-instructions.md",
+    ".amazonq/rules/*.md",
+    "docs/*.md",
+    ".docs/**/*.md",
+)
+
+# History, not instructions. `handoff.md` and the napkin record what happened, quoting
+# paths from past sessions; scanning them produced `~/AGENTS.md` and `~/docs/limits.md`
+# — artefacts of the 2026-08-04 home-shadow incident being *described*. Same
+# mention-versus-use confusion that has cost this kit four detectors.
+_CONTRACT_SCAN_SKIP = frozenset({
+    "handoff.md", "napkin-lessons.md", "required-reading.md",
+})
+
+
+def _looks_like_a_directory(candidate: str) -> bool:
+    """Filter the noise out of the citation scan before it reaches the operator.
+
+    A contract naming `~/.config/` is telling you where a family of things lives, not
+    handing you a file to read. Left in, four of the first seven hits on this very
+    repository were directory prefixes — and noise in an advisory is not neutral: it
+    teaches the operator to skim past the three real hits beside it, which here were
+    the exact files from the 2026-08-04 incident.
+    """
+    if candidate.endswith("/"):
+        return True
+    # `~/.local/bin/awt` is invoked, not read. This is a *reading* index; a helper on
+    # PATH belongs in the workflow that installs it, and listing it here would teach
+    # that the index is a catalogue of everything rather than of what to read.
+    if "bin" in Path(candidate).parts[:-1]:
+        return True
+    expanded = Path(os.path.expandvars(candidate)).expanduser()
+    try:
+        if expanded.is_dir():
+            return True
+        exists = expanded.exists()
+    except OSError:
+        # Unreadable says nothing about shape; fall through to the suffix heuristic
+        # rather than letting a permission error out of an advisory check.
+        exists = False
+    # Absent from this machine: fall back to shape. A leaf with no suffix reads as a
+    # directory far more often than as a file worth indexing. This makes the advisory
+    # machine-dependent — CI, which has no operator state, sees fewer hits than the
+    # operator's own laptop. Accepted: the alternative is either shape-only (which
+    # misses every extensionless credential file that does exist) or no filter at all
+    # (four of the first seven hits were directory prefixes).
+    return not exists and not expanded.suffix
+
+
+def _check_local_sources_indexed(root: Path) -> CheckResult:
+    """Advisory: a local path cited by a contract should be in the reading index.
+
+    This is the half of B3 that is a detector, and detectors in this kit have a
+    record: four scope defects in a row. So it hints, never fails. A path named in
+    prose is not always a rule source — it can be an example, a migration note, or the
+    very row in the index that declares it — and the cost of being wrong here is an
+    operator learning to skim `doctor` output.
+    """
+    name = "local sources indexed"
+    indexed = {source.path for source in _local_sources(root)}
+    cited: dict[str, str] = {}
+    for pattern in _CONTRACT_GLOBS:
+        for path in sorted(root.glob(pattern)):
+            if not path.is_file() or path.name in _CONTRACT_SCAN_SKIP:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for match in _LOCAL_PATH_RE.finditer(text):
+                candidate = match.group(1)
+                if _looks_like_a_directory(candidate):
+                    continue
+                cited.setdefault(candidate, str(path.relative_to(root)))
+
+    unindexed = sorted(path for path in cited if path not in indexed)
+    if not unindexed:
+        return CheckResult(name, True, "every local path a contract cites is indexed",
+                           advisory=True)
+
+    shown = ", ".join(f"{path} (in {cited[path]})" for path in unindexed[:4])
+    more = f" (+{len(unindexed) - 4} more)" if len(unindexed) > 4 else ""
+    # `docs/` is the project's territory and `--upgrade` never writes prose there, so
+    # a project installed before B3 will not receive the section from an upgrade — by
+    # design, not by omission. This message is the delivery mechanism, and it fires
+    # exactly when the section is needed: when a contract names a local file that
+    # reading the index cannot lead you to. Say how to add it, or the hint is a
+    # complaint.
+    how = (
+        f" Add a `## Fontes locais` section to {_INDEX_REL} with rows "
+        f"`| ~/path | obrigatório\\|opcional | purpose |` — path and purpose only, "
+        f"never content."
+        if not _has_local_sources_section(root) else ""
+    )
+    return CheckResult(
+        name,
+        False,
+        f"local paths cited by a contract but absent from {_INDEX_REL}: {shown}{more}.{how}",
+        advisory=True,
+    )
+
+
+def _has_local_sources_section(root: Path) -> bool:
+    index = root / _INDEX_REL
+    if not index.is_file():
+        return False
+    return any(
+        _LOCAL_SOURCES_HEADING_RE.match(line)
+        for line in index.read_text(encoding="utf-8", errors="replace").splitlines()
+    )
 
 
 def _check_gitignore_secret_coverage(root: Path) -> CheckResult:
