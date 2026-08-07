@@ -195,16 +195,34 @@ todas detectáveis por máquina e migram para a **B2**. O e-mail idem (`send.py`
 nem no `AGENTS.md` do `jk-structure` — a falha que causou o incidente foi de
 **descoberta**, não de disciplina.
 
-## Next Step (DO THIS FIRST) — ordem revista em 2026-08-06
+## Fechado em 2026-08-07
+
+Sessão de 7 commits, cada issue revista por council de 2 rodadas antes do commit.
+**30 achados no total — 21 fechados por teste ou correção, 9 por aceitação de risco
+escrita.** Em **oito** deles o council pegou a correção sendo pior que o defeito.
+
+| | Commits | O que fechou |
+|---|---|---|
+| pré-requisito | `fff5907` · `8660853` | gatilho `not-validated` lê o diff e a seção de reivindicação |
+| **A3** | `79e16aa` · `9a34b57` | bloco `.gitignore` gerado cobre o que o `doctor` exige, nos DOIS instaladores |
+| **B3** | `56ff8f0` · `889eabe` | `doctor` cobre as fontes de leitura fora do checkout |
+| fatiamento | `b8dec46` | `AGENTS.md` fatiado em `.docs/workflows/`; `base_contracts` 7.999 → 6.010 |
+
+**O padrão que se repetiu, e que vale para o resto da fila:** estreitar um detector por
+causa de falso positivo produziu falso negativo silencioso três vezes. Rodar o detector
+apertado contra TODAS as ocorrências reais do parque antes de aceitar a correção passou a
+ser parte do trabalho, não uma verificação extra.
+
+## Next Step (DO THIS FIRST) — ordem revista em 2026-08-07
 
 1. **A1 elos 2–3** — cortar a tag e apontar `DEFAULT_REF` + checksum para ela. É o único
    trabalho que conserta o parque. **Bloqueado: exige push, decisão do operador.**
-2. **B3** — sobe de terceiro para segundo: é a falha que causou o incidente e é a mais
-   barata (`grep` + entrada no índice).
-3. **G1 como `HINT`**, já vendo incoerência de versão (absorve G2).
-4. **B2** — inventário de regras determinísticas, `send.py` primeiro.
-5. **G1 vira `FAIL`** quando os quatro elos fecharem.
-6. **B1** — fechada como subsumida, ou reduzida ao item único acima.
+2. **G1 como `HINT`**, já vendo incoerência de versão (absorve G2).
+3. **B2** — inventário de regras determinísticas, `send.py` primeiro. Absorve a decisão
+   pendente sobre `git add -A`, que vai no hook e não na prosa.
+4. **G1 vira `FAIL`** quando os quatro elos fecharem.
+5. **B1** — fechada como subsumida pelo bullet de council da §7.
+6. Depois: A4, A5, A6, A7, A9, A10; G3, G4, G5; corpo de C1/C2.
 
 **Duas decisões do operador, pendentes desde a crítica de C1/C2:** (a) proibir
 `git add -A` — pela crítica da B1, **no hook**, não na prosa; (b) corrigir
@@ -218,14 +236,15 @@ para ele — **o repositório foi empurrado**. É o cenário do C1 acontecendo a
 
 ### Placar em 2026-08-06, fim do dia
 
-**21 issues abertas** — A1–A10 (10), G1–G5 (5), B1–B3 (3), C1–C2 (2), D1 (1). Nenhuma
-fechada por inteiro:
+**19 issues abertas** em 2026-08-07 — A3 e B3 fecharam hoje; D1 e C1§8a/C2-item-6 já
+haviam fechado em 06/08:
 
 | | Feito | Falta |
 |---|---|---|
 | **A1** | refs `.docs/` → `docs/` **na fonte** | **REABERTA** — elos 2–3 (tag + `DEFAULT_REF`/checksum). O `AGENTS.md` do CodexBridge ainda nomeia `.docs/`. Ver a crítica acima |
 | **A2** | o `.sh` foi alinhado ao destino `docs/` | a decisão de **aposentar** o `.sh` |
-| **A3** | — | **confirmado em campo**: `.gitignore` do CodexBridge não cobre `.env` |
+| **A3** | **FECHADA** (`79e16aa`, `9a34b57`) — lista única de padrões, os dois instaladores escrevem o mesmo bloco, tabela de 23 sondas com `git check-ignore` real | — |
+| **B3** | **FECHADA** (`56ff8f0`, `889eabe`) — seção `Fontes locais` no índice + dois checks no `doctor`; os arquivos do incidente de 04/08 estão indexados | — |
 | **A10** | runtime (`concurrency`, `winddown_state`) | o **gatilho** |
 | **G2** | — | **causa isolada**: o upgrade reescreve `AGENTS.md` e **não toca** no `governancekit-integration.json` |
 | **C1 §8a / C2 item 6** | **fechado** — registro em `$XDG_STATE_HOME/ai-agents/`, dados migrados (`WK-20260806-activity-registry-xdg`) | — |

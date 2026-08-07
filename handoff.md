@@ -1,5 +1,72 @@
 # Handoff
 
+## [2026-08-07] Epico 010 — A3, B3 e o gatilho de council - ready-for-review
+
+- branch: `development`, 34 commits a frente de `main`. **Nada empurrado.**
+
+### Entregue
+
+Lado ferramenta dos quatro trabalhos de hoje. Gemeos em `AI/Agents`: `8660853`,
+`9a34b57`, `889eabe`, `b8dec46`.
+
+- **`fff5907` — gatilho `not-validated`.** Produziu tres falsos positivos em dois dias
+  e bloqueou o proprio session-close do kit. Os dois defeitos eram de escopo, e o
+  `council.md` §4 ja dizia o escopo certo: lia o ARQUIVO `handoff.md` inteiro em vez das
+  linhas ADICIONADAS pelo diff, e nao distinguia mencao de declaracao. Agora le o diff, e
+  o escopo e o heading que encerra a linha: secao de testes ou heading de entrada =
+  reivindicacao; qualquer outra subsecao = prosa. Verificado 4/4 contra as ocorrencias
+  reais dos dois `handoff.md`.
+- **`79e16aa` — A3.** `_gitignore_entries` devolvia 18 entradas e nenhuma cobria `.env`,
+  enquanto `_check_gitignore_secrets` reprovava o repositorio por exatamente isso. Duas
+  listas sobre um contrato. Agora `SECRET_IGNORE_PATTERNS` mora em `install_agents.py`, o
+  `doctor` importa dela os nomes de template, e o teste afirma que o bloco gerado
+  satisfaz cada sonda do verificador. As sondas OBRIGATORIAS continuam duas de proposito
+  — alarga-las acenderia de vermelho todo projeto ja instalado.
+- **`56ff8f0` — B3.** Dois checks novos sobre a secao `Fontes locais` do indice:
+  `local reading sources` (obrigatorio ausente reprova, opcional avisa) e
+  `local sources indexed` (ADVISORY — caminho local citado por contrato e ausente do
+  indice). Advisory de proposito: e um detector, e os quatro ultimos defeitos deste kit
+  foram de deteccao.
+
+### O que isto muda para ESTE repo
+
+- O `governancekit` instalado em site-packages e o **0.2.3 de 04/08** e nao tem o
+  subcomando `council`. Todo council de hoje rodou com `PYTHONPATH` apontado para a
+  fonte. E a cadeia de publicacao da A1, agora demonstrada contra o proprio gate.
+- `adoption.py:129` ainda casa marcador de readiness por substring — mesmo defeito de
+  mencao-versus-uso ja corrigido em `doctor` e `context_authoring`. Fora do escopo de
+  hoje, registrado como pergunta aberta no round.
+- `_update_gitignore` sempre reescreve o bloco no FIM do arquivo, entao uma linha que o
+  operador pos depois do bloco antigo perde prioridade na proxima instalacao. Pre-existente.
+
+### Blockers/Risks
+
+- **A1 elo 3 e nosso**: `install_agents.py:21` `DEFAULT_REF` + `KNOWN_TARBALL_SHA256`
+  seguem em v1.1.7. Depende de a tag ser cortada e empurrada — decisao do operador.
+- **Nada avalia o orcamento de contexto num projeto instalado**: nem `hooks.py`, nem
+  `doctor.py`, nem `install_agents.py` chamam `build_context`. Zero telemetria em
+  qualquer projeto. O manifesto e instalado e fica inerte.
+
+### Files changed
+
+`governancekit/{council,doctor,install_agents}.py`,
+`tests/{test_council,test_doctor_gitignore,test_doctor_local_sources}.py` (o ultimo novo),
+`docs/napkin-lessons.md`, `docs/issues/010-.../RESUME.md`.
+
+### Checks/Tests executed
+
+- `python3 -m pytest tests/ -q` — **382 verdes**, 6 subtests.
+- Mutacao em cada fix: desliguei o mecanismo e confirmei o teste ficar vermelho.
+- Campo: `doctor` contra o AI-Agents real, checks de gitignore e de fontes locais `[PASS]`.
+- Tabela de 23 sondas com `git check-ignore` num repo de verdade, nos dois sentidos.
+
+### Suggested restart prompt
+
+> Retoma o epico 010. `RESUME.md` tem a ordem revista de 2026-08-07. Proximo item nao
+> bloqueado: **G1 como `HINT`** no `doctor`, absorvendo a G2 — reproduzir primeiro o
+> `[PASS] contract v1.1.6 is compatible` ao lado de um `.gk/manifest.json` que diz
+> `ref: v1.1.7`, que e a ferramenta discordando dela mesma.
+
 ## [2026-08-06] WK-20260806-council-commit-gate + crítica A1/G1/B1 - ready-for-review
 
 - branch: `development` (`feature/uc-012/council-commit-gate` mesclada); `main` intocada;
