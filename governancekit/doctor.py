@@ -71,6 +71,7 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_resume_next_step(repo_root),
         _check_tracked_secret_files(repo_root),
         _check_gitignore_secrets(repo_root),
+        _check_gitignore_secret_coverage(repo_root),
         _check_project_config(repo_root),
         _check_agents_integration_contract(repo_root),
         _check_host_identity(repo_root),
@@ -635,7 +636,13 @@ def _prefer_started_resume(resume_files: list[Path]) -> Path:
     return resume_files[0]
 
 
-_TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")
+from .install_agents import (  # noqa: E402 - kept beside its only consumer
+    CREDENTIALS_DOC_NAMES,
+    SECRET_TEMPLATE_NAMES,
+    SECRET_TEMPLATE_SUFFIXES,
+)
+
+_TEMPLATE_SUFFIXES = SECRET_TEMPLATE_SUFFIXES
 
 
 def _is_secret_template(path: str) -> bool:
@@ -656,12 +663,16 @@ def _is_secret_template(path: str) -> bool:
         return True
     # Conventional marker/template names. They communicate absence or an example,
     # rather than carrying a runtime environment value.
-    if name in {".env.missing", ".env-example"}:
+    if name in SECRET_TEMPLATE_NAMES:
         return True
     if not path.startswith(".credentials/"):
         return False
-    # Doc/scaffolding files the kit seeds into .credentials/ — never secrets.
-    return name in {".gitignore", ".keep"} or name.startswith("README")
+    # Doc/scaffolding files the kit seeds into .credentials/ — never secrets. The same
+    # names drive the `!.credentials/...` re-includes in the generated ignore block.
+    return any(
+        name.startswith(doc[:-1]) if doc.endswith("*") else name == doc
+        for doc in CREDENTIALS_DOC_NAMES
+    )
 
 
 def _check_tracked_secret_files(root: Path) -> CheckResult:
@@ -707,7 +718,31 @@ def _check_tracked_secret_files(root: Path) -> CheckResult:
 # tracked in the first place (preventive counterpart to _check_tracked_secret_files).
 # The kit's convention: secrets live only in .env or .credentials/ (security
 # standards §1). We probe one path per convention with `git check-ignore`.
+#
+# Every probe must be covered by the block the installer writes — the two used to be
+# separate lists and drifted, so the kit failed every project it installed on `.env`.
+# `test_every_mandatory_probe_is_covered_by_the_generated_block` pins them together.
+#
+# This list stays at two. Widening a MANDATORY probe turns every already-installed
+# project red the moment it upgrades the tool, for a hole it did not just open — the
+# same mistake the G1 critique caught yesterday, where a coherence check would have
+# failed the whole park before the remedy existed. New coverage arrives advisory
+# (below) and is promoted only once the installed park has had an upgrade to take it.
 _SECRET_PROBE_PATHS = (".env", ".credentials/secret.token")
+
+# Real holes that are not yet mandatory: `.env` alone does not cover `.env.local`, and
+# a stray private key is the same secret by another name.
+_SECRET_ADVISORY_PROBE_PATHS = (
+    ".env.local",
+    ".env.production",
+    "private.key",
+    "server.pem",
+)
+
+# The counterpart: paths that must stay OUT of the block. `.env.example` is the file
+# every project commits as documentation, and an over-broad `.env.*` swallows it —
+# a secrets rule that hides the example teaches operators to edit the managed block.
+_SECRET_TRACKABLE_PATHS = (".env.example", ".env.sample")
 
 
 def _check_gitignore_secrets(root: Path) -> CheckResult:
@@ -737,13 +772,98 @@ def _check_gitignore_secrets(root: Path) -> CheckResult:
             )
 
     if uncovered:
+        # `git check-ignore` reports an ALREADY TRACKED file as not ignored, because
+        # exclude rules do not apply to tracked paths. Blaming the pattern there sends
+        # the operator to rewrite a block that is already correct, while the credential
+        # stays in the history — the one case where this check matters most got the one
+        # remedy that cannot work.
+        tracked = [path for path in uncovered if _is_tracked(root, path)]
+        if tracked:
+            return CheckResult(
+                name,
+                False,
+                f"secret paths are already tracked, so .gitignore cannot help: "
+                f"{', '.join(tracked)}. Untrack with "
+                f"`git rm --cached {' '.join(tracked)}` and rotate what was committed.",
+            )
         return CheckResult(
             name,
             False,
-            f".gitignore does not cover secret paths: {', '.join(uncovered)}",
+            f".gitignore does not cover secret paths: {', '.join(uncovered)}. "
+            f"Run {_command(root, 'install-agents --upgrade')} to rewrite the managed block.",
         )
 
     return CheckResult(name, True, "secret paths (.env, .credentials/) are gitignored")
+
+
+def _is_tracked(root: Path, relative_path: str) -> bool:
+    try:
+        completed = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", relative_path],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return False
+    return completed.returncode == 0
+
+
+def _ignored(root: Path, probe: str) -> bool | None:
+    """True when git ignores *probe*, False when it does not, None when git cannot say."""
+    try:
+        completed = subprocess.run(
+            ["git", "check-ignore", "-q", "--", probe],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if completed.returncode == 0:
+        return True
+    if completed.returncode == 1:
+        return False
+    return None
+
+
+def _check_gitignore_secret_coverage(root: Path) -> CheckResult:
+    """Advisory: the secret patterns beyond the two mandatory probes, both ways.
+
+    Two failures live here, and the quiet one is the second. Under-coverage leaves a
+    real hole — `.env` ignored while `.env.local` is not is a common way to commit a
+    credential. Over-coverage hides `.env.example`, so the block looks like it is
+    working while the project silently loses the file it documents its configuration
+    with; an operator who notices edits the managed block, and then the next upgrade
+    overwrites the edit.
+
+    Advisory on purpose. Both directions are real, and neither justifies failing a
+    repository that was correct under the rules it was installed with.
+    """
+    name = "gitignore secret coverage"
+    if not (root / ".git").exists():
+        return CheckResult(name, True, "not a git repository", advisory=True)
+
+    uncovered = [p for p in _SECRET_ADVISORY_PROBE_PATHS if _ignored(root, p) is False]
+    swallowed = [p for p in _SECRET_TRACKABLE_PATHS if _ignored(root, p) is True]
+
+    problems: list[str] = []
+    if uncovered:
+        problems.append(f"not ignored: {', '.join(uncovered)}")
+    if swallowed:
+        problems.append(f"ignored but must stay tracked: {', '.join(swallowed)}")
+    if problems:
+        return CheckResult(
+            name,
+            False,
+            f"{'; '.join(problems)}. "
+            f"{_command(root, 'install-agents --upgrade')} rewrites the managed block.",
+            advisory=True,
+        )
+
+    return CheckResult(
+        name, True, "secret variants covered and .env.example stays tracked", advisory=True
+    )
 
 
 def _count_newer_source_files(root: Path, since: float) -> int:

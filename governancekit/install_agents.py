@@ -1279,6 +1279,62 @@ def _fill_placeholders(
 
 # ── .gitignore management ──────────────────────────────────────────────────────
 
+# The secret paths the managed block ignores, and the single source of truth for
+# `doctor._check_gitignore_secrets`, which probes the same list with `git check-ignore`.
+#
+# They were two lists, and they disagreed: the generator emitted eighteen entries and
+# none of them covered `.env`, while the check failed the repository for exactly that.
+# Every project the kit installed was born failing a mandatory gate on a file the kit
+# itself wrote — observed on CodexBridge, where `.credentials/` was covered and `.env`
+# was not. Two gates over one contract must read one list, or the newer one drifts and
+# the tool ends up refusing what it produces. That is the same defect as the readiness
+# flag on 2026-08-04, where a shell regex and a Python substring judged the same file
+# differently.
+#
+# `.env` is deliberately a family: `.env.local`, `.env.production` and friends carry
+# the same secrets. `.env.example` is re-included because it is documentation by
+# convention and every project has one — a rule that ignores it teaches operators to
+# fight the managed block, and `doctor`'s own tracked-secrets check already exempts it.
+# Suffixes and names that mark a file as a template shipped on purpose, not a secret.
+# `doctor._is_secret_template` imports these: the ignore block must re-include exactly
+# what the tracked-secrets check forgives, or the two disagree again in the other
+# direction — a file the checker calls safe that the block makes untrackable.
+SECRET_TEMPLATE_SUFFIXES: tuple[str, ...] = (".example", ".sample", ".template", ".dist")
+SECRET_TEMPLATE_NAMES: frozenset[str] = frozenset({".env.missing", ".env-example"})
+# Scaffolding the kit itself seeds into `.credentials/`. `.credentials/` as a bare
+# directory pattern would make all of them permanently untrackable: git does not
+# descend into an excluded directory, so a nested `!README.md` never fires. The
+# pattern has to exclude the *contents* and re-include the docs.
+CREDENTIALS_DOC_NAMES: tuple[str, ...] = (".gitignore", ".keep", "README*")
+
+
+def _secret_ignore_patterns() -> tuple[str, ...]:
+    patterns: list[str] = [
+        ".env",
+        ".env.*",
+        ".envrc",
+        # Package-manager and network credential files. Bare names, so no glob can
+        # reach past them — the low-risk half of what the security lens found missing.
+        ".npmrc",
+        ".pypirc",
+        ".netrc",
+        # A private key in a repository is a mistake often enough that the default is
+        # to ignore it. A project that genuinely tracks a key fixture uses `git add -f`
+        # once; the reverse mistake is unrecoverable. Risk accepted in the round record.
+        "*.pem",
+        "*.key",
+        ".credentials/*",
+    ]
+    patterns += [f"!.env{suffix}" for suffix in SECRET_TEMPLATE_SUFFIXES]
+    patterns += [f"!{name}" for name in sorted(SECRET_TEMPLATE_NAMES)]
+    patterns += [f"!.credentials/{name}" for name in CREDENTIALS_DOC_NAMES]
+    patterns += [f"!.credentials/*{suffix}" for suffix in SECRET_TEMPLATE_SUFFIXES]
+    return tuple(patterns)
+
+
+SECRET_IGNORE_PATTERNS: tuple[str, ...] = _secret_ignore_patterns()
+
+
 def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> list[str]:
     """Build .gitignore entries for the managed section.
 
@@ -1314,6 +1370,7 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     entries.append(_SECRETS_FILE)
     entries.append(f"{_STATE_DIR}/context-telemetry.jsonl")
     entries.append(f"{_STATE_DIR}/overwritten/")
+    entries.extend(SECRET_IGNORE_PATTERNS)
     return entries
 
 
