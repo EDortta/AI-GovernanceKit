@@ -46,8 +46,21 @@ _RECORD_DIR = Path(".gk") / "council"
 _SHARED_CONTRACT_PREFIXES: tuple[str, ...] = (".docs/", "templates/")
 _SHARED_CONTRACT_FILES: frozenset[str] = frozenset({"AGENTS.md"})
 
-# Where a delivery states what it did and did not validate.
-_DELIVERY_DOCS: tuple[str, ...] = ("handoff.md", "docs/napkin-lessons.md")
+# Where a delivery states what it did and did not validate. council.md §4 names one
+# place: "the delivery's `Tests` section". `docs/napkin-lessons.md` used to be scanned
+# too and should never have been — it is where rounds are *recorded* and where lessons
+# *discuss* the convention, which is the mention-versus-use confusion written into a
+# constant. Of the three false positives this trigger has produced, one came from it
+# and two from `handoff.md`; both of the latter are encoded as tests below.
+_DELIVERY_DOC = "handoff.md"
+
+# The `Tests` section §4 scopes the trigger to. Handoff entries in the field spell it
+# "Checks/Tests executed" or "Validação e pendências", so match the noun, not a fixed
+# title.
+_TESTS_HEADING_RE = re.compile(
+    r"\b(tests?|checks?|valida|verifica)", re.IGNORECASE
+)
+_HEADING_RE = re.compile(r"^[ \t]*(#{1,6})[ \t]+(\S.*)$")
 
 # Anchored to the start of a line — after list markers and quoting, but not after
 # arbitrary prose. A plain substring matched the sentence that *explains* the
@@ -55,9 +68,13 @@ _DELIVERY_DOCS: tuple[str, ...] = ("handoff.md", "docs/napkin-lessons.md")
 # whose notes discussed the convention convened a council. Same failure the
 # readiness flag had, where the template's own prose satisfied the check it
 # described; both are documentation about a pattern being read as the pattern.
+#
+# The leading quote stays permitted: a real claim is written `not validated:` whether
+# X — council.md's own Enforcement status is one. Quoting cannot separate mention from
+# use here; section scope can, and that is what §4 actually specifies.
 _NOT_VALIDATED_RE = re.compile(
     r"^[ \t]*(?:[-*+][ \t]+|>[ \t]*)*[`\"']?not validated:",
-    re.IGNORECASE | re.MULTILINE,
+    re.IGNORECASE,
 )
 
 # council.md §4's "mechanical sweep" is a shape, not a path, so it can only ever be
@@ -213,6 +230,127 @@ def _staged_content(root: Path, relative_path: str) -> str:
     return blob or ""
 
 
+_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+
+def _added_line_numbers(root: Path, relative_path: str) -> frozenset[int]:
+    """Line numbers this staged diff *adds* to ``relative_path``.
+
+    The trigger speaks about "the delivery" — the entry being written now. Reading
+    the whole file instead made every past entry part of today's delivery, so one
+    `not validated:` written in July convened a council on every commit that touched
+    ``handoff.md`` afterwards, forever, with no way for the current work to satisfy
+    it. A gate the work cannot satisfy trains people to waive by reflex, which costs
+    more than the gate ever caught. Append-only documents accumulate history; a
+    detector that reads them whole inherits all of it.
+    """
+    # Three ways an operator's own git configuration could hand this parser output it
+    # cannot read — a prettifier in `diff.external` or `GIT_EXTERNAL_DIFF`, a textconv
+    # filter, or a `-diff` gitattribute that renders the file as "Binary files differ".
+    # All three produce zero hunks, and zero hunks is indistinguishable from a clean
+    # diff, so the gate would pass silently on the delivery it exists to catch. Failing
+    # open on someone else's config is the worst shape a gate can have.
+    diff = _git(
+        root, "diff", "--cached", "-U0",
+        "--no-ext-diff", "--no-textconv", "--text",
+        "--", relative_path,
+    )
+    if not diff:
+        return frozenset()
+    added: set[int] = set()
+    cursor = 0
+    for line in diff.splitlines():
+        hunk = _HUNK_RE.match(line)
+        if hunk:
+            cursor = int(hunk.group(1))
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            added.add(cursor)
+            cursor += 1
+    return frozenset(added)
+
+
+def _headings(content: str) -> list[tuple[int, int, str]]:
+    """Every markdown heading as (line number, level, title)."""
+    found: list[tuple[int, int, str]] = []
+    for number, line in enumerate(content.splitlines(), 1):
+        match = _HEADING_RE.match(line)
+        if match:
+            found.append((number, len(match.group(1)), match.group(2)))
+    return found
+
+
+def _claim_scope(content: str) -> frozenset[int]:
+    """The lines where a `not validated:` line counts as a claim rather than prose.
+
+    council.md §4 scopes the trigger to "the delivery's `Tests` section". Taken
+    literally that reads as *only* a Tests section, and against the real handoff
+    files it is wrong three times out of four: entries written as one flat bullet
+    list have no subsections at all, so the claims that matter most pass unseen.
+    A gate that misses the genuine article to avoid a false alarm has traded a
+    loud failure for a quiet one.
+
+    The rule is therefore the innermost enclosing heading, and nothing else:
+
+    * a tests/checks heading — a claim, which is §4 read directly;
+    * the entry's own heading, with no subsection between — a claim, because a
+      flat entry *is* its own tests section;
+    * any other subsection (`Entregue`, `Blockers/Risks`) — prose, because that
+      is where a delivery *describes* the marker instead of asserting it.
+
+    An earlier version computed entry spans and scoped to sections within them.
+    It classified the same four real cases identically and had one extra failure
+    mode the span arithmetic invented: an entry mis-written one level too deep
+    was absorbed into the previous entry and fell outside every span — neither
+    claim nor prose, simply unreachable. Structure could not distinguish
+    `### EntryB` from `### Entregue`, so the arithmetic bought nothing and cost a
+    silent miss. The residual ambiguity is real and accepted in the round record:
+    a claim written under a non-tests subsection reads as prose.
+    """
+    lines = content.splitlines()
+    headings = _headings(content)
+    if not headings:
+        return frozenset(range(1, len(lines) + 1))
+
+    entry_level = min(
+        (level for _, level, _ in headings if level > 1),
+        default=min(level for _, level, _ in headings),
+    )
+
+    scope: set[int] = set()
+    claiming = True  # before the first heading: a preamble is nobody's prose
+    for number in range(1, len(lines) + 1):
+        heading = _HEADING_RE.match(lines[number - 1])
+        if heading:
+            level, title = len(heading.group(1)), heading.group(2)
+            claiming = (
+                bool(_TESTS_HEADING_RE.search(title)) or level <= entry_level
+            )
+        elif claiming:
+            scope.add(number)
+    return frozenset(scope)
+
+
+def _declares_not_validated(root: Path, relative_path: str) -> bool:
+    """True when *this* delivery adds a `not validated:` claim where it counts.
+
+    Both scopes come straight from council.md §4 and both were missing: the added
+    lines (not the file) and the delivery's own claim section (not any prose that
+    mentions the marker). Section membership needs the whole file — a bullet
+    appended under an existing heading does not carry that heading in its own diff
+    — so the content is walked while only added line numbers are tested.
+    """
+    added = _added_line_numbers(root, relative_path)
+    if not added:
+        return False
+    content = _staged_content(root, relative_path)
+    in_scope = _claim_scope(content)
+    for number, line in enumerate(content.splitlines(), 1):
+        if number in added and number in in_scope and _NOT_VALIDATED_RE.match(line):
+            return True
+    return False
+
+
 def detect_triggers(root: Path, *, operator_requested: bool = False) -> tuple[Trigger, ...]:
     """Which of council.md §4's triggers this staged diff hits.
 
@@ -237,13 +375,11 @@ def detect_triggers(root: Path, *, operator_requested: bool = False) -> tuple[Tr
             f"changes a contract other repositories inherit: {shown}{more}",
         ))
 
-    for doc in _DELIVERY_DOCS:
-        if doc in paths and _NOT_VALIDATED_RE.search(_staged_content(root, doc)):
-            triggers.append(Trigger(
-                "not-validated",
-                f"the delivery in {doc} still carries a `not validated:` claim",
-            ))
-            break
+    if _DELIVERY_DOC in paths and _declares_not_validated(root, _DELIVERY_DOC):
+        triggers.append(Trigger(
+            "not-validated",
+            f"this delivery adds a `not validated:` claim to {_DELIVERY_DOC}",
+        ))
 
     if len(paths) >= _SWEEP_FILE_THRESHOLD:
         triggers.append(Trigger(

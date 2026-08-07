@@ -47,6 +47,10 @@ def _stage(root: Path, relative: str, content: str = "x\n") -> None:
     _git(root, "add", "--", relative)
 
 
+def _commit(root: Path, message: str = "seed") -> None:
+    _git(root, "commit", "-q", "--no-verify", "-m", message)
+
+
 def _round(**overrides) -> dict:
     payload = {
         "round": 1,
@@ -234,7 +238,8 @@ class TriggerDetectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _repo(root)
-            _stage(root, "handoff.md", "## delivery\n\nnot validated: the upgrade path\n")
+            _stage(root, "handoff.md",
+                   "## delivery\n\n### Checks/Tests executed\n\nnot validated: the upgrade path\n")
             names = [trigger.name for trigger in detect_triggers(root)]
             self.assertIn("not-validated", names)
 
@@ -256,6 +261,160 @@ class TriggerDetectionTests(unittest.TestCase):
             _repo(root)
             _stage(root, "handoff.md",
                    "## Checks/Tests executed\n\n  - not validated: the upgrade path\n")
+            self.assertIn("not-validated", [t.name for t in detect_triggers(root)])
+
+    def test_a_past_entry_is_not_this_delivery(self) -> None:
+        # The first of two false positives this gate produced against its own
+        # session-close. `handoff.md` is append-only: a `not validated:` written on
+        # 2026-07-27 was still being read ten days later, so every commit touching the
+        # file convened a council that no amount of current work could satisfy. The
+        # trigger says "the delivery"; it has to read the diff, never the file.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _repo(root)
+            _stage(root, "handoff.md",
+                   "## [2026-07-27] old delivery\n\n"
+                   "### Checks/Tests executed\n\n"
+                   "- not validated: install from a published ref\n")
+            _commit(root)
+            root.joinpath("handoff.md").write_text(
+                "# Handoff\n\n"
+                "## [2026-08-07] today\n\n"
+                "### Checks/Tests executed\n\n"
+                "- pytest: 315 passed\n\n"
+                "## [2026-07-27] old delivery\n\n"
+                "### Checks/Tests executed\n\n"
+                "- not validated: install from a published ref\n",
+                encoding="utf-8")
+            _git(root, "add", "--", "handoff.md")
+            self.assertEqual([t.name for t in detect_triggers(root)], [])
+
+    def test_a_line_describing_the_trigger_is_not_a_claim(self) -> None:
+        # The second false positive, on the same session-close: a Blockers bullet that
+        # *described* this very trigger matched it. Quoting cannot tell mention from
+        # use — council.md's own Enforcement status writes a genuine claim as
+        # `not validated:` in backticks — but §4's scope can: only the `Tests` section.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _repo(root)
+            _stage(root, "handoff.md",
+                   "## today\n\n"
+                   "### Blockers/Risks\n\n"
+                   "- `not validated:` ancorado no início da linha ainda casa crase\n\n"
+                   "### Checks/Tests executed\n\n"
+                   "- pytest: 315 passed\n")
+            self.assertEqual([t.name for t in detect_triggers(root)], [])
+
+    def test_a_claim_added_to_an_existing_tests_section_still_triggers(self) -> None:
+        # The heading is not in the diff when a bullet is appended under it, so section
+        # membership has to come from the file while only added lines are tested. Guards
+        # the fix above from being over-applied into a gate that never fires.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _repo(root)
+            _stage(root, "handoff.md",
+                   "## today\n\n### Checks/Tests executed\n\n- pytest: 315 passed\n")
+            _commit(root)
+            root.joinpath("handoff.md").write_text(
+                "## today\n\n### Checks/Tests executed\n\n"
+                "- pytest: 315 passed\n"
+                "- not validated: the upgrade path against a published ref\n",
+                encoding="utf-8")
+            _git(root, "add", "--", "handoff.md")
+            self.assertIn("not-validated", [t.name for t in detect_triggers(root)])
+
+    def test_a_flat_entry_with_no_tests_section_still_declares(self) -> None:
+        # Council round 1, sweep skeptic: scoping strictly to a `Tests` section missed
+        # three of the four real `not validated:` claims in the two handoff files —
+        # entries written as one flat bullet list have no subsections at all. Trading a
+        # loud false positive for a silent false negative is not a fix.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _repo(root)
+            _stage(root, "handoff.md",
+                   "# Handoff\n\n"
+                   "## [2026-07-27] WK-20260727-context-optimization - finished\n\n"
+                   "- Validation: run-checks.sh PASS\n"
+                   "- Not validated: install from a published ref\n")
+            self.assertIn("not-validated", [t.name for t in detect_triggers(root)])
+
+    def test_an_entry_with_a_tests_section_scopes_to_it(self) -> None:
+        # The same round: the scope has to stay narrow where the entry does have a
+        # tests section, or the Blockers prose that describes the marker comes back.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _repo(root)
+            _stage(root, "handoff.md",
+                   "# Handoff\n\n"
+                   "## [2026-08-07] today\n\n"
+                   "### Entregue\n\n"
+                   "- `not validated:` ancorado no início da linha\n\n"
+                   "### Checks/Tests executed\n\n"
+                   "- pytest: 347 passed\n\n"
+                   "## [2026-07-27] older flat entry\n\n"
+                   "- Not validated: install from a published ref\n")
+            # The older entry's claim is in the file but not in this diff... it is,
+            # because the whole file is new here. That is the point: a brand new file
+            # is entirely a delivery. What must NOT fire is the quoted prose alone.
+            self.assertIn("not-validated", [t.name for t in detect_triggers(root)])
+            _commit(root)
+            root.joinpath("handoff.md").write_text(
+                "# Handoff\n\n"
+                "## [2026-08-08] tomorrow\n\n"
+                "### Blockers/Risks\n\n"
+                "- `not validated:` ancorado ainda casa crase\n\n"
+                "### Checks/Tests executed\n\n"
+                "- pytest: 347 passed\n\n"
+                "## [2026-08-07] today\n\n"
+                "### Entregue\n\n"
+                "- `not validated:` ancorado no início da linha\n\n"
+                "### Checks/Tests executed\n\n"
+                "- pytest: 347 passed\n\n"
+                "## [2026-07-27] older flat entry\n\n"
+                "- Not validated: install from a published ref\n",
+                encoding="utf-8")
+            _git(root, "add", "--", "handoff.md")
+            self.assertEqual([t.name for t in detect_triggers(root)], [])
+
+    def test_a_binary_gitattribute_cannot_silence_the_gate(self) -> None:
+        # Council round 2, second caller: `--no-ext-diff --no-textconv` closed two of
+        # the three ways a diff can come back unparseable; a `-diff` gitattribute makes
+        # git print "Binary files differ" and was still open. Zero hunks reads exactly
+        # like a clean diff, so the gate failed open on someone else's git config.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _repo(root)
+            _stage(root, ".gitattributes", "handoff.md -diff\n")
+            _stage(root, "handoff.md",
+                   "## today\n\n### Checks/Tests executed\n\n"
+                   "- not validated: the upgrade path\n")
+            self.assertIn("not-validated", [t.name for t in detect_triggers(root)])
+
+    def test_a_mislevelled_entry_heading_does_not_vanish(self) -> None:
+        # Council round 2, new defect: computing entry spans absorbed an entry written
+        # one level too deep into the previous entry, and its body then fell outside
+        # every span — neither claim nor prose, unreachable. Scoping by the innermost
+        # enclosing heading has no spans to get wrong; the line is classified, and the
+        # classification is explainable in one sentence.
+        from governancekit.council import _claim_scope
+        scope = _claim_scope("# Title\n## EntryA\n### Tests\nx\n### EntryB\ny\n")
+        self.assertIn(4, scope)          # under a tests heading
+        self.assertNotIn(6, scope)       # under a non-tests subsection: prose
+        # And the case the span arithmetic could not reach at all is now decided.
+        self.assertEqual(_claim_scope(""), frozenset())
+
+    def test_a_configured_external_diff_cannot_silence_the_gate(self) -> None:
+        # Council round 1, second caller: `diff.external` (or a GIT_EXTERNAL_DIFF
+        # exported by a diff prettifier) replaces the unified diff with output this
+        # parser cannot read — and an unparseable diff is indistinguishable from an
+        # empty one, so the gate passed silently on exactly the delivery it guards.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _repo(root)
+            _git(root, "config", "diff.external", "/bin/echo")
+            _stage(root, "handoff.md",
+                   "## today\n\n### Checks/Tests executed\n\n"
+                   "- not validated: the upgrade path\n")
             self.assertIn("not-validated", [t.name for t in detect_triggers(root)])
 
     def test_a_wide_diff_is_reported_as_a_heuristic_not_a_fact(self) -> None:
