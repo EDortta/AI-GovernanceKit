@@ -1,5 +1,31 @@
 # Handoff
 
+## [2026-08-10] gh-7 — §Sending Email canônica - blocked-on-round-2
+
+- branch: `development`, 37 commits a frente de `origin/main`. `main` intocada.
+- **Nada empurrado.** Nenhum deploy, nenhuma tag.
+- RESUME: `docs/issues/011-sending-email-canonico-[review]/RESUME.md`
+
+### Entregue
+
+Dois commits. Itens 1, 2 e 3 da issue #7 fechados; o item 4 (doctor) parcial — nenhum
+check audita a seção pelo nome, o que existe audita o índice para onde ela aponta e
+detecta contrato obsoleto que ainda a prescreve.
+
+### Council — rodada 1
+
+Três lentes. **19 achados, 19 sobreviveram ao §2, 8 fechados (6 com teste), 11
+abertos.** O decisivo foi contra a própria correção: acrescentar `templates` às listas
+de caminhos gerenciados apagava a pasta `templates/` do projeto no segundo upgrade, em
+silêncio, com o `remove-agents` depois planejando removê-la a confiança 1.0.
+
+**A rodada 2 não rodou.** Pelo §4 a entrega não está gateada.
+
+**Next:** rodar a rodada 2 contra `HEAD`, focada na reversão do `templates` e nas três
+correções do `_WITHDRAWN_CITATIONS`.
+
+---
+
 ## [2026-08-07] Epico 010 — A3, B3 e o gatilho de council - ready-for-review
 
 - branch: `development`, 34 commits a frente de `main`. **Nada empurrado.**
