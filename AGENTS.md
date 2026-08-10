@@ -3,8 +3,8 @@
 
 ## Prefixo obrigatório nas mensagens ao operador
 
-Toda mensagem de texto enviada diretamente ao operador ([OPERATOR_NAME]) **deve começar
-com "[OPERATOR_NAME], "** — incluindo a vírgula e o espaço.
+Toda mensagem de texto enviada diretamente ao operador ({{OPERATOR_NAME}}) **deve começar
+com "{{OPERATOR_NAME}}, "** — incluindo a vírgula e o espaço.
 
 Aplica-se a: respostas no chat, resumos de sessão, perguntas de clarificação.
 Não se aplica a: tool calls, conteúdo de arquivos, corpos de issue/PR.
@@ -79,26 +79,25 @@ Runtime-impacting changes require a security review covering input validation, i
 
 ## Sending Email
 
-When a task requires sending email, credentials and mechanism live in `~/.config/email/` — **local-only, never tracked in any repo**.
+Email transport, sender identity and recipient lists are **project-specific**. Never
+carry them over from another project, from a previous session, or from memory.
 
-| File | Purpose |
-|------|---------|
-| `~/.config/email/credentials.conf` | SMTP account (`[SMTP_ACCOUNT]`) + Gmail app password |
-| `~/.config/email/send.py` | CLI/script helper — reads credentials automatically |
+Before sending anything:
 
-```bash
-# Plain text
-python3 ~/.config/email/send.py --to dest@example.com --subject "Assunto" --body "Corpo"
+1. **Read the project's own email documentation** — named in `docs/required-reading.md`,
+   including its *Fontes locais — fora do checkout* table — to find which transport it
+   uses and where its recipient list lives. If the project documents none, **ask the
+   operator** instead of guessing.
+2. **Resolve every recipient from that list**, including recurring CC rules.
+3. **Never hardcode or commit credentials.**
 
-# HTML body
-python3 ~/.config/email/send.py --to dest@example.com --subject "Assunto" --body "<b>ok</b>" --html
+**The harness-provided user email is not a recipient.** It identifies the owner of the
+logged-in account, which is not necessarily the operator you are talking to, and is
+never a destination by default. Never resolve "send it to me" from it.
 
-# Multiple recipients
-python3 ~/.config/email/send.py --to a@x.com --to b@x.com --subject "Assunto" --body "Corpo"
+Email cannot be recalled. When the recipient is ambiguous, **ask before sending**.
 
-# Body from stdin
-echo "Corpo" | python3 ~/.config/email/send.py --to dest@example.com --subject "Assunto"
-```
-
-Never hardcode or commit credentials. Always read from `~/.config/email/credentials.conf`.
-
+One origin: this text is the canonical section authored in AI-Agents
+(`.docs/workflows/sending-email.md`). Change it there first, then mirror it here — the
+two kits diverging is what made this section prescribe one machine's mechanism as a
+universal contract. See EDortta/AI-Agents#5 and EDortta/AI-GovernanceKit#7.

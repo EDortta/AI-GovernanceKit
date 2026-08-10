@@ -100,6 +100,13 @@ _FRESH_PATHS: list[str] = [
     "new-tag.sh",
     "scripts/install-agents-kit.sh",
     "scripts/agent-worktree.sh",
+    # The shell installer is shipped into the target so a project can self-upgrade
+    # without this tool. It reads templates/ (the reading-index starter, the session
+    # memory starters); shipping the script without them made that documented path
+    # bail at `[[ -f "$block" ]] || return 0` and leave the project with NO reading
+    # index while printing a reassuring "preserved project-local" line.
+    # Council round 2 of AI-Agents#5.
+    "templates",
 ]
 
 # Paths replaced during --upgrade (dirs wholesale, files individually). Excludes the
@@ -115,6 +122,7 @@ _UPGRADE_PATHS: list[str] = [
     "new-tag.sh",
     "scripts/install-agents-kit.sh",
     "scripts/agent-worktree.sh",
+    "templates",
     *_KIT_DOC_PATHS,
 ]
 
@@ -210,6 +218,12 @@ _STATE_VERSION = 1
 # Answers that must never be committed because they are operator/machine-local.
 _OPERATOR_PLACEHOLDERS: frozenset[str] = frozenset({
     "OPERATOR_NAME",
+    # SMTP_ACCOUNT is no longer a fillable slot — it left _PLACEHOLDER_DESCRIPTIONS on
+    # 2026-08-10 when the canonical contract stopped naming an email transport
+    # (AI-Agents#5), so nothing collects it any more. It stays HERE on purpose: an
+    # install made before that date has the operator's address in .gk/operator.json,
+    # and this frozenset is what keeps a known key out of the COMMITTED manifest.
+    # Dropping it would route a legacy value into a tracked file on the next upgrade.
     "SMTP_ACCOUNT",
     "PROJECT_ROOT",
 })
@@ -266,13 +280,21 @@ def _dest_rel(src_rel: str) -> str:
     return src_rel
 
 
-# Session memory: seeded from an EMPTY template, never from the kit's own copy.
-# Copying the source tree's handoff.md/napkin-lessons.md hands every project this
-# repository's session history as if it were the project's own — the same mistake the
-# kit already fixed for README.md.
-_SESSION_MEMORY_TEMPLATES: dict[str, str] = {
+# Seeded from an EMPTY TEMPLATE, never from the kit's own copy. Copying the source
+# tree's file hands every project this repository's content as if it were the project's
+# own — the same mistake the kit already fixed for README.md.
+#
+# required-reading.md joined this list on 2026-08-10, and it is the sharpest case yet.
+# `.docs/workflows/sending-email.md` requires each project to declare its own email
+# transport and recipient list in that index, and the kit's own index declares the kit's
+# — so seeding from it made every new project assert one operator's helper as its
+# transport, in the exact table the contract tells the agent to trust. The rule that
+# forbids carrying a transport across projects was being violated by the installer that
+# ships the rule. Found by council round 1 of AI-Agents#5.
+_TEMPLATE_SEEDS: dict[str, str] = {
     "handoff.md": "templates/handoff.template.md",
     "docs/napkin-lessons.md": "templates/napkin-lessons.template.md",
+    "docs/required-reading.md": "templates/required-reading.template.md",
 }
 
 
@@ -285,10 +307,11 @@ def _resolve_src(src_root: Path, rel: str) -> Path:
     when present and falls back to ``docs/`` — so the installer reads correctly from
     both a restructured source and a legacy one.
 
-    Session-memory files resolve to their empty template instead of the source's own
-    file, so a target is never seeded with the kit's history.
+    Template-seeded files (``_TEMPLATE_SEEDS``) resolve to their empty template instead
+    of the source's own file, so a target is never seeded with the kit's history — nor,
+    for the reading index, with the kit's own local sources and email transport.
     """
-    template = _SESSION_MEMORY_TEMPLATES.get(rel)
+    template = _TEMPLATE_SEEDS.get(rel)
     if template is not None:
         candidate = src_root / template
         if candidate.is_file():
@@ -1148,7 +1171,6 @@ _PLACEHOLDER_DESCRIPTIONS: dict[str, str] = {
     "OPERATOR_NAME": "operator / project owner name (used in agent greetings)",
     "GITHUB_OWNER": "GitHub username or organisation that owns the repo",
     "PROJECT_SLUG": "short identifier for this project (used in work_ids and logs, e.g. my-app)",
-    "SMTP_ACCOUNT": "SMTP email account (e.g. you@yourdomain.com)",
     "SMTP_DOMAIN": "email domain (e.g. yourdomain.com)",
     "ORG_NAME": "organisation or company name",
     "PIX_KEY_UUID": "PIX random key UUID (Brazil payment system)",

@@ -914,9 +914,9 @@ def _parse_local_sources(root: Path) -> tuple[list[LocalSource], list[str]]:
             continue
         if not line.lstrip().startswith("|"):
             continue
-        seen_table_line = True
         row = _LOCAL_SOURCE_ROW_RE.match(line)
         if not row:
+            seen_table_line = True
             rejected.append(line.strip())
             continue
         path, requirement, purpose = (group.strip() for group in row.groups())
@@ -924,6 +924,13 @@ def _parse_local_sources(root: Path) -> tuple[list[LocalSource], list[str]]:
             continue
         if path.lower() in {"caminho", "path"}:  # the header row
             continue
+        # Only a DATA row counts as "this section has a table". The flag used to be set
+        # on the header and the separator too, which made a header-only table — the
+        # exact scaffold the kit now seeds into every new project — report as
+        # "a table but no readable rows". A project that declares nothing is a valid
+        # state, and the kit must not accuse its own starter of being malformed.
+        # Council round 2 of AI-Agents#5.
+        seen_table_line = True
         if not purpose:
             rejected.append(line.strip())
             continue
@@ -935,6 +942,9 @@ def _parse_local_sources(root: Path) -> tuple[list[LocalSource], list[str]]:
             optional=any(word in requirement.lower() for word in _OPTIONAL_WORDS),
             purpose=purpose,
         ))
+    # Unreachable by construction now that the flag marks data rows only: every data
+    # row lands in `found` or in `rejected`. Kept as a tripwire — if a future branch
+    # adds a third outcome, this says so instead of silently reporting zero sources.
     if seen_table_line and not found and not rejected:
         rejected.append("the section has a table but no readable rows")
     return found, rejected
@@ -1054,6 +1064,15 @@ def _looks_like_a_directory(candidate: str) -> bool:
     return not exists and not expanded.suffix
 
 
+# Paths the kit ITSELF once prescribed in a contract and has since revoked. A citation
+# of one of these is evidence of a stale contract in the target, never of a missing
+# index row — see the branch in `_check_local_sources_indexed`.
+_WITHDRAWN_CITATIONS: frozenset[str] = frozenset({
+    "~/.config/email/send.py",
+    "~/.config/email/credentials.conf",
+})
+
+
 def _check_local_sources_indexed(root: Path) -> CheckResult:
     """Advisory: a local path cited by a contract should be in the reading index.
 
@@ -1084,6 +1103,27 @@ def _check_local_sources_indexed(root: Path) -> CheckResult:
     if not unindexed:
         return CheckResult(name, True, "every local path a contract cites is indexed",
                            advisory=True)
+
+    # A citation can come from a contract the kit has WITHDRAWN. Telling the operator to
+    # index it is telling them to finish the corruption: these exact paths are the email
+    # transport that AI-Agents#5 retired, and a target whose AGENTS.md was locally edited
+    # keeps the old contract (protected files are never overwritten) with the corrected
+    # one waiting unread in AGENTS.md.kit-new. Decidable by path, not by heuristic —
+    # this set holds only what the kit itself once prescribed and has since revoked.
+    # Council round 2 of AI-Agents#5.
+    withdrawn = sorted(path for path in unindexed if path in _WITHDRAWN_CITATIONS)
+    if withdrawn:
+        where = sorted({cited[path] for path in withdrawn})
+        return CheckResult(
+            name,
+            False,
+            f"{', '.join(where)} still prescribes an email transport this kit has "
+            f"WITHDRAWN ({', '.join(withdrawn)}). Do NOT add these to "
+            f"{_INDEX_REL} — transport and recipients are per-project since "
+            f"AI-Agents#5. If a `.kit-new` file is beside it, adopt that version; "
+            f"otherwise run `install-agents --upgrade`.",
+            advisory=True,
+        )
 
     shown = ", ".join(f"{path} (in {cited[path]})" for path in unindexed[:4])
     more = f" (+{len(unindexed) - 4} more)" if len(unindexed) > 4 else ""

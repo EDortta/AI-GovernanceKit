@@ -330,5 +330,67 @@ class CompletenessTests(unittest.TestCase):
             self.assertTrue(_check_local_sources_indexed(root).passed)
 
 
+class WithdrawnAndEmptyTableTests(unittest.TestCase):
+    """Council round 2 of AI-Agents#5 — two hints that were actively harmful."""
+
+    def test_a_table_with_no_rows_is_a_valid_declaration_of_nothing(self) -> None:
+        # The kit seeds exactly this scaffold into every new project. Reading it as
+        # "a table but no readable rows" made the kit accuse its own starter of being
+        # malformed, on day one, in every install.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _index(root, "")
+
+            result = _check_local_reading_sources(root)
+
+            self.assertTrue(result.passed, result.message)
+            self.assertEqual(result.message, "no local sources indexed")
+            self.assertNotIn("cannot read", result.message)
+
+    def test_a_genuinely_malformed_row_is_still_rejected(self) -> None:
+        # The relaxation above must not blind the check to a real broken row.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _index(root, "| `~/.config/thing.conf` |  |\n")
+
+            result = _check_local_reading_sources(root)
+
+            self.assertFalse(result.passed)
+            self.assertIn("cannot read", result.message)
+
+    def test_a_withdrawn_transport_citation_is_not_a_missing_index_row(self) -> None:
+        # A target whose AGENTS.md was locally edited keeps the OLD contract; the
+        # corrected one waits in AGENTS.md.kit-new. Telling the operator to index the
+        # cited path is telling them to finish the corruption AI-Agents#5 undid.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _index(root, "")
+            (root / "AGENTS.md").write_text(
+                "[MANDATORY] Sempre use `~/.config/email/send.py` para enviar.\n",
+                encoding="utf-8",
+            )
+
+            result = _check_local_sources_indexed(root)
+
+            self.assertFalse(result.passed)
+            self.assertIn("WITHDRAWN", result.message)
+            self.assertIn("kit-new", result.message)
+            self.assertNotIn("Add a `## Fontes locais` section", result.message)
+
+    def test_an_ordinary_uncited_path_still_gets_the_indexing_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _index(root, "")
+            (root / "AGENTS.md").write_text(
+                "Leia `~/.config/algum-perfil.md` antes.\n", encoding="utf-8",
+            )
+
+            result = _check_local_sources_indexed(root)
+
+            self.assertFalse(result.passed)
+            self.assertIn("algum-perfil.md", result.message)
+            self.assertNotIn("WITHDRAWN", result.message)
+
+
 if __name__ == "__main__":
     unittest.main()

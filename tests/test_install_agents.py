@@ -576,22 +576,86 @@ class InstallAgentsTests(unittest.TestCase):
             root = Path(temp_dir)
             doc = root / "AGENTS.md"
             doc.write_text(
-                "policy [OPERATOR_NAME] current {{SMTP_ACCOUNT}}\n",
+                "policy [OPERATOR_NAME] current {{ORG_NAME}}\n",
                 encoding="utf-8",
             )
 
             values = ia._fill_placeholders(
                 root,
                 ["AGENTS.md"],
-                known={"OPERATOR_NAME": "Esteban", "SMTP_ACCOUNT": "esteban@example.com"},
+                known={"OPERATOR_NAME": "Esteban", "ORG_NAME": "Acme"},
             )
 
             self.assertEqual(
                 doc.read_text(encoding="utf-8"),
-                "policy [OPERATOR_NAME] current esteban@example.com\n",
+                "policy [OPERATOR_NAME] current Acme\n",
             )
             self.assertEqual(values["OPERATOR_NAME"], "Esteban")
-            self.assertEqual(values["SMTP_ACCOUNT"], "esteban@example.com")
+            self.assertEqual(values["ORG_NAME"], "Acme")
+
+
+class SendingEmailRetirementTests(unittest.TestCase):
+    """AI-Agents#5 and its council rounds, on the Python installer's side."""
+
+    def test_the_reading_index_is_seeded_from_a_template_not_from_the_kit(self) -> None:
+        # The kit's own index declares the kit's email transport and local sources.
+        # Copying it into a new project made that project assert one operator's helper
+        # as its own transport, in the exact table the email contract tells the agent
+        # to trust — the cross-project carryover AI-Agents#5 exists to forbid.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            src = Path(temp_dir) / "src"
+            (src / "docs").mkdir(parents=True)
+            (src / "templates").mkdir()
+            (src / "docs" / "required-reading.md").write_text(
+                "| `~/.config/email/send.py` | opcional | o transporte DAQUI |\n",
+                encoding="utf-8",
+            )
+            (src / "templates" / "required-reading.template.md").write_text(
+                "# Required Reading\n\n## Fontes locais\n", encoding="utf-8",
+            )
+
+            resolved = ia._resolve_src(src, "docs/required-reading.md")
+
+            self.assertEqual(resolved, src / "templates" / "required-reading.template.md")
+            self.assertNotIn("send.py", resolved.read_text(encoding="utf-8"))
+
+    def test_the_shell_installer_is_never_shipped_without_its_templates(self) -> None:
+        # scripts/install-agents-kit.sh is shipped so a project can self-upgrade
+        # without this tool. It reads templates/; without them it bails silently and
+        # leaves the project with no reading index at all.
+        self.assertIn("scripts/install-agents-kit.sh", ia._FRESH_PATHS)
+        self.assertIn("templates", ia._FRESH_PATHS)
+        self.assertIn("scripts/install-agents-kit.sh", ia._UPGRADE_PATHS)
+        self.assertIn("templates", ia._UPGRADE_PATHS)
+
+    def test_smtp_account_is_no_longer_collected_but_stays_operator_local(self) -> None:
+        # Not fillable: the canonical contract names no transport, so an install cannot
+        # know whether the project sends email, let alone through SMTP.
+        self.assertNotIn("SMTP_ACCOUNT", ia._PLACEHOLDER_DESCRIPTIONS)
+        # Still classified: an install predating the retirement holds the operator's
+        # address in .gk/operator.json, and this set is what keeps it out of the
+        # COMMITTED manifest. Dropping it would publish a legacy value on next upgrade.
+        self.assertIn("SMTP_ACCOUNT", ia._OPERATOR_PLACEHOLDERS)
+
+    def test_a_legacy_value_is_never_substituted_and_never_committed(self) -> None:
+        # An install predating the retirement carries the operator's address. It must
+        # not be rendered into any file — the token is no longer declared — and the
+        # value it still holds must stay operator-local, out of the tracked manifest.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            doc = root / "AGENTS.md"
+            doc.write_text("contato: {{SMTP_ACCOUNT}}\n", encoding="utf-8")
+
+            values = ia._fill_placeholders(
+                root, ["AGENTS.md"], known={"SMTP_ACCOUNT": "legacy@example.invalid"},
+            )
+
+            self.assertEqual(doc.read_text(encoding="utf-8"), "contato: {{SMTP_ACCOUNT}}\n")
+            # Retained, so an upgrade does not lose what the operator once answered...
+            self.assertEqual(values.get("SMTP_ACCOUNT"), "legacy@example.invalid")
+            # ...and retained on the side that never reaches a committed file.
+            self.assertIn("SMTP_ACCOUNT", ia._OPERATOR_PLACEHOLDERS)
+            self.assertNotIn("SMTP_ACCOUNT", ia._SENSITIVE_PLACEHOLDERS)
 
 
 if __name__ == "__main__":
