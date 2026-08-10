@@ -1,5 +1,54 @@
 # Handoff
 
+## [2026-08-10] gh-7 — §Sending Email canônica - released, 6 achados abertos
+
+- branch: `development`, empurrada (`origin/development` **criada** nesta sessão; não
+  existia). `main` intocada, 45 commits atrás — consolidação não foi feita.
+- **Nenhum deploy.** O AI-Agents é que ganhou tag: `v1.2.0`.
+- RESUME: `docs/issues/011-sending-email-canonico-[review]/RESUME.md`
+
+> A entrada abaixo, `blocked-on-round-2`, é histórico: a rodada 2 rodou no mesmo dia.
+
+### Entregue
+
+Itens 1, 2 e 3 da issue #7 fechados; item 4 (o `doctor` auditar a seção) parcial —
+nenhum check a audita pelo nome; o que existe audita o índice para onde ela aponta e
+detecta contrato obsoleto que ainda a prescreve.
+
+`DEFAULT_REF = "v1.2.0"` com checksum verificado pela URL exata que o `_download` usa.
+Cadeia conferida no **elo 4**: install real num projeto novo entrega tudo, e não
+reivindica o `templates/` do projeto.
+
+### Council
+
+Duas rodadas. **19 achados na r1** (8 sobreviveram ao §2, 6 viraram teste),
+**16 distintos na r2**, dos quais **10 fechados** por decisão do operador.
+
+A r2 pegou duas coisas minhas que importam: eu revertera a entrada `templates` deste
+instalador por perda de dados e não olhara o instalador shell, que tinha o mesmo
+defeito em release; e eu inventara três dos quatro números do registro da r1 num
+documento cuja função, pelo §4, é justamente substituir palpite por medida.
+
+### Aberto — 6 achados
+
+Ordem sugerida, os dois primeiros porque ainda podem apagar arquivo:
+
+1. **R2-2** — manifesto envenenado não tem reparo. `prune_missing` só descarta entrada
+   cujo arquivo sumiu, então a entrada sobrevive; o `remove-agents` remove a confiança
+   1.0 sem revisão. Precisa de um `--repair-manifest` explícito, não de efeito colateral.
+2. **R2-16'** — `_do_upgrade` sobrescreve arquivos de topo sem hash-check e sem stash,
+   e o comentário do `doctor` afirma o contrário ("protected files are never
+   overwritten"). O `.kit-new` nunca é escrito por este instalador.
+3. **R2-15** — `configure` não persiste em `.gk/`, então o `--upgrade` seguinte desfaz.
+4. **R2-11** — entradas de napkin sem as quatro contagens que o §4 exige.
+5. **R2-17** — `_is_kit_owned` usa `startswith("docs/")` sem `as_posix()`.
+6. **R2-18** — sem gate de deriva entre os dois kits; "uma origem só" é prosa.
+
+**Next:** decidir se `development` vai para `main` (hoje 45 atrás), e abrir issue para
+R2-2 e R2-16'.
+
+---
+
 ## [2026-08-10] gh-7 — §Sending Email canônica - blocked-on-round-2
 
 - branch: `development`, 37 commits a frente de `origin/main`. `main` intocada.
