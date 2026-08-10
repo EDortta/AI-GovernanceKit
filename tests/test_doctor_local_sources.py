@@ -448,6 +448,46 @@ class WithdrawnAndEmptyTableTests(unittest.TestCase):
             self.assertIn("recipients.conf", result.message)
             self.assertIn("WITHDRAWN", result.message)
 
+    def test_the_stale_sentence_never_starts_with_an_orphan_connective(self) -> None:
+        # R2-13: the sentence was written as a suffix and reused verbatim on the
+        # nothing-else-unindexed path, so the operator's only line began "SEPARATELY:"
+        # with nothing before it to be separate from.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _index(root, "| `~/.config/email/send.py` | opcional | transporte |\n")
+            (root / "AGENTS.md").write_text(
+                "[MANDATORY] Envie por `~/.config/email/send.py`.\n", encoding="utf-8",
+            )
+
+            message = _check_local_sources_indexed(root).message
+
+            self.assertFalse(message.startswith("SEPARATELY"))
+            self.assertIn("WITHDRAWN", message)
+
+    def test_a_project_declaration_is_not_masked_by_a_stale_kit_contract(self) -> None:
+        # R2-12: `cited.setdefault` let whichever file the glob reached first speak for
+        # the path. With a legacy AGENTS.md present, the project's own declaration of
+        # the same transport vanished and the operator was told "do NOT index those"
+        # about a path their own docs declare — permanently, with no way to clear it.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _index(root, "")
+            (root / "AGENTS.md").write_text(
+                "[MANDATORY] Envie por `~/.config/email/send.py`.\n", encoding="utf-8",
+            )
+            (root / "docs" / "project-rules.md").write_text(
+                "Este projeto usa `~/.config/email/send.py` como transporte próprio.\n",
+                encoding="utf-8",
+            )
+
+            message = _check_local_sources_indexed(root).message
+
+            # The stale kit contract is still named...
+            self.assertIn("WITHDRAWN", message)
+            # ...and the project's own declaration still gets the ordinary remedy.
+            self.assertIn("absent from", message)
+            self.assertIn("send.py", message.split("SEPARATELY")[0])
+
 
 if __name__ == "__main__":
     unittest.main()

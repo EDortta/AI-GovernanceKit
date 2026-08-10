@@ -1095,7 +1095,11 @@ def _check_local_sources_indexed(root: Path) -> CheckResult:
     """
     name = "local sources indexed"
     indexed = {source.path for source in _local_sources(root)}
-    cited: dict[str, str] = {}
+    # Every citer, not the first. `setdefault` let whichever file the glob reached
+    # first speak for the path: a legacy AGENTS.md then masked the project's own
+    # declaration of the same transport, and the operator was told "do NOT index those"
+    # about a path their own docs declare — with no way to clear it. Council round 2.
+    cited_by: dict[str, list[str]] = {}
     for pattern in _CONTRACT_GLOBS:
         for path in sorted(root.glob(pattern)):
             if not path.is_file() or path.name in _CONTRACT_SCAN_SKIP:
@@ -1108,14 +1112,26 @@ def _check_local_sources_indexed(root: Path) -> CheckResult:
                 candidate = match.group(1)
                 if _looks_like_a_directory(candidate):
                     continue
-                cited.setdefault(candidate, str(path.relative_to(root)))
+                cited_by.setdefault(candidate, []).append(
+                    path.relative_to(root).as_posix()
+                )
 
-    unindexed = sorted(path for path in cited if path not in indexed)
-    stale = sorted(
-        path for path, where in cited.items()
-        if path in _WITHDRAWN_CITATIONS and _is_kit_owned(where)
+    # One citer decides nothing on its own. A path is WITHDRAWN-evidence only when a
+    # KIT-OWNED file cites it; it is a project declaration when any project-owned file
+    # does. Both can be true at once, and then both are reported.
+    def _first_citer(path: str) -> str:
+        return cited_by[path][0]
+
+    withdrawn = sorted(
+        path for path, wheres in cited_by.items()
+        if path in _WITHDRAWN_CITATIONS and any(_is_kit_owned(w) for w in wheres)
     )
-    if not unindexed and not stale:
+    project_declared = {
+        path for path, wheres in cited_by.items()
+        if any(not _is_kit_owned(w) for w in wheres)
+    }
+    unindexed = sorted(path for path in cited_by if path not in indexed)
+    if not unindexed and not withdrawn:
         return CheckResult(name, True, "every local path a contract cites is indexed",
                            advisory=True)
 
@@ -1140,23 +1156,31 @@ def _check_local_sources_indexed(root: Path) -> CheckResult:
     # 3. It is independent of indexing. The operator who followed the OLD advice and
     #    indexed the withdrawn path saw a clean PASS while still carrying the retired
     #    contract — the population the wrong message created was the one left blind.
-    withdrawn = sorted(
-        path for path, where in cited.items()
-        if path in _WITHDRAWN_CITATIONS and _is_kit_owned(where)
-    )
-    stale_note = ""
+    stale_sentence = ""
     if withdrawn:
-        where = sorted({cited[path] for path in withdrawn if _is_kit_owned(cited[path])})
-        stale_note = (
-            f" SEPARATELY: {', '.join(where)} still prescribes an email transport this "
-            f"kit has WITHDRAWN ({', '.join(withdrawn)}) — do NOT index those; adopt "
-            f"the `.kit-new` version beside it, or run `install-agents --upgrade`."
+        where = sorted({
+            w for path in withdrawn for w in cited_by[path] if _is_kit_owned(w)
+        })
+        stale_sentence = (
+            f"{', '.join(where)} still prescribes an email transport this kit has "
+            f"WITHDRAWN ({', '.join(withdrawn)}) — do NOT index those; adopt the "
+            f"`.kit-new` version beside it, or run `install-agents --upgrade`."
         )
-        unindexed = [path for path in unindexed if path not in set(withdrawn)]
-        if not unindexed:
-            return CheckResult(name, False, stale_note.strip(), advisory=True)
+        # A path the PROJECT also declares stays in the ordinary list: indexing it is
+        # the right thing for the project's own copy, even while the kit's stale
+        # contract is reported beside it.
+        unindexed = [
+            path for path in unindexed
+            if path not in set(withdrawn) or path in project_declared
+        ]
 
-    shown = ", ".join(f"{path} (in {cited[path]})" for path in unindexed[:4])
+    if not unindexed:
+        # R2-13: the sentence used to be written as a suffix and reused verbatim here,
+        # so the operator's only line began with an orphan "SEPARATELY:".
+        return CheckResult(name, False, stale_sentence, advisory=True)
+
+    stale_note = f" SEPARATELY: {stale_sentence}" if stale_sentence else ""
+    shown = ", ".join(f"{path} (in {_first_citer(path)})" for path in unindexed[:4])
     more = f" (+{len(unindexed) - 4} more)" if len(unindexed) > 4 else ""
     # `docs/` is the project's territory and `--upgrade` never writes prose there, so
     # a project installed before B3 will not receive the section from an upgrade — by

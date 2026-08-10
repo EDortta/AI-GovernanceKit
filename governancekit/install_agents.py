@@ -113,10 +113,13 @@ _FRESH_PATHS: list[str] = [
 # manifest, so the SECOND upgrade deletes the project's files as kit-owned leftovers —
 # silently — and `remove-agents` then plans to delete them at confidence 1.0.
 #
-# The self-upgrade path it was meant to repair is blocked one step earlier anyway: the
-# shipped shell installer reads `.credentials/identity.json` and exits 8, while this
-# installer writes identity to `.gk/operator.json`. So the entry bought nothing and
-# risked a project's source. The silent bail is fixed where it belongs: the shell
+# The self-upgrade path it was meant to repair is degraded, not blocked, and the first
+# cut of this comment overstated it. The shipped shell installer reads
+# `.credentials/identity.json` while this installer writes identity to
+# `.gk/operator.json`, so the two do not share the operator's answers: with stdin closed
+# the shell run exits 8, but on a TTY — how an operator actually self-upgrades — it
+# prompts and completes. So the entry did buy something; it just did not buy enough to
+# be worth claiming the project's own directory. The silent bail is fixed where it belongs: the shell
 # installer now names the index it failed to create instead of leaving on a bare
 # `return 0` under a line that claimed the file had been preserved.
 #
@@ -237,6 +240,7 @@ _OPERATOR_PLACEHOLDERS: frozenset[str] = frozenset({
     # and this frozenset is what keeps a known key out of the COMMITTED manifest.
     # Dropping it would route a legacy value into a tracked file on the next upgrade.
     "SMTP_ACCOUNT",
+    "SMTP_DOMAIN",
     "PROJECT_ROOT",
 })
 
@@ -1188,13 +1192,19 @@ _PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]+)\}\}")
 _RETIRED_PLACEHOLDERS: dict[str, str] = {
     "SMTP_ACCOUNT": "retired 2026-08-10 (AI-Agents#5): the canonical contract names no "
                     "email transport, so nothing asks for this any more.",
+    # Same field one over, and the council caught the asymmetry: it was left describable
+    # while its sibling was retired, AND it was outside _OPERATOR_PLACEHOLDERS — so a
+    # legacy stored answer would have been written into the COMMITTED manifest, the
+    # exact hazard the SMTP_ACCOUNT comment says that set exists to prevent. No shipped
+    # file has ever carried the token, so nothing collected it either.
+    "SMTP_DOMAIN": "retired 2026-08-10 (AI-Agents#5): transport configuration, and no "
+                   "kit file ever carried the slot.",
 }
 
 _PLACEHOLDER_DESCRIPTIONS: dict[str, str] = {
     "OPERATOR_NAME": "operator / project owner name (used in agent greetings)",
     "GITHUB_OWNER": "GitHub username or organisation that owns the repo",
     "PROJECT_SLUG": "short identifier for this project (used in work_ids and logs, e.g. my-app)",
-    "SMTP_DOMAIN": "email domain (e.g. yourdomain.com)",
     "ORG_NAME": "organisation or company name",
     "PIX_KEY_UUID": "PIX random key UUID (Brazil payment system)",
     "PIX_HOLDER_NAME": "full name registered with the PIX key",
