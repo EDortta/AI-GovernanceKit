@@ -237,14 +237,18 @@ class CompletenessTests(unittest.TestCase):
             self.assertIn("send.py", result.message)
 
     def test_indexing_the_cited_path_closes_it(self) -> None:
+        # The example path is deliberately NOT the retired email helper: that one is in
+        # `_WITHDRAWN_CITATIONS`, where indexing is the wrong remedy and the check stays
+        # loud on purpose. Using it here tested the generic property through the one
+        # path that is an exception to it.
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _index(
                 root,
-                "| `~/.config/email/send.py` | opcional | transporte de e-mail |\n",
+                "| `~/.config/acme/roster.json` | opcional | lista de plantão |\n",
             )
             (root / "AGENTS.md").write_text(
-                "Envie por `~/.config/email/send.py`.\n", encoding="utf-8"
+                "Consulte `~/.config/acme/roster.json`.\n", encoding="utf-8"
             )
 
             self.assertTrue(_check_local_sources_indexed(root).passed)
@@ -390,6 +394,59 @@ class WithdrawnAndEmptyTableTests(unittest.TestCase):
             self.assertFalse(result.passed)
             self.assertIn("algum-perfil.md", result.message)
             self.assertNotIn("WITHDRAWN", result.message)
+
+    def test_indexing_a_withdrawn_path_does_not_close_it(self) -> None:
+        # The operator who followed the OLD advice and indexed the retired transport
+        # saw a clean PASS while still carrying the retired contract. The population
+        # the wrong message created was the one the first fix left blind.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _index(root, "| `~/.config/email/send.py` | opcional | transporte |\n")
+            (root / "AGENTS.md").write_text(
+                "[MANDATORY] Envie por `~/.config/email/send.py`.\n", encoding="utf-8",
+            )
+
+            result = _check_local_sources_indexed(root)
+
+            self.assertFalse(result.passed)
+            self.assertIn("WITHDRAWN", result.message)
+
+    def test_a_project_declaring_that_path_as_its_own_is_not_accused(self) -> None:
+        # docs/ is the project's territory. A project naming the helper there is
+        # declaring its transport, which the contract requires — not carrying a stale
+        # kit file. Deciding by path alone told it "do NOT add these to your index",
+        # forbidding the one action §Sending Email step 1 demands.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _index(root, "")
+            (root / "docs" / "project-rules.md").write_text(
+                "Este projeto envia release mail por `~/.config/email/send.py`.\n",
+                encoding="utf-8",
+            )
+
+            result = _check_local_sources_indexed(root)
+
+            self.assertNotIn("WITHDRAWN", result.message)
+            self.assertIn("send.py", result.message)
+
+    def test_a_withdrawn_citation_never_silences_a_genuinely_missing_row(self) -> None:
+        # The first cut returned early, dropping every other unindexed path — including
+        # the recipient-list file whose absence from the index IS the 2026-08-04
+        # incident this check exists for.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _index(root, "")
+            (root / "AGENTS.md").write_text(
+                "Envie por `~/.config/email/send.py`; lista em "
+                "`~/.config/acme/recipients.conf`.\n",
+                encoding="utf-8",
+            )
+
+            result = _check_local_sources_indexed(root)
+
+            self.assertFalse(result.passed)
+            self.assertIn("recipients.conf", result.message)
+            self.assertIn("WITHDRAWN", result.message)
 
 
 if __name__ == "__main__":

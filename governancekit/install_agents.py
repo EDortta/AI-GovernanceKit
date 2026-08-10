@@ -100,14 +100,26 @@ _FRESH_PATHS: list[str] = [
     "new-tag.sh",
     "scripts/install-agents-kit.sh",
     "scripts/agent-worktree.sh",
-    # The shell installer is shipped into the target so a project can self-upgrade
-    # without this tool. It reads templates/ (the reading-index starter, the session
-    # memory starters); shipping the script without them made that documented path
-    # bail at `[[ -f "$block" ]] || return 0` and leave the project with NO reading
-    # index while printing a reassuring "preserved project-local" line.
-    # Council round 2 of AI-Agents#5.
-    "templates",
 ]
+# `templates` is deliberately NOT installed, and the reason is worth keeping.
+#
+# It was added on 2026-08-10 so the shell installer shipped into the target could find
+# templates/required-reading.template.md instead of bailing silently. The council of
+# that delivery reproduced what it actually cost: `templates` is the commonest
+# top-level directory name in web projects, every kit path here is unprefixed, and the
+# consequences compound — `_update_gitignore` writes it as a BARE pattern, so git
+# ignores `templates/` at ANY depth; `_do_fresh --force` rmtree's the project's own
+# tree with no backup; and `_write_state` rglobs the destination into the TRACKED
+# manifest, so the SECOND upgrade deletes the project's files as kit-owned leftovers —
+# silently — and `remove-agents` then plans to delete them at confidence 1.0.
+#
+# The self-upgrade path it was meant to repair is blocked one step earlier anyway: the
+# shipped shell installer reads `.credentials/identity.json` and exits 8, while this
+# installer writes identity to `.gk/operator.json`. So the entry bought nothing and
+# risked a project's source. The silent bail is fixed where it belongs — the shell
+# installer now fails loudly instead of returning 0.
+#
+# Reinstating this needs a namespaced destination (`.docs/templates/`), not the root.
 
 # Paths replaced during --upgrade (dirs wholesale, files individually). Excludes the
 # seed paths so project-filled overview/limits/required-reading/napkin survive.
@@ -122,7 +134,6 @@ _UPGRADE_PATHS: list[str] = [
     "new-tag.sh",
     "scripts/install-agents-kit.sh",
     "scripts/agent-worktree.sh",
-    "templates",
     *_KIT_DOC_PATHS,
 ]
 
@@ -1167,6 +1178,17 @@ def _resolve_track_kit_docs(root: Path, cli_value: bool | None) -> bool:
 
 _PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]+)\}\}")
 
+# Tokens no longer COLLECTED (they are gone from _PLACEHOLDER_DESCRIPTIONS, so nothing
+# prompts for them) but still SUBSTITUTED when a stored value exists. Without this a
+# target installed before the retirement dead-ends: an upgrade at a ref whose files
+# still carry `{{SMTP_ACCOUNT}}` leaves it raw, `doctor` fails non-advisory with "kit
+# not configured", and `configure` cannot fix it because its known-token set is built
+# from _PLACEHOLDER_DESCRIPTIONS too. Found by the council of AI-Agents#5 / GK#7.
+_RETIRED_PLACEHOLDERS: dict[str, str] = {
+    "SMTP_ACCOUNT": "retired 2026-08-10 (AI-Agents#5): the canonical contract names no "
+                    "email transport, so nothing asks for this any more.",
+}
+
 _PLACEHOLDER_DESCRIPTIONS: dict[str, str] = {
     "OPERATOR_NAME": "operator / project owner name (used in agent greetings)",
     "GITHUB_OWNER": "GitHub username or organisation that owns the repo",
@@ -1214,7 +1236,9 @@ def _fill_placeholders(
         except OSError:
             continue
         for token in _PLACEHOLDER_RE.findall(text):
-            if token in _PLACEHOLDER_DESCRIPTIONS:
+            # Retired tokens are collected so a stored value can still be applied to a
+            # legacy file that carries them; they are never asked about below.
+            if token in _PLACEHOLDER_DESCRIPTIONS or token in _RETIRED_PLACEHOLDERS:
                 placeholder_files.setdefault(token, []).append(path)
 
     known = known or {}
@@ -1223,7 +1247,12 @@ def _fill_placeholders(
         return dict(known)
 
     remembered = {t: known[t] for t in placeholder_files if known.get(t)}
-    unknown = [t for t in sorted(placeholder_files) if t not in remembered]
+    # A retired token with no stored value is not "unknown" — there is nobody left to
+    # ask. Reporting it would send the operator to `configure`, which cannot fill it.
+    unknown = [
+        t for t in sorted(placeholder_files)
+        if t not in remembered and t not in _RETIRED_PLACEHOLDERS
+    ]
 
     if not sys.stdin.isatty():
         # Unattended: re-apply what we already know rather than leaving raw templates
@@ -1248,6 +1277,11 @@ def _fill_placeholders(
 
         values = {}
         for token in sorted(placeholder_files):
+            if token in _RETIRED_PLACEHOLDERS:
+                # Apply what is stored, ask nothing: the slot no longer exists.
+                if remembered.get(token):
+                    values[token] = remembered[token]
+                continue
             desc = _PLACEHOLDER_DESCRIPTIONS.get(token, "")
             current = remembered.get(token)
             prompt = f"  {{{{{token}}}}}"

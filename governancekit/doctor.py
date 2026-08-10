@@ -1064,6 +1064,17 @@ def _looks_like_a_directory(candidate: str) -> bool:
     return not exists and not expanded.suffix
 
 
+def _is_kit_owned(relative_path: str) -> bool:
+    """Is this contract the kit's to replace, or the project's to write?
+
+    The distinction decides whether a citation is evidence of a stale kit file or of a
+    project exercising the rule that it must declare its own transport. `docs/` is the
+    project's territory by the ownership rule no upgrade crosses; `AGENTS.md`, the
+    adapter mirrors and `.docs/` are the kit's.
+    """
+    return not relative_path.startswith("docs/")
+
+
 # Paths the kit ITSELF once prescribed in a contract and has since revoked. A citation
 # of one of these is evidence of a stale contract in the target, never of a missing
 # index row — see the branch in `_check_local_sources_indexed`.
@@ -1100,7 +1111,11 @@ def _check_local_sources_indexed(root: Path) -> CheckResult:
                 cited.setdefault(candidate, str(path.relative_to(root)))
 
     unindexed = sorted(path for path in cited if path not in indexed)
-    if not unindexed:
+    stale = sorted(
+        path for path, where in cited.items()
+        if path in _WITHDRAWN_CITATIONS and _is_kit_owned(where)
+    )
+    if not unindexed and not stale:
         return CheckResult(name, True, "every local path a contract cites is indexed",
                            advisory=True)
 
@@ -1111,19 +1126,35 @@ def _check_local_sources_indexed(root: Path) -> CheckResult:
     # one waiting unread in AGENTS.md.kit-new. Decidable by path, not by heuristic —
     # this set holds only what the kit itself once prescribed and has since revoked.
     # Council round 2 of AI-Agents#5.
-    withdrawn = sorted(path for path in unindexed if path in _WITHDRAWN_CITATIONS)
+    # Three corrections the council of this delivery reproduced, all in one branch:
+    #
+    # 1. It is decided by WHO CITES, not by path alone. A project naming that helper in
+    #    its OWN docs is declaring its transport, which the contract requires; only a
+    #    KIT-OWNED contract citing it is evidence of a stale file. Path-only matching
+    #    told a legitimate project "do NOT add these to your index" — forbidding the
+    #    one action §Sending Email step 1 demands — and sent it to an upgrade that
+    #    never writes docs/, so the state it complained about could not be exited.
+    # 2. It no longer RETURNS. The first cut swallowed every other unindexed path,
+    #    including the recipient-list file whose absence from the index IS the
+    #    2026-08-04 incident this whole check exists for.
+    # 3. It is independent of indexing. The operator who followed the OLD advice and
+    #    indexed the withdrawn path saw a clean PASS while still carrying the retired
+    #    contract — the population the wrong message created was the one left blind.
+    withdrawn = sorted(
+        path for path, where in cited.items()
+        if path in _WITHDRAWN_CITATIONS and _is_kit_owned(where)
+    )
+    stale_note = ""
     if withdrawn:
-        where = sorted({cited[path] for path in withdrawn})
-        return CheckResult(
-            name,
-            False,
-            f"{', '.join(where)} still prescribes an email transport this kit has "
-            f"WITHDRAWN ({', '.join(withdrawn)}). Do NOT add these to "
-            f"{_INDEX_REL} — transport and recipients are per-project since "
-            f"AI-Agents#5. If a `.kit-new` file is beside it, adopt that version; "
-            f"otherwise run `install-agents --upgrade`.",
-            advisory=True,
+        where = sorted({cited[path] for path in withdrawn if _is_kit_owned(cited[path])})
+        stale_note = (
+            f" SEPARATELY: {', '.join(where)} still prescribes an email transport this "
+            f"kit has WITHDRAWN ({', '.join(withdrawn)}) — do NOT index those; adopt "
+            f"the `.kit-new` version beside it, or run `install-agents --upgrade`."
         )
+        unindexed = [path for path in unindexed if path not in set(withdrawn)]
+        if not unindexed:
+            return CheckResult(name, False, stale_note.strip(), advisory=True)
 
     shown = ", ".join(f"{path} (in {cited[path]})" for path in unindexed[:4])
     more = f" (+{len(unindexed) - 4} more)" if len(unindexed) > 4 else ""
@@ -1142,7 +1173,8 @@ def _check_local_sources_indexed(root: Path) -> CheckResult:
     return CheckResult(
         name,
         False,
-        f"local paths cited by a contract but absent from {_INDEX_REL}: {shown}{more}.{how}",
+        f"local paths cited by a contract but absent from {_INDEX_REL}: "
+        f"{shown}{more}.{how}{stale_note}",
         advisory=True,
     )
 

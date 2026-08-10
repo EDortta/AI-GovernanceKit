@@ -27,10 +27,12 @@ Merge with `scripts/merge-to-main.sh` (`--dry-run` first). It re-applies the
 exclusion on every run, so a merge that reintroduces the files resolves by removing
 them again. Never merge `development` into `main` by hand.
 
-Related: the installer seeds targets with EMPTY `handoff.md` and
-`docs/napkin-lessons.md` templates, never with the source repository's own copies
-(`_SESSION_MEMORY_TEMPLATES` in `governancekit/install_agents.py`). Same principle,
-one level out: session memory does not travel.
+Related: the installer seeds targets with EMPTY `handoff.md`,
+`docs/napkin-lessons.md` **and `docs/required-reading.md`** templates, never with the
+source repository's own copies (`_TEMPLATE_SEEDS` in
+`governancekit/install_agents.py`). Same principle, one level out: session memory does
+not travel — and neither does the kit's own list of local sources, which since
+2026-08-10 includes the email transport a project is required to declare for itself.
 
 ### The readiness files are project-owned
 

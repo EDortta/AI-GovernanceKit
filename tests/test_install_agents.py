@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -619,14 +621,27 @@ class SendingEmailRetirementTests(unittest.TestCase):
             self.assertEqual(resolved, src / "templates" / "required-reading.template.md")
             self.assertNotIn("send.py", resolved.read_text(encoding="utf-8"))
 
-    def test_the_shell_installer_is_never_shipped_without_its_templates(self) -> None:
-        # scripts/install-agents-kit.sh is shipped so a project can self-upgrade
-        # without this tool. It reads templates/; without them it bails silently and
-        # leaves the project with no reading index at all.
-        self.assertIn("scripts/install-agents-kit.sh", ia._FRESH_PATHS)
-        self.assertIn("templates", ia._FRESH_PATHS)
-        self.assertIn("scripts/install-agents-kit.sh", ia._UPGRADE_PATHS)
-        self.assertIn("templates", ia._UPGRADE_PATHS)
+    def test_templates_is_never_a_managed_path_at_the_project_root(self) -> None:
+        # It was, for one commit, so the shipped shell installer could find its
+        # starters. The council reproduced the cost: `templates` is the commonest
+        # top-level directory name in web projects and every kit path here is
+        # unprefixed, so the entry gitignored the project's templates at any depth,
+        # rmtree'd them on `--force`, and — via the manifest — DELETED them on the
+        # second upgrade. Reinstating it needs a namespaced destination.
+        self.assertNotIn("templates", ia._FRESH_PATHS)
+        self.assertNotIn("templates", ia._UPGRADE_PATHS)
+
+    def test_a_project_owning_a_templates_directory_keeps_it(self) -> None:
+        # The behavioural half: the assertions above pin the lists, this pins what the
+        # lists cause. A bare `templates` entry reaches .gitignore as an unanchored
+        # pattern, which is how the files became invisible before they were deleted.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            ia._update_gitignore(root / ".gitignore", ia._FRESH_PATHS, track_kit_docs=False)
+
+            written = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+            self.assertNotIn("templates", [line.strip() for line in written])
 
     def test_smtp_account_is_no_longer_collected_but_stays_operator_local(self) -> None:
         # Not fillable: the canonical contract names no transport, so an install cannot
@@ -637,10 +652,12 @@ class SendingEmailRetirementTests(unittest.TestCase):
         # COMMITTED manifest. Dropping it would publish a legacy value on next upgrade.
         self.assertIn("SMTP_ACCOUNT", ia._OPERATOR_PLACEHOLDERS)
 
-    def test_a_legacy_value_is_never_substituted_and_never_committed(self) -> None:
-        # An install predating the retirement carries the operator's address. It must
-        # not be rendered into any file — the token is no longer declared — and the
-        # value it still holds must stay operator-local, out of the tracked manifest.
+    def test_a_retired_token_is_still_filled_from_a_stored_value(self) -> None:
+        # A legacy target upgraded at a ref whose files still carry the token would
+        # otherwise dead-end: the slot stays raw, `doctor` fails NON-advisory with "kit
+        # not configured", and `configure` cannot fix it because its known-token set is
+        # built from the same dict the retirement emptied. Retired means "never asked",
+        # not "never applied".
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             doc = root / "AGENTS.md"
@@ -650,12 +667,25 @@ class SendingEmailRetirementTests(unittest.TestCase):
                 root, ["AGENTS.md"], known={"SMTP_ACCOUNT": "legacy@example.invalid"},
             )
 
-            self.assertEqual(doc.read_text(encoding="utf-8"), "contato: {{SMTP_ACCOUNT}}\n")
-            # Retained, so an upgrade does not lose what the operator once answered...
+            self.assertEqual(
+                doc.read_text(encoding="utf-8"), "contato: legacy@example.invalid\n",
+            )
             self.assertEqual(values.get("SMTP_ACCOUNT"), "legacy@example.invalid")
-            # ...and retained on the side that never reaches a committed file.
+            self.assertIn("SMTP_ACCOUNT", ia._RETIRED_PLACEHOLDERS)
+            # And it stays on the side that never reaches a committed file.
             self.assertIn("SMTP_ACCOUNT", ia._OPERATOR_PLACEHOLDERS)
-            self.assertNotIn("SMTP_ACCOUNT", ia._SENSITIVE_PLACEHOLDERS)
+
+    def test_a_retired_token_with_no_stored_value_is_not_reported_as_unknown(self) -> None:
+        # Reporting it would send the operator to `configure`, which cannot fill it.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "AGENTS.md").write_text("contato: {{SMTP_ACCOUNT}}\n", encoding="utf-8")
+
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                ia._fill_placeholders(root, ["AGENTS.md"], known={})
+
+            self.assertNotIn("SMTP_ACCOUNT", buffer.getvalue())
 
 
 if __name__ == "__main__":
