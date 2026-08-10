@@ -687,6 +687,45 @@ class SendingEmailRetirementTests(unittest.TestCase):
 
             self.assertNotIn("SMTP_ACCOUNT", buffer.getvalue())
 
+    def test_a_retired_token_with_no_stored_value_is_still_fixable(self) -> None:
+        # The dead end the retirement created and the first fix missed: with no stored
+        # value, doctor fails NON-advisory naming `configure`, and configure could not
+        # fill a token it no longer knew. The check failed forever and its own remedy
+        # did nothing — worse than before the retirement, when configure worked.
+        from governancekit.configure import run_configure
+        from governancekit.doctor import _check_unfilled_placeholders
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "AGENTS.md").write_text("contato: {{SMTP_ACCOUNT}}\n", encoding="utf-8")
+
+            self.assertFalse(_check_unfilled_placeholders(root).passed)
+
+            run_configure(root, preset={"SMTP_ACCOUNT": "ops@example.invalid"},
+                          interactive=False)
+
+            self.assertEqual(
+                (root / "AGENTS.md").read_text(encoding="utf-8"),
+                "contato: ops@example.invalid\n",
+            )
+            self.assertTrue(_check_unfilled_placeholders(root).passed)
+
+    def test_a_retired_token_is_absent_from_the_unfilled_report(self) -> None:
+        # The guard reached `unknown` and the prompt loop but not the final report, so
+        # a run that filled anything else still named the retired slot.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "AGENTS.md").write_text(
+                "org {{ORG_NAME}} contato {{SMTP_ACCOUNT}}\n", encoding="utf-8",
+            )
+
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                ia._fill_placeholders(root, ["AGENTS.md"], known={"ORG_NAME": "Acme"})
+
+            self.assertIn("Placeholders filled in", buffer.getvalue())
+            self.assertNotIn("SMTP_ACCOUNT", buffer.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

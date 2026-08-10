@@ -1323,8 +1323,15 @@ def _fill_placeholders(
     if changed:
         print("\nPlaceholders filled in: " + ", ".join(sorted(set(changed))))
 
-    # Warn about any that were skipped
-    unfilled = [t for t in placeholder_files if t not in values]
+    # Warn about any that were skipped. Retired tokens are excluded for the same
+    # reason they never reach `unknown`: naming them sends the operator to a slot that
+    # no longer exists. The guard was added to `unknown` and to the prompt loop and
+    # missed here, because the test's fixture held only the retired token and the
+    # function returned before reaching this line. Council round 2 of GK#7.
+    unfilled = [
+        t for t in placeholder_files
+        if t not in values and t not in _RETIRED_PLACEHOLDERS
+    ]
     if unfilled:
         print(
             "Still unfilled (skipped): "
