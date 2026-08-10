@@ -116,8 +116,9 @@ _FRESH_PATHS: list[str] = [
 # The self-upgrade path it was meant to repair is blocked one step earlier anyway: the
 # shipped shell installer reads `.credentials/identity.json` and exits 8, while this
 # installer writes identity to `.gk/operator.json`. So the entry bought nothing and
-# risked a project's source. The silent bail is fixed where it belongs — the shell
-# installer now fails loudly instead of returning 0.
+# risked a project's source. The silent bail is fixed where it belongs: the shell
+# installer now names the index it failed to create instead of leaving on a bare
+# `return 0` under a line that claimed the file had been preserved.
 #
 # Reinstating this needs a namespaced destination (`.docs/templates/`), not the root.
 
