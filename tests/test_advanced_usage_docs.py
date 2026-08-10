@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import argparse
 from pathlib import Path
 
@@ -91,15 +93,33 @@ def test_landing_navigation_is_translated_compact_and_agents_install_is_separate
 
     assert "Detalhes avançados de uso</a></li>" not in landing
     assert "installs by copying files" not in landing
-    assert "AI-Agents/v1.1.6/scripts/install-agents-kit.sh" in landing
+    assert f"AI-Agents/{DEFAULT_REF}/scripts/install-agents-kit.sh" in landing
     assert ".companion-card .arrow-link {\n      display: block;" in landing
 
 
 def test_default_agents_release_is_current_and_checksum_pinned() -> None:
-    assert DEFAULT_REF == "v1.1.7"
-    assert KNOWN_TARBALL_SHA256[(REPO, DEFAULT_REF)] == (
-        "7bff38d6ff94576fee6329fd84074d14ad9af649e8d98ff4230516a4283db97a"
+    """The pinned release must be verifiable and the docs must agree with it.
+
+    This asserted the literal `v1.1.7` and its literal digest, so every bump broke the
+    test instead of being checked by it — and a stale DEFAULT_REF (which is how the
+    withdrawn email contract kept reinstalling itself) would have passed happily for as
+    long as nobody edited the string. The property is what matters: whatever ref is
+    pinned has a checksum, and every install command the docs hand a user names it.
+    """
+    assert (REPO, DEFAULT_REF) in KNOWN_TARBALL_SHA256, (
+        f"DEFAULT_REF {DEFAULT_REF} has no entry in KNOWN_TARBALL_SHA256 — an install "
+        f"would download it unverified"
     )
+    assert re.fullmatch(r"[0-9a-f]{64}", KNOWN_TARBALL_SHA256[(REPO, DEFAULT_REF)])
+
+    for page in ("docs/index.html", "docs/advanced-usage.html",
+                 "docs/advanced-usage-ptbr.html", "docs/advanced-usage-es.html"):
+        text = (ROOT / page).read_text(encoding="utf-8")
+        stale = re.findall(r"v1\.\d+\.\d+", text)
+        assert set(stale) <= {DEFAULT_REF}, (
+            f"{page} names {sorted(set(stale) - {DEFAULT_REF})} while DEFAULT_REF is "
+            f"{DEFAULT_REF} — the command a user copies would install another release"
+        )
 
 
 def test_cli_help_uses_real_upstream_owner() -> None:

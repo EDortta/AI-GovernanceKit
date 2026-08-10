@@ -726,6 +726,17 @@ class SendingEmailRetirementTests(unittest.TestCase):
             self.assertIn("Placeholders filled in", buffer.getvalue())
             self.assertNotIn("SMTP_ACCOUNT", buffer.getvalue())
 
+    def test_the_pinned_ref_has_a_verified_checksum(self) -> None:
+        # The chain that delivers any of this to a user has four links, and two live in
+        # another repository: source -> tag -> (DEFAULT_REF + checksum here) -> upgrade.
+        # A DEFAULT_REF with no checksum entry downloads unverified or refuses; a
+        # DEFAULT_REF left behind delivers the OLD kit while the fix sits unreleased,
+        # which is how the withdrawn contract kept reinstalling itself. Council r2 of
+        # GK#7 (R2-6/R2-14).
+        self.assertIn((ia.REPO, ia.DEFAULT_REF), ia.KNOWN_TARBALL_SHA256)
+        digest = ia.KNOWN_TARBALL_SHA256[(ia.REPO, ia.DEFAULT_REF)]
+        self.assertRegex(digest, r"^[0-9a-f]{64}$")
+
 
 if __name__ == "__main__":
     unittest.main()

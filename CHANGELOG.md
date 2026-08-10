@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Default AI-Agents release is now checksum-pinned `v1.2.0` (was `v1.1.7`). It is a
+  minor, not a patch: the kit's templates move from the project's `templates/` to
+  `.docs/templates/`.
+- `AGENTS.md` §Sending Email no longer prescribes an email transport. Transport, sender
+  and recipient list are project-specific and declared in `docs/required-reading.md`
+  (EDortta/AI-Agents#5, EDortta/AI-GovernanceKit#7).
+- `docs/required-reading.md` is seeded from a neutral template instead of the kit's own
+  index, which had been exporting the kit's local sources into every new project.
+
+### Removed
+
+- `SMTP_ACCOUNT` and `SMTP_DOMAIN` are no longer collected. A value stored by an earlier
+  install is still substituted and stays out of the tracked manifest.
+
+### Fixed
+
+- `doctor` no longer reports a header-only `Fontes locais` table as malformed, no longer
+  tells a project to index an email transport this kit has withdrawn, and no longer lets
+  a stale contract mask the project's own declaration of the same path.
+- `configure` can fill a retired placeholder again. Removing it from the descriptions
+  left `doctor` failing non-advisory while naming a command that did nothing.
+
+### Upgrade note
+
+**A project with its own `templates/` directory should check `.gk/manifest.json`.** An
+install made between 2026-08-07 and 2026-08-10 may have recorded the project's own
+template files as kit-owned; `remove-agents` would then offer to delete them at full
+confidence. The entry is no longer created, but an existing one is not repaired
+automatically.
+
 ## [0.2.2] - 2026-07-27
 
 ### Added
