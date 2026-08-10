@@ -2,15 +2,28 @@
 
 - work_id: WK-20260810-sending-email-canonico
 - date: 2026-08-10
-- status: `[review]` — duas rodadas de concílio rodaram. **Parado no §4:** a rodada 2
-  levantou 16 achados distintos e nenhum foi fechado. Não rodar uma terceira rodada.
+- status: `[review]` — duas rodadas de concílio. Dos 16 achados da rodada 2, **8
+  fechados** por decisão do operador em 2026-08-10 (R2-1, R2-3, R2-4, R2-5, R2-6, R2-7,
+  R2-12, R2-13, R2-14, R2-19); **6 em aberto**. `v1.2.0` publicada e a cadeia verificada
+  ponta a ponta num alvo real.
 
 ## Next Step (DO THIS FIRST)
 
-**Decisão do operador sobre os achados da rodada 2** (seção "Rodada 2" abaixo). O mais
-grave não está neste repositório: o `install-agents-kit.sh` do AI-Agents **sempre** teve
-`templates` no `KIT_OWNED_PATHS`, e reproduz a mesma perda de dados que eu revertia aqui
-— em v1.1.7 e v1.1.8, isto é, em release.
+Decidir se `development` deste repositório vai para `main` (hoje 45 commits atrás) e se
+é empurrado. O AI-Agents já foi: `main` + `v1.2.0` publicadas.
+
+Depois, os **6 achados restantes** da rodada 2: R2-2 (manifesto envenenado sem reparo),
+R2-16' (`_do_upgrade` sobrescreve arquivo de topo sem hash-check nem stash), R2-15
+(`configure` não persiste em `.gk/`), R2-11 (napkin sem as contagens do §4), R2-17
+(`_is_kit_owned` sem `as_posix()`), R2-18 (sem gate de deriva entre os dois kits).
+
+### Verificado no elo 4, não na fonte
+
+`governancekit install-agents` num projeto novo, a partir da tag publicada:
+`templates/` do projeto intacto e não reivindicado no manifesto, §Sending Email sem
+transporte, índice do projeto e não do kit, `handoff.md` vazio, slot `SMTP_ACCOUNT`
+ausente. É o que a lição de 2026-08-06 cobra: defeito que aparece em projeto governado
+se verifica no projeto governado.
 
 ## Escopo da issue #7 — estado
 
