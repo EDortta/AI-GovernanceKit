@@ -66,8 +66,40 @@ instalar. `jk-structure` tem trabalho vivo e é projeto de produção.
 
 Depois: merge `development` → `main` (46 commits) e tag `v0.3.0`.
 
+## Validado em projeto governado — 2026-08-11
+
+O par `CodexBridge` / `CodexBridgeMobile` foi escolhido pelo operador porque cobre os
+dois caminhos do `doctor.py:239`: o primeiro não tem `project-config.json` (advisory),
+o segundo tem `project_state: existing` (bloqueante). O `0.3.0` foi exercido a partir da
+worktree via `PYTHONPATH`, sem instalar nada na máquina.
+
+**Antes do upgrade**, com o kit velho:
+
+| projeto | GK 0.2.3 | GK 0.3.0 |
+|---|---|---|
+| CodexBridge (sem project-config) | `[PASS]` | `[HINT]` — advisory |
+| CodexBridgeMobile (`existing`) | `[PASS]` | `[FAIL]` — bloqueante |
+
+Confirma a previsão do §`doctor.py:239` na íntegra, incluindo a diferença entre os dois
+caminhos.
+
+**Depois de `install-agents --upgrade`** para `v1.2.1`, nos dois projetos:
+
+| projeto | GK 0.2.3 | GK 0.3.0 |
+|---|---|---|
+| CodexBridge | `[PASS]` v1.2.1 | `[PASS]` v1.2.1 |
+| CodexBridgeMobile | `[PASS]` v1.2.1 | `[PASS]` v1.2.1 |
+
+As duas colunas verdes são a prova executada de que o range permissivo entrega o que
+foi comprado: **o projeto em `v1.2.1` aceita os dois runtimes**, então kit e ferramenta
+podem subir em qualquer ordem.
+
+O conjunto de `[FAIL]` de cada projeto foi comparado contra o estado pré-upgrade
+restaurado do backup: **idêntico nos dois**. O que sobra (`required-reading.md` listando
+documento ausente, épico ativo, identidade de host, marcador do `RESUME.md`) é higiene
+pré-existente do projeto, não regressão desta entrega.
+
 ## Não validado
 
-`not validated:` o `doctor` de um projeto real em `v1.2.1` sob GovernanceKit `0.3.0`.
-A previsão é `[PASS]`; a checagem de range foi verificada isoladamente, o `doctor`
-inteiro não.
+`not validated:` o mesmo par de checagens no `jk-structure` e no `ledgerlab`, que
+seguem em `v1.1.6`. O `jk-structure` é produção e o upgrade dele não foi autorizado.
