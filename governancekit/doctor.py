@@ -134,16 +134,25 @@ def _iter_source_files(root: Path):
         except (PermissionError, OSError):
             continue
         for item in items:
-            if item.is_symlink():
+            # Every probe below stats the filesystem, and a directory the user
+            # cannot search raises instead of answering — `.exists()` included.
+            # The `iterdir` above already treats that as "skip and keep walking";
+            # without the same guard here one unreadable directory aborted the
+            # whole doctor run with a traceback and no verdict at all. Found in a
+            # governed project holding a root-owned `drwx------` data directory.
+            try:
+                if item.is_symlink():
+                    continue
+                if item.is_dir():
+                    if item.name in _CODEMAP_SKIP or item.name.endswith((".egg-info", ".dist-info")):
+                        continue
+                    if (item / ".git").exists():  # nested repo / submodule
+                        continue
+                    stack.append(item)
+                elif item.is_file() and item.suffix in _CODEMAP_SOURCE_EXTENSIONS:
+                    yield item
+            except OSError:
                 continue
-            if item.is_dir():
-                if item.name in _CODEMAP_SKIP or item.name.endswith((".egg-info", ".dist-info")):
-                    continue
-                if (item / ".git").exists():  # nested repo / submodule
-                    continue
-                stack.append(item)
-            elif item.is_file() and item.suffix in _CODEMAP_SOURCE_EXTENSIONS:
-                yield item
 
 
 def _git_ignored_paths(root: Path, paths: list[Path]) -> set[Path]:

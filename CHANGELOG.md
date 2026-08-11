@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `doctor` no longer dies on a directory it cannot search. `_iter_source_files` guarded
+  `iterdir()` but not the per-item probes, so the `.git` `exists()` test that detects a
+  nested repo raised `PermissionError` and ended the whole run in a traceback with no
+  verdict printed. Found against a governed project holding a root-owned `drwx------`
+  data directory; the advisory scan now costs that directory, not the report.
 - `doctor` no longer reports a header-only `Fontes locais` table as malformed, no longer
   tells a project to index an email transport this kit has withdrawn, and no longer lets
   a stale contract mask the project's own declaration of the same path.
