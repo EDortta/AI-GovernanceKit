@@ -22,3 +22,9 @@ governancekit = "governancekit.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["governancekit*"]
+
+# The drift snapshot is data, not code, and would otherwise be dropped from a
+# built wheel — leaving `refresh-kit-snapshot.py --check` unable to read what an
+# installed copy claims about the release it pins.
+[tool.setuptools.package-data]
+governancekit = ["_kit_snapshot.json"]

@@ -1,0 +1,6 @@
+{
+  "_comment": "Derived from the pinned AI-Agents release by scripts/refresh-kit-snapshot.py. Do not hand-edit: the point of this file is that it was read off the release, not typed.",
+  "agents_ref": "v1.2.1",
+  "governancekit_version_range": ">=0.2.2,<0.4.0",
+  "shared_section_sha256": "e625369fa5430bb718dd0d5027c1afca7673efc4ae757199331bcb8879418926"
+}

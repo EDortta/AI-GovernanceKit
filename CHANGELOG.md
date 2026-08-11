@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Drift gate between the two kits** (`governancekit/kit_drift.py`). Three things this
+  repository states about AI-Agents are now asserted instead of asked for in prose: the
+  release it pins, the version range that release declares, and the shared `§Sending
+  Email` body it carries a copy of. `governancekit/_kit_snapshot.json` records what the
+  pinned release says; `scripts/refresh-kit-snapshot.py` re-derives it from the
+  checksum-verified tarball, and `--check` proves the stored snapshot is current without
+  trusting that whoever bumped the pin remembered to refresh it. The tests themselves
+  need no network.
+
+### Fixed
+
+- `test_the_hook_does_not_block_when_the_toolchain_is_missing` never produced the
+  condition it names on a machine where this kit is installed per user — which, since it
+  is installed per user by design, is the normal machine. Clearing `PATH` and
+  `PYTHONPATH` leaves the user site directory on `sys.path`, so the hook still found a
+  toolchain; the test passed only while the installed copy was too old to run the gate it
+  reaches. Now isolated with `PYTHONNOUSERSITE`.
+
 ## [0.3.0] - 2026-08-11
 
 ### Changed

@@ -67,6 +67,14 @@ def test_the_hook_does_not_block_when_the_toolchain_is_missing(tmp_path: Path) -
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(tmp_path / "nowhere")
     environment["PATH"] = os.path.dirname(sys.executable) + os.pathsep + "/usr/bin:/bin"
+    # Emptying PATH and PYTHONPATH does not make the toolchain missing: the user
+    # site directory stays on sys.path regardless, so `python3 -m governancekit`
+    # keeps working from ~/.local. This kit is installed per-user by design, so
+    # that is the normal machine, not the exotic one — without this the test
+    # asserts the right behaviour while never once producing the condition, and
+    # it passed only while the installed copy happened to be too old to run the
+    # gate it now reaches.
+    environment["PYTHONNOUSERSITE"] = "1"
 
     completed = subprocess.run(
         ["bash", str(tmp_path / ".git" / "hooks" / "pre-commit")],
