@@ -21,6 +21,7 @@ Every drift direction seen in practice turns a test red:
 * pin bumped without refreshing the snapshot  -> ref mismatch
 * runtime version leaves the declared range   -> range mismatch
 * either copy of the shared section edited    -> digest mismatch
+* a seed template missing from the release    -> seed mismatch
 """
 
 from __future__ import annotations
@@ -57,6 +58,12 @@ class KitSnapshot:
     agents_ref: str
     governancekit_version_range: str
     shared_section_sha256: str
+    # Seed sources `_TEMPLATE_SEEDS` points at, as the release actually carries them.
+    # A seed that resolves to nothing is not an error anywhere — `_resolve_src` simply
+    # falls back to the source's own file, so the target silently receives the KIT's
+    # handoff and reading index instead of an empty template. That is R2-15, and it
+    # shipped for three releases because nothing compared the two lists.
+    template_seed_sources: tuple[str, ...]
 
     @classmethod
     def load(cls, path: Path | None = None) -> "KitSnapshot":
@@ -74,6 +81,7 @@ class KitSnapshot:
                 agents_ref=raw["agents_ref"],
                 governancekit_version_range=raw["governancekit_version_range"],
                 shared_section_sha256=raw["shared_section_sha256"],
+                template_seed_sources=tuple(raw["template_seed_sources"]),
             )
         except (KeyError, TypeError) as exc:
             raise SnapshotError(f"kit snapshot at {path} is missing {exc}") from exc
@@ -89,6 +97,7 @@ class KitSnapshot:
                 "agents_ref": self.agents_ref,
                 "governancekit_version_range": self.governancekit_version_range,
                 "shared_section_sha256": self.shared_section_sha256,
+                "template_seed_sources": list(self.template_seed_sources),
             },
             indent=2,
         ) + "\n"

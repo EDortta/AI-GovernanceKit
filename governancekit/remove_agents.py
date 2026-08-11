@@ -19,6 +19,34 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .agent_scope import _urlopen, validate_provider_url
+
+
+def _is_kit_installable(relative_path: str) -> bool:
+    """Could the installer have written this path, under any mode?
+
+    The union of fresh and upgrade scopes, matched as prefixes because most
+    entries are directories. Deliberately permissive: the question here is only
+    "is this claim even plausible", and a false *yes* leaves behaviour exactly as
+    it was before this guard existed, while a false *no* costs one operator
+    review of a file that was going to be deleted unreviewed.
+
+    The two prefixes matter. Those lists are **source-relative** and canonical
+    (``docs/agents``), while the installed layout and therefore the manifest use
+    ``.docs/agents`` — kit territory — and keep ``docs/`` for the project. Matching
+    only the literal form preserved every legitimate kit file instead of removing
+    it, which the existing removal tests caught immediately: a guard against
+    over-deletion that quietly disables the command is not an improvement.
+    """
+    from .install_agents import _FRESH_PATHS, _UPGRADE_PATHS
+
+    for owned in (*_FRESH_PATHS, *_UPGRADE_PATHS):
+        forms = {owned}
+        if owned.startswith("docs/"):
+            forms.add("." + owned)
+        for form in forms:
+            if relative_path == form or relative_path.startswith(form.rstrip("/") + "/"):
+                return True
+    return False
 from .path_safety import UnsafePathError, safe_path, safe_regular_file
 
 PLAN_RELATIVE_PATH = ".gk/remove-agents-plan.json"
@@ -192,7 +220,30 @@ def build_removal_plan(root: Path, *, with_llm: bool = False, extractor: Callabl
         referenced = _referenced(root, rel)
         expected = manifest.get(rel)
         if expected and _sha256(path) == expected and not referenced:
-            items.append(RemovalItem(rel, "kit-owned-unchanged", 1.0, "remove", ["manifest hash matches current file"], False))
+            # A matching hash proves the file is unchanged since it was recorded. It
+            # does NOT prove the record was ever right. `_write_state` merges the
+            # previous manifest and prunes only entries whose file vanished, so a path
+            # wrongly claimed once — `templates/` was, between 2026-08-07 and
+            # 2026-08-10 — survives every upgrade, and `manifest.json` is the TRACKED
+            # half of the state, so the claim reaches every clone. Arriving here it
+            # became `remove` at confidence 1.0 with `requires_operator_review: False`.
+            #
+            # The hash is therefore checked against a second, independent question:
+            # is this a path the kit installs at all? A poisoned entry fails that and
+            # drops to review instead of deletion, which repairs manifests already
+            # committed in the field without needing anyone to run a migration.
+            if _is_kit_installable(rel):
+                items.append(RemovalItem(rel, "kit-owned-unchanged", 1.0, "remove", ["manifest hash matches current file"], False))
+            else:
+                items.append(RemovalItem(
+                    rel, "manifest-claims-a-path-the-kit-does-not-install", 0.0, "preserve",
+                    [
+                        "manifest hash matches current file",
+                        "but this path is outside every path the installer writes — "
+                        "the entry is a stale or poisoned claim, not evidence of kit ownership",
+                    ],
+                    True,
+                ))
         elif expected:
             evidence = ["manifest records this path", "current hash differs from recorded install hash"]
             if referenced:

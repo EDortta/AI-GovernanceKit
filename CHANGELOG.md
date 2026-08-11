@@ -18,8 +18,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trusting that whoever bumped the pin remembered to refresh it. The tests themselves
   need no network.
 
+- **Drift gate now also covers the seed templates.** `_TEMPLATE_SEEDS` names three
+  sources in the pinned release; a source the release does not carry is not an error
+  anywhere — `_resolve_src` falls back to the source's own file, so the target silently
+  receives the *kit's* handoff and reading index instead of an empty template. That was
+  R2-15, and it shipped across three releases. The snapshot now records which seeds the
+  release actually carries.
+
 ### Fixed
 
+- **`configure` can fill `{{OPERATOR_NAME}}` without a terminal.** The placeholder pass
+  ran before host identity was collected and never read the identity file at all, so off
+  a TTY it filled nothing while the answer sat in `.governancekit-identity.json` — a file
+  the same command had just written. Since `doctor`'s `unfilled placeholders` check is
+  non-advisory and names `configure` as the remedy, every scripted install was left
+  permanently red with a remedy that provably did nothing. Explicit `--set` still wins.
+- **`configure` reports the placeholder form the files actually contain.** The syntax
+  reconciliation reached the installer and missed the one line an operator reads to learn
+  what to look for: it named `[OPERATOR_NAME]`, which greps to nothing.
+- **A manifest entry the kit could never have written no longer becomes a deletion.**
+  `_write_state` merges the previous manifest forward and prunes only entries whose file
+  vanished, so a path wrongly claimed once survives every upgrade — and `manifest.json` is
+  the tracked half of the state, so the wrong claim reaches every clone. In
+  `remove-agents` such an entry matched its own recorded hash and became `remove` at
+  confidence 1.0 with `requires_operator_review: false`. The hash is now checked against a
+  second, independent question — is this a path the installer writes at all — which
+  repairs manifests already committed in the field without a migration.
 - `test_the_hook_does_not_block_when_the_toolchain_is_missing` never produced the
   condition it names on a machine where this kit is installed per user — which, since it
   is installed per user by design, is the normal machine. Clearing `PATH` and

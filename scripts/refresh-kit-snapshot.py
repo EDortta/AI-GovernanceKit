@@ -31,7 +31,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from governancekit.install_agents import DEFAULT_REF, KNOWN_TARBALL_SHA256, REPO
+from governancekit.install_agents import (
+    DEFAULT_REF,
+    KNOWN_TARBALL_SHA256,
+    REPO,
+    _TEMPLATE_SEEDS,
+)
 from governancekit.kit_drift import KitSnapshot, digest_shared_section
 
 # The canonical carrier of the shared section inside the AI-Agents release. The
@@ -78,10 +83,14 @@ def build_snapshot() -> KitSnapshot:
         with tarfile.open(tarball, "r:gz") as tar:
             contract = json.loads(_member(tar, _CONTRACT_SOURCE))
             section = _member(tar, _SHARED_SECTION_SOURCE)
+            carried = {name.split("/", 1)[-1] for name in tar.getnames()}
     return KitSnapshot(
         agents_ref=contract["ai_agents"]["ref"],
         governancekit_version_range=contract["governancekit"]["version_range"],
         shared_section_sha256=digest_shared_section(section),
+        template_seed_sources=tuple(
+            sorted(src for src in set(_TEMPLATE_SEEDS.values()) if src in carried)
+        ),
     )
 
 

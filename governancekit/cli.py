@@ -10,6 +10,15 @@ from typing import Sequence
 
 from . import __version__
 from .doctor import DoctorResult, run_doctor
+
+# Host-identity fields that answer a kit placeholder outright. Deliberately narrow:
+# only pairs whose meaning is the same on both sides belong here, because a wrong
+# guess writes itself into every managed file without asking. `instance_path` is NOT
+# mapped to `PROJECT_ROOT` — the two are near-synonyms and that is exactly the kind of
+# resemblance worth confirming with the operator before substituting it everywhere.
+_IDENTITY_BACKED_PLACEHOLDERS: dict[str, str] = {
+    "operator_name": "OPERATOR_NAME",
+}
 from .context import ContextError, build_context, format_context
 from .path_safety import UnsafePathError, UnsafeRootError, assert_governable_root
 
@@ -807,11 +816,24 @@ def _run_remove_agents(args) -> int:
 
 def _run_configure(args) -> int:
     from .configure import parse_set_pairs, run_configure, run_configure_identity
-    from .identity import ALL_FIELDS
+    from .identity import ALL_FIELDS, load_identity
     try:
         preset = parse_set_pairs(args.set_pairs)
     except ValueError as exc:
         parser.error(str(exc))
+
+    # The operator's name is already known — the identity file holds it — but the
+    # placeholder pass used to ignore it and ask again, and could only ask on a TTY.
+    # Off a terminal that made `doctor`'s non-advisory "kit not configured" name a
+    # remedy that provably did nothing: `configure` reported the token still unfilled
+    # while the answer sat in a file it had written itself. Explicit `--set` still wins.
+    stored = load_identity(args.root)
+    if stored is not None:
+        for field, token in _IDENTITY_BACKED_PLACEHOLDERS.items():
+            value = str(getattr(stored, field, "") or "").strip()
+            if value and token not in preset:
+                preset[token] = value
+
     result = run_configure(args.root, preset=preset)
     print("AI GovernanceKit configure")
     if not result.found_tokens:
@@ -823,7 +845,10 @@ def _run_configure(args) -> int:
     else:
         print("No values applied.")
     if result.unfilled:
-        print("Still unfilled: " + ", ".join(f"[{t}]" for t in result.unfilled))
+        # Canonical `{{TOKEN}}` form. Issue #7 item 3 reconciled the syntax in the
+        # installer and missed this line, so the one place that tells an operator what
+        # to look for named a form no kit file contains — grep for it finds nothing.
+        print("Still unfilled: " + ", ".join(f"{{{{{t}}}}}" for t in result.unfilled))
 
     # ── host identity ──────────────────────────────────────────────────
     identity_preset = {f: getattr(args, f) for f in ALL_FIELDS}

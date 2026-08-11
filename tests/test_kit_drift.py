@@ -116,5 +116,28 @@ class SharedSectionExtractionTest(unittest.TestCase):
         )
 
 
+
+class TemplateSeedTest(unittest.TestCase):
+    """R2-15: a seed that resolves to nothing fails silently, in the worst direction.
+
+    `_resolve_src` falls back to the source's own file when a template is absent,
+    so a missing seed does not error — the target quietly receives the *kit's*
+    handoff and reading index instead of an empty one. That is how the kit's own
+    email transport got exported into other projects as if it were theirs. It
+    shipped across three releases because nothing compared the two lists.
+    """
+
+    def test_the_pinned_release_carries_every_seed_the_installer_points_at(self) -> None:
+        from governancekit.install_agents import _TEMPLATE_SEEDS
+
+        snapshot = KitSnapshot.load()
+        missing = sorted(set(_TEMPLATE_SEEDS.values()) - set(snapshot.template_seed_sources))
+        self.assertEqual(
+            missing,
+            [],
+            f"AI-Agents {snapshot.agents_ref} does not carry {missing}. Those seeds are "
+            "no-ops: the target silently gets the kit's own file instead of an empty "
+            "template, and nothing anywhere reports it.",
+        )
 if __name__ == "__main__":
     unittest.main()
