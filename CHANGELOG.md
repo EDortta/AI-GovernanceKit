@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-11
+
 ### Changed
 
-- Default AI-Agents release is now checksum-pinned `v1.2.0` (was `v1.1.7`). It is a
+- Default AI-Agents release is now checksum-pinned `v1.2.1` (was `v1.1.7`). It is a
   minor, not a patch: the kit's templates move from the project's `templates/` to
   `.docs/templates/`.
+- **This runtime is `0.3.0`, so it no longer satisfies a contract that declares
+  `>=0.2.2,<0.3.0`.** AI-Agents `v1.2.1` widens the declared range to
+  `>=0.2.2,<0.4.0`, which makes the two kits upgradable in either order — but only
+  for a project that already carries the `v1.2.1` contract. A project still on an
+  older kit keeps its own `<0.3.0` range and will report the integration contract as
+  incompatible until it is upgraded. See the upgrade note below.
 - `AGENTS.md` §Sending Email no longer prescribes an email transport. Transport, sender
   and recipient list are project-specific and declared in `docs/required-reading.md`
   (EDortta/AI-Agents#5, EDortta/AI-GovernanceKit#7).
@@ -32,6 +40,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   left `doctor` failing non-advisory while naming a command that did nothing.
 
 ### Upgrade note
+
+**Upgrade the governed projects' kit to `v1.2.1` before installing this runtime, or
+expect `doctor` to fail on them.** A project whose `.docs/governancekit-integration.json`
+still declares `>=0.2.2,<0.3.0` reports `AI-Agents integration contract requires
+GovernanceKit >=0.2.2,<0.3.0, current version is 0.3.0`. That finding is **not
+advisory** for a project whose `.gk/project-config.json` says `project_state:
+existing` (`doctor.py:239`), and a non-advisory failure is a STOP under the contract's
+§8b. Measured on the maintainer's machine when `0.3.0` was cut: 29 projects carried
+`.gk/manifest.json`, 4 of them had completed scope configuration, and all 4 were on
+kit `v1.1.6`. Widening the range in `v1.2.1` does not reach them — they hold their own
+copy of the old range.
 
 **A project with its own `templates/` directory should check `.gk/manifest.json`.** An
 install made between 2026-08-07 and 2026-08-10 may have recorded the project's own
