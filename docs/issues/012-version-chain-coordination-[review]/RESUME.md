@@ -2,8 +2,8 @@
 
 - work_id: WK-20260811-version-chain-coordination
 - date: 2026-08-11
-- status: `[review]` — código pronto e verde; **instalação local ainda não feita**, e é
-  ela que dispara o efeito descrito abaixo.
+- status: `[finished]` — `v0.3.0` publicada (`main` + tag), parque migrado e cópia
+  local instalada. `governancekit --version` responde `0.3.0` / `v1.2.1`.
 - gêmea: `AI/Agents .../docs/issues/010-version-chain-coordination-[review]/RESUME.md`
 
 ## Regra que originou o trabalho
@@ -56,15 +56,18 @@ Pergunta aberta das duas rodadas: continua sem gate de deriva entre os dois kits
 `R2-18` do épico 011. Este trabalho é a terceira vez que a ausência dele custa uma
 rodada.
 
-## Next Step (DO THIS FIRST)
+## Fechamento — 2026-08-11
 
-**Decisão do operador, pendente:** instalar `0.3.0` localmente faz os 4 projetos
-`existing` (`jk-structure`, o worktree `--WK-20260807-sec0024-produtor`,
-`CodexBridgeMobile`, `ledgerlab`) reprovarem no `doctor` de forma não-advisory até que
-o kit de cada um suba para `v1.2.1`. Caminho limpo: upgradar os 4 primeiro, depois
-instalar. `jk-structure` tem trabalho vivo e é projeto de produção.
+O operador corrigiu o enquadramento: nenhum projeto consumidor gateia a release. O
+acoplamento é só de máquina — o `governancekit` é um binário global, e é o design
+pretendido. Merge (48 commits) e tag `v0.3.0` publicados sem depender de projeto nenhum.
 
-Depois: merge `development` → `main` (46 commits) e tag `v0.3.0`.
+Parque migrado para `v1.2.1`: **28 dos 29 projetos governados**, exceto
+`YouBR/ZeeCred/jk-dashboard-backup`, excluído pelo operador. Depois disso a instalação
+local ficou sem efeito colateral, e `doctor` responde `[PASS]` nos quatro `existing`.
+
+A cópia instalada estava congelada em 2026-08-06 e não tinha `council.py`; agora é
+byte a byte igual ao `main` tagueado.
 
 ## Validado em projeto governado — 2026-08-11
 
@@ -99,7 +102,7 @@ restaurado do backup: **idêntico nos dois**. O que sobra (`required-reading.md`
 documento ausente, épico ativo, identidade de host, marcador do `RESUME.md`) é higiene
 pré-existente do projeto, não regressão desta entrega.
 
-## Não validado
+## Validado ponta a ponta
 
-`not validated:` o mesmo par de checagens no `jk-structure` e no `ledgerlab`, que
-seguem em `v1.1.6`. O `jk-structure` é produção e o upgrade dele não foi autorizado.
+`jk-structure`, `ledgerlab` e `CodexBridgeMobile` — os `existing`, que são os que
+reprovariam duro — respondem `[PASS]` sob a cópia instalada `0.3.0`.
