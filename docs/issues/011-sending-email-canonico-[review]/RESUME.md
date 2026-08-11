@@ -12,10 +12,13 @@
 Decidir se `development` deste repositório vai para `main` (hoje 45 commits atrás) e se
 é empurrado. O AI-Agents já foi: `main` + `v1.2.0` publicadas.
 
-Depois, os **6 achados restantes** da rodada 2: R2-2 (manifesto envenenado sem reparo),
-R2-16' (`_do_upgrade` sobrescreve arquivo de topo sem hash-check nem stash), R2-15
-(`configure` não persiste em `.gk/`), R2-11 (napkin sem as contagens do §4), R2-17
-(`_is_kit_owned` sem `as_posix()`), R2-18 (sem gate de deriva entre os dois kits).
+**R2-18 fechado em 2026-08-11** (`b1c46ea`): o gate de deriva existe, com snapshot
+derivado do tarball verificado e três asserções offline, cada direção verificada por
+mutação. Ver `docs/issues/013-kit-drift-gate-[finished]/`.
+
+Restam **5**: R2-2 (manifesto envenenado sem reparo), R2-16' (`_do_upgrade` sobrescreve
+arquivo de topo sem hash-check nem stash), R2-15 (`configure` não persiste em `.gk/`),
+R2-11 (napkin sem as contagens do §4), R2-17 (`_is_kit_owned` sem `as_posix()`).
 
 ### Verificado no elo 4, não na fonte
 
@@ -29,7 +32,7 @@ se verifica no projeto governado.
 
 | item | estado |
 |---|---|
-| 1. mesma seção nos dois kits, uma origem só | fechado no `AGENTS.md` deste repo, byte a byte igual ao corpo canônico do AI-Agents, mais uma nota de origem. **Sem gate de deriva** — é prosa que pede "mude lá primeiro". |
+| 1. mesma seção nos dois kits, uma origem só | **fechado com gate** (2026-08-11). Era prosa pedindo "mude lá primeiro"; agora `tests/test_kit_drift.py` compara o digest do corpo aqui contra o da release pinada e fica vermelho se qualquer lado editar. |
 | 2. remover `SMTP_ACCOUNT` do instalador | fechado. Fora do `_PLACEHOLDER_DESCRIPTIONS`; mantido no `_OPERATOR_PLACEHOLDERS` (verificado: removê-lo publica o valor legado no manifesto rastreado) e declarado em `_RETIRED_PLACEHOLDERS` (nunca perguntado, ainda substituído). |
 | 3. reconciliar sintaxe de placeholder | fechado: `[OPERATOR_NAME]` → `{{OPERATOR_NAME}}`. |
 | 4. o `doctor` audita a seção | **parcial.** Nenhum check audita a seção pelo nome. O que existe audita o índice para onde ela aponta e detecta contrato obsoleto que ainda a prescreve. |
