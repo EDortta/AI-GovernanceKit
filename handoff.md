@@ -1,5 +1,71 @@
 # Handoff
 
+## [2026-08-11] release v0.3.0, parque migrado, gate de deriva, 4 achados fechados
+
+- branch: `development`, empurrada. `main` **consolidada e tagueada `v0.3.0`** (48
+  commits — o backlog de 45 que a sessão anterior deixou, mais os desta).
+- **Nenhum deploy.** Tags publicadas: AI-Agents `v1.2.1`, GovernanceKit `v0.3.0`.
+- RESUMEs: `docs/issues/012-version-chain-coordination-[review]/`,
+  `docs/issues/013-kit-drift-gate-[finished]/`,
+  `docs/issues/011-sending-email-canonico-[review]/` (5 → 1 achado aberto)
+
+### Regra nova do operador
+
+**Quando a tag de um dos dois kits avança, a versão do outro acompanha** — não
+necessariamente com o mesmo número. E o `governancekit` é **global da máquina**, por
+design: um binário, um parque. Projeto consumidor não gateia release do kit; o
+acoplamento é de máquina.
+
+### Entregue
+
+`0.2.3 → 0.3.0`, pinado em AI-Agents `v1.2.1`. 45 commits estavam parados sob
+`[Unreleased]` com a versão intocada, e a cópia instalada estava congelada em 06/08 —
+sem `council.py`, 6 módulos divergentes. Agora é byte a byte igual ao `main` tagueado.
+
+**Parque: 28 dos 29 projetos governados em `v1.2.1`**, exceto
+`YouBR/ZeeCred/jk-dashboard-backup`, excluído pelo operador. Inclui quatro migrações de
+layout `docs/` → `.docs/` e um `--migrate-content` (`Contraponto`, 78 arquivos de
+migração interrompida, 5 contratos legados extraídos). Backups em
+`scratchpad/backup-20260811/`.
+
+**Gate de deriva (R2-18)** — `governancekit/kit_drift.py` + `_kit_snapshot.json` +
+`scripts/refresh-kit-snapshot.py`. Snapshot **derivado** do tarball verificado por
+checksum, nunca digitado; quatro asserções offline. Cada direção verificada por mutação.
+
+**Quatro dos cinco achados restantes da r2.** R2-16 era maior que o texto: sem TTY o
+`configure` não preenchia nada enquanto o `doctor` reprovava não-advisory nomeando o
+`configure` como remédio. R2-2 ganhou guarda no ponto da destruição. R2-15 já caíra com
+o bump do pin, e ganhou guard. R2-17 **não é reproduzível** — o único caller já
+normaliza.
+
+### Defeitos encontrados fora do escopo, e corrigidos
+
+- `doctor` morria em traceback, sem veredicto, em qualquer projeto com diretório sem
+  permissão de busca. Anterior à release; achado no `GestaoContasFernanda`.
+- `test_the_hook_does_not_block_when_the_toolchain_is_missing` nunca produziu a condição
+  que nomeia: o *user site* segue no `sys.path`. Passava porque a cópia instalada era
+  velha demais para chegar ao gate.
+
+### Onde eu errei
+
+Disse ao operador que o range permissivo protegeria o parque antigo — não protege, cada
+projeto carrega a própria cópia do contrato. E enquadrei o `jk-structure` como
+bloqueador da release, quando o acoplamento é só do binário global. O operador pegou os
+dois. Também troquei a branch da worktree errada e usei `git stash` esquecendo que ele é
+compartilhado entre worktrees do mesmo repo; nada se perdeu, nada foi commitado sujo.
+
+### Next
+
+**Épica 010/006 — reconciliação contrato × ferramenta.** As issues A1–A10, B1–B3,
+C1–C2, G1–G5 estão escritas e **nunca foram criticadas**; a tabela de estado do RESUME é
+de 04/08 e já envelheceu (A3, B3 e D1 têm commits de fechamento que ela não registra).
+O operador aprovou seguir, e adiou para amanhã.
+
+Aberto além disso: **R2-16'** (`_do_upgrade` sobrescreve arquivo de topo sem hash-check
+nem stash) é o único dos cinco que não foi tocado. E a pergunta que o concílio deixou:
+nada verifica que a contagem do §4 foi escrita no napkin — mesma forma que o R2-18 tinha
+antes do gate.
+
 ## [2026-08-10] gh-7 — §Sending Email canônica - released, 6 achados abertos
 
 - branch: `development`, empurrada (`origin/development` **criada** nesta sessão; não
