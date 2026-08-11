@@ -1,11 +1,54 @@
-"""Fail-closed path checks for commands operating below ``--root``."""
+"""Fail-closed path checks for ``--root`` itself and for paths below it."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
 class UnsafePathError(RuntimeError):
     """A requested path escapes the governed project or traverses a symlink."""
+
+
+class UnsafeRootError(RuntimeError):
+    """``--root`` points at a location that must never be governed as a project."""
+
+
+def _home() -> Path:
+    """The operator's home directory, honouring ``$HOME`` when it is set."""
+    env_home = os.environ.get("HOME")
+    return Path(env_home).resolve() if env_home else Path.home().resolve()
+
+
+def assert_governable_root(root: Path) -> Path:
+    """Return *root* only when it can plausibly be a project directory.
+
+    Agent tooling resolves ``AGENTS.md``/``CLAUDE.md`` and ``docs/limits.md`` by
+    walking up from the working directory. A kit installed in ``$HOME`` — or in any
+    ancestor of it — is therefore inherited by every directory below: a project with
+    no governance of its own stops failing closed and silently resolves to that copy
+    instead, with whatever readiness flags it happens to carry. The same applies to
+    the filesystem root. Neither is a project, so refuse before anything is written.
+    """
+    resolved = root.resolve()
+    home = _home()
+
+    if resolved == Path(resolved.anchor):
+        raise UnsafeRootError(
+            f"refusing to operate on the filesystem root: {resolved}"
+        )
+    if resolved == home:
+        raise UnsafeRootError(
+            f"refusing to operate on $HOME: {resolved}\n"
+            "A kit installed here is inherited by every directory below it, so an "
+            "unconfigured project resolves to it instead of stopping. Run the command "
+            "from the project directory, or pass --root <project>."
+        )
+    if resolved in home.parents:
+        raise UnsafeRootError(
+            f"refusing to operate on {resolved}: it contains $HOME ({home}), so every "
+            "project below would inherit the kit installed here."
+        )
+    return root
 
 
 def safe_path(root: Path, path: Path) -> Path:

@@ -32,7 +32,7 @@ def test_bootstrap_issue_uses_project_config_and_classification(tmp_path: Path) 
     (tmp_path / ".docs" / "governancekit-integration.json").parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / ".docs" / "governancekit-integration.json").write_text(
         '{"schema_version":1,"ai_agents":{"repo":"EDortta/AI-Agents","ref":"v1.1.6"},'
-        '"governancekit":{"version_range":">=0.2.2,<0.3.0","required_features":["version-reporting"]}}',
+        '"governancekit":{"version_range":">=0.2.2,<0.4.0","required_features":["version-reporting"]}}',
         encoding="utf-8",
     )
     (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")

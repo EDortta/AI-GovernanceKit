@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import unittest
@@ -102,3 +103,35 @@ class AdvisoryScanScopeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnreadableDirectoryTest(unittest.TestCase):
+    """A directory the walk cannot search must be skipped, not fatal.
+
+    `_iter_source_files` already guards `iterdir()`, but every per-item probe
+    stats the filesystem too — `is_dir()`, `is_symlink()`, and the `.git`
+    `exists()` check that detects a nested repo. Against a real governed project
+    holding a root-owned `drwx------` directory, that unguarded `exists()` ended
+    the whole doctor run in a `PermissionError` traceback with no verdict
+    printed. The scan is advisory; one unreadable directory must cost that
+    directory, not the report.
+    """
+
+    @unittest.skipIf(os.geteuid() == 0, "root can search any directory, so mode 0o000 raises nothing")
+    def test_an_unsearchable_directory_is_skipped_and_the_walk_continues(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _git_init(root)
+            (root / "visible.py").write_text(_ANTIPATTERN, encoding="utf-8")
+            locked = root / "locked"
+            locked.mkdir()
+            (locked / "inside.py").write_text(_ANTIPATTERN, encoding="utf-8")
+            locked.chmod(0o000)
+            try:
+                result = _check_security_advisories(root)
+            finally:
+                locked.chmod(0o700)  # let TemporaryDirectory clean up
+
+        # The point is that we get a verdict at all; the visible file still lands.
+        self.assertIn(_LABEL, result.message)
+        self.assertIn("visible.py", result.message)

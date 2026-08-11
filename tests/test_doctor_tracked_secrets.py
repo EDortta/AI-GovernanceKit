@@ -72,7 +72,7 @@ class TrackedSecretFilesTests(unittest.TestCase):
             self.assertTrue(result.passed, result.message)
 
     def test_nested_env_example_is_not_a_tracked_secret(self) -> None:
-        # Observed in the wild: wa-hub-client/.env.example (AcheiVc, 2026-07-17).
+        # Observed in the wild: a nested client/.env.example, tracked (2026-07-17).
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             _init_repo_with_tracked_file(root, "client/.env.example")

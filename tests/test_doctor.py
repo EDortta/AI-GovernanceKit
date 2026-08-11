@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,12 +22,33 @@ class DoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             write_valid_repo(root)
-            (root / ".docs" / "limits.md").write_text("limits_ready: no\n", encoding="utf-8")
+            (root / "docs" / "limits.md").write_text("limits_ready: no\n", encoding="utf-8")
 
             result = run_doctor(root)
 
             self.assertFalse(result.ok)
-            self.assertIn(".docs/limits.md", failed_check_names(result))
+            self.assertIn("docs/limits.md", failed_check_names(result))
+
+    def test_unfilled_template_prose_does_not_satisfy_the_flag(self) -> None:
+        # Regression: the template the kit ships explains the flag in prose. A
+        # substring check matched that sentence and reported a project ready while
+        # its flag literally said `no`.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "docs" / "limits.md").write_text(
+                "# Agent Operational Limits\n\n"
+                "## Metadata\n\n"
+                "- limits_ready: no\n\n"
+                "When copied into a target project, the programmer must replace these "
+                "limits and set `limits_ready: yes` only after they are accurate.\n",
+                encoding="utf-8",
+            )
+
+            result = run_doctor(root)
+
+            self.assertFalse(result.ok)
+            self.assertIn("docs/limits.md", failed_check_names(result))
 
     def test_empty_resume_next_step_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -323,19 +345,87 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("tracked secrets", failed_check_names(result))
 
 
+class CouncilGateDoctorTests(unittest.TestCase):
+    """The one non-advisory check that only ever speaks at commit time."""
+
+    def _repo(self, root: Path) -> None:
+        write_valid_repo(root)
+        # Becoming a git repository activates the secret-ignore check, which is
+        # unrelated to this gate but would otherwise sink `result.ok`.
+        (root / ".gitignore").write_text(".env\n.env.*\n.credentials/\n", encoding="utf-8")
+        for args in (
+            ("init", "-q"),
+            ("config", "user.email", "council@test"),
+            ("config", "user.name", "council"),
+        ):
+            subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+    def test_outside_a_commit_the_gate_is_silent_and_advisory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._repo(root)
+
+            result = run_doctor(root)
+
+            gate = next(check for check in result.checks if check.name == "council gate")
+            self.assertTrue(gate.advisory)
+            self.assertTrue(result.ok, result.checks)
+
+    def test_a_staged_contract_change_without_a_round_fails_doctor(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._repo(root)
+            (root / ".docs" / "agents").mkdir(parents=True, exist_ok=True)
+            (root / ".docs" / "agents" / "reviewer.md").write_text("# reviewer\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "add", "--", ".docs/agents/reviewer.md"],
+                cwd=root, check=True, capture_output=True,
+            )
+
+            result = run_doctor(root)
+
+            gate = next(check for check in result.checks if check.name == "council gate")
+            self.assertFalse(gate.advisory, "the gate must be able to block a commit")
+            self.assertFalse(gate.passed)
+            self.assertFalse(result.ok)
+            self.assertIn("council gate", failed_check_names(result))
+
+    def test_an_unreadable_record_never_wedges_the_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._repo(root)
+            (root / "AGENTS.md").write_text("# contract, revised\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "add", "--", "AGENTS.md"], cwd=root, check=True, capture_output=True
+            )
+            from governancekit.council import record_path, staged_fingerprint
+
+            fingerprint = staged_fingerprint(root)
+            assert fingerprint is not None
+            path = record_path(root, fingerprint)
+            path.parent.mkdir(parents=True)
+            path.write_text("{ not json", encoding="utf-8")
+
+            result = run_doctor(root)
+
+            gate = next(check for check in result.checks if check.name == "council gate")
+            self.assertTrue(gate.advisory)
+            self.assertTrue(gate.passed)
+
+
 def write_valid_repo(root: Path) -> None:
     (root / "docs" / "issues" / "001-bootstrap-[started]" / "issues").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# AGENTS.md\n", encoding="utf-8")
     (root / "README.md").write_text("# Test Repo\n", encoding="utf-8")
     (root / "handoff.md").write_text("# Handoff\n", encoding="utf-8")
     (root / ".docs").mkdir(parents=True, exist_ok=True)
-    (root / ".docs" / "software-overview.md").write_text(
+    (root / "docs" / "software-overview.md").write_text(
         "project_context_ready: yes\n",
         encoding="utf-8",
     )
-    (root / ".docs" / "limits.md").write_text("limits_ready: yes\n", encoding="utf-8")
+    (root / "docs" / "limits.md").write_text("limits_ready: yes\n", encoding="utf-8")
     (root / "docs" / "required-reading.md").write_text(
-        "# Required Reading\n\n- `.docs/software-overview.md` — context\n",
+        "# Required Reading\n\n- `docs/software-overview.md` — context\n",
         encoding="utf-8",
     )
 

@@ -220,22 +220,22 @@ class ConfigureIdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             (root / "AGENTS.md").write_text(
-                "[DEFAULT] [MANDATORY] [PROHIBITED] {{SMTP_ACCOUNT}}\n", encoding="utf-8"
+                "[DEFAULT] [MANDATORY] [PROHIBITED] {{ORG_NAME}}\n", encoding="utf-8"
             )
 
             result = run_configure(
                 root,
-                preset={"SMTP_ACCOUNT": "ann@example.com"},
+                preset={"ORG_NAME": "Acme"},
                 interactive=False,
             )
 
             self.assertEqual(
                 (root / "AGENTS.md").read_text(encoding="utf-8"),
-                "[DEFAULT] [MANDATORY] [PROHIBITED] ann@example.com\n",
+                "[DEFAULT] [MANDATORY] [PROHIBITED] Acme\n",
             )
             self.assertEqual(
                 result.values,
-                {"SMTP_ACCOUNT": "ann@example.com"},
+                {"ORG_NAME": "Acme"},
             )
 
 

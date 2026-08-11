@@ -18,7 +18,7 @@ REPO = "EDortta/AI-Agents"
 # Pinned to a tagged release (not the mutable "main" branch) so installs are
 # reproducible and can be checksum-verified. Bump alongside KNOWN_TARBALL_SHA256
 # when a new AI-Agents release is adopted.
-DEFAULT_REF = "v1.1.7"
+DEFAULT_REF = "v1.2.1"
 
 # codeload.github.com tarball SHA-256 for (repo, ref) pairs we can vouch for.
 # Only the upstream default repo/ref is pinned here; a custom --repo/--ref
@@ -33,6 +33,8 @@ KNOWN_TARBALL_SHA256: dict[tuple[str, str], str] = {
     (REPO, "v1.1.5"): "68881466d94fead63d8f55d2c48e3ab82d4b4099a3741c2064b08e44a726f2fd",
     (REPO, "v1.1.6"): "0cac041c9e5c7ce0cc28b032fbb6cc400509b9a23dc9f04c24e21b6d7daf6c21",
     (REPO, "v1.1.7"): "7bff38d6ff94576fee6329fd84074d14ad9af649e8d98ff4230516a4283db97a",
+    (REPO, "v1.2.0"): "d7581907321c4cb89dba994165e797c25465d380e2e29e9dd6668f69aef08339",
+    (REPO, "v1.2.1"): "ccf9ed693a8a69abcb2548b24cddbd920c2edc6b41bcbd99c6af0f879519ac61",
 }
 
 # ── layout: kit lives in .docs/, project owns docs/ ──────────────────────────────
@@ -63,15 +65,19 @@ _KIT_DOC_PATHS: list[str] = [
 
 # Kit-provided templates that the PROJECT fills in (readiness flags, overview text).
 # Seeded on a fresh install (with flags reset) but NEVER overwritten on --upgrade,
-# so the project's answers survive. They live under .docs/ (kit location).
-_KIT_SEED_PATHS: list[str] = [
-    "docs/software-overview.md",
-    "docs/limits.md",
-]
+# so the project's answers survive.
+_KIT_SEED_PATHS: list[str] = []
 
 # Project-owned starter files: seeded once into docs/ (the project's territory) and
 # never overwritten. They stay in docs/, not .docs/.
+#
+# software-overview.md and limits.md belong here, not in _KIT_SEED_PATHS: the kit
+# ships a template, but the project writes the content and owns the readiness flags,
+# and the Start Gate reads exactly the file the project maintains. Keeping them under
+# the kit's .docs/ (2026-07-01 to 2026-08-04) split the two apart.
 _PROJECT_SEED_PATHS: list[str] = [
+    "docs/software-overview.md",
+    "docs/limits.md",
     "docs/required-reading.md",
     "docs/project-rules.md",
     "docs/napkin-lessons.md",
@@ -97,6 +103,29 @@ _FRESH_PATHS: list[str] = [
     "scripts/install-agents-kit.sh",
     "scripts/agent-worktree.sh",
 ]
+# `templates` is deliberately NOT installed, and the reason is worth keeping.
+#
+# It was added on 2026-08-10 so the shell installer shipped into the target could find
+# templates/required-reading.template.md instead of bailing silently. The council of
+# that delivery reproduced what it actually cost: `templates` is the commonest
+# top-level directory name in web projects, every kit path here is unprefixed, and the
+# consequences compound — `_update_gitignore` writes it as a BARE pattern, so git
+# ignores `templates/` at ANY depth; `_do_fresh --force` rmtree's the project's own
+# tree with no backup; and `_write_state` rglobs the destination into the TRACKED
+# manifest, so the SECOND upgrade deletes the project's files as kit-owned leftovers —
+# silently — and `remove-agents` then plans to delete them at confidence 1.0.
+#
+# The self-upgrade path it was meant to repair is degraded, not blocked, and the first
+# cut of this comment overstated it. The shipped shell installer reads
+# `.credentials/identity.json` while this installer writes identity to
+# `.gk/operator.json`, so the two do not share the operator's answers: with stdin closed
+# the shell run exits 8, but on a TTY — how an operator actually self-upgrades — it
+# prompts and completes. So the entry did buy something; it just did not buy enough to
+# be worth claiming the project's own directory. The silent bail is fixed where it belongs: the shell
+# installer now names the index it failed to create instead of leaving on a bare
+# `return 0` under a line that claimed the file had been preserved.
+#
+# Reinstating this needs a namespaced destination (`.docs/templates/`), not the root.
 
 # Paths replaced during --upgrade (dirs wholesale, files individually). Excludes the
 # seed paths so project-filled overview/limits/required-reading/napkin survive.
@@ -161,8 +190,6 @@ _LEGACY_KIT_DOC_NAMES: list[str] = [
     "articles",
     "icons",
     "governancekit-integration.json",
-    "software-overview.md",
-    "limits.md",
 ]
 
 _MIGRATION_BACKUP_DIR = ".docs-migration-bak"
@@ -208,7 +235,14 @@ _STATE_VERSION = 1
 # Answers that must never be committed because they are operator/machine-local.
 _OPERATOR_PLACEHOLDERS: frozenset[str] = frozenset({
     "OPERATOR_NAME",
+    # SMTP_ACCOUNT is no longer a fillable slot — it left _PLACEHOLDER_DESCRIPTIONS on
+    # 2026-08-10 when the canonical contract stopped naming an email transport
+    # (AI-Agents#5), so nothing collects it any more. It stays HERE on purpose: an
+    # install made before that date has the operator's address in .gk/operator.json,
+    # and this frozenset is what keeps a known key out of the COMMITTED manifest.
+    # Dropping it would route a legacy value into a tracked file on the next upgrade.
     "SMTP_ACCOUNT",
+    "SMTP_DOMAIN",
     "PROJECT_ROOT",
 })
 
@@ -264,6 +298,24 @@ def _dest_rel(src_rel: str) -> str:
     return src_rel
 
 
+# Seeded from an EMPTY TEMPLATE, never from the kit's own copy. Copying the source
+# tree's file hands every project this repository's content as if it were the project's
+# own — the same mistake the kit already fixed for README.md.
+#
+# required-reading.md joined this list on 2026-08-10, and it is the sharpest case yet.
+# `.docs/workflows/sending-email.md` requires each project to declare its own email
+# transport and recipient list in that index, and the kit's own index declares the kit's
+# — so seeding from it made every new project assert one operator's helper as its
+# transport, in the exact table the contract tells the agent to trust. The rule that
+# forbids carrying a transport across projects was being violated by the installer that
+# ships the rule. Found by council round 1 of AI-Agents#5.
+_TEMPLATE_SEEDS: dict[str, str] = {
+    "handoff.md": "templates/handoff.template.md",
+    "docs/napkin-lessons.md": "templates/napkin-lessons.template.md",
+    "docs/required-reading.md": "templates/required-reading.template.md",
+}
+
+
 def _resolve_src(src_root: Path, rel: str) -> Path:
     """Resolve where a kit path actually lives in the downloaded source tree.
 
@@ -272,7 +324,16 @@ def _resolve_src(src_root: Path, rel: str) -> Path:
     ``napkin-lessons.md``) stay in ``docs/…``. This prefers the ``.docs/`` location
     when present and falls back to ``docs/`` — so the installer reads correctly from
     both a restructured source and a legacy one.
+
+    Template-seeded files (``_TEMPLATE_SEEDS``) resolve to their empty template instead
+    of the source's own file, so a target is never seeded with the kit's history — nor,
+    for the reading index, with the kit's own local sources and email transport.
     """
+    template = _TEMPLATE_SEEDS.get(rel)
+    if template is not None:
+        candidate = src_root / template
+        if candidate.is_file():
+            return candidate
     if rel not in _PROJECT_SEED_PATHS and rel.startswith(_SRC_DOC_PREFIX):
         dotted = src_root / (_DST_DOC_PREFIX + rel[len(_SRC_DOC_PREFIX):])
         if dotted.exists():
@@ -291,6 +352,7 @@ def run_install_agents(
     migrate_content: bool = False,
     track: bool | None = None,
     install_awt: bool = False,
+    allow_unverified: bool = False,
 ) -> InstallResult:
     """Download and install AI-Agents kit into *root*.
 
@@ -327,13 +389,16 @@ def run_install_agents(
         migrated, notes = _migrate_legacy_layout(root)
         result.migrated = migrated
         result.migration_notes = notes
+        readiness_moved, readiness_notes = _migrate_readiness_files_to_docs(root)
+        result.migrated = result.migrated or readiness_moved
+        result.migration_notes.extend(readiness_notes)
         if migrate_content:
             content_migrated, content_notes = _migrate_legacy_content(root)
             result.migrated = result.migrated or content_migrated
             result.migration_notes.extend(content_notes)
 
     with tempfile.TemporaryDirectory() as tmp:
-        src_root = _download(repo, ref, Path(tmp))
+        src_root = _download(repo, ref, Path(tmp), allow_unverified=allow_unverified)
 
         if docs_only or upgrade:
             result.had_state = bool(state)
@@ -418,7 +483,7 @@ def _install_awt(root: Path) -> tuple[bool, str | None]:
 
 # ── download ───────────────────────────────────────────────────────────────────
 
-def _download(repo: str, ref: str, tmp: Path) -> Path:
+def _download(repo: str, ref: str, tmp: Path, *, allow_unverified: bool = False) -> Path:
     url = f"https://codeload.github.com/{repo}/tar.gz/{ref}"
     archive = tmp / "src.tar.gz"
     try:
@@ -435,19 +500,31 @@ def _download(repo: str, ref: str, tmp: Path) -> Path:
                 "Refusing to install — the tarball may have been tampered with or "
                 "the pinned checksum is stale."
             )
-    else:
+    elif allow_unverified:
         print(
-            f"Warning: no known checksum for {repo}@{ref} — installing unverified. "
-            f"Use the default repo/ref for a checksum-verified install.",
+            f"Warning: no known checksum for {repo}@{ref} — installing unverified "
+            "because --allow-unverified was given.",
             file=sys.stderr,
+        )
+    else:
+        # A warning printed into a verbose install is not a decision anyone made. The
+        # kit governs supply chains; it does not get to be looser than what it asks for.
+        raise RuntimeError(
+            f"No known checksum for {repo}@{ref}. Install from a pinned release, or "
+            "pass --allow-unverified to accept an unverified tarball deliberately."
         )
 
     with tarfile.open(archive, "r:gz") as tf:
         _safe_extractall(tf, tmp)
 
-    extracted = [p for p in tmp.iterdir() if p.is_dir() and p.name != archive.name]
+    extracted = sorted(p for p in tmp.iterdir() if p.is_dir() and p.name != archive.name)
     if not extracted:
         raise RuntimeError("Unexpected archive structure — no top-level directory found.")
+    if len(extracted) > 1:
+        # iterdir() order is filesystem-dependent, so picking one would be an arbitrary
+        # choice made silently about which tree gets installed.
+        names = ", ".join(p.name for p in extracted)
+        raise RuntimeError(f"Unexpected archive structure — several top-level directories: {names}")
     return extracted[0]
 
 
@@ -538,12 +615,12 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
 def _reset_readiness_flags(root: Path) -> None:
     for rel, pattern, replacement in [
         (
-            ".docs/software-overview.md",
+            "docs/software-overview.md",
             "- project_context_ready: yes",
             "- project_context_ready: no",
         ),
         (
-            ".docs/limits.md",
+            "docs/limits.md",
             "- limits_ready: yes",
             "- limits_ready: no",
         ),
@@ -756,7 +833,11 @@ def _write_state(
         "operator.json\n"
         "secrets.json\n"
         "context-telemetry.jsonl\n"
-        "overwritten/\n",
+        "overwritten/\n"
+        # Council records key off a local staged diff, which means nothing to anyone
+        # else once the commit lands. The durable record is the prose council.md §4
+        # requires in docs/napkin-lessons.md and the active RESUME.md.
+        "council/\n",
         encoding="utf-8",
     )
 
@@ -914,6 +995,58 @@ def _content_migration_required(root: Path) -> bool:
     return backup_agents.is_dir() and not project_rules.exists() and not project_rules_dir.is_dir()
 
 
+_READINESS_ASIDE_DIR = ".gk/readiness-migration"
+
+
+def _migrate_readiness_files_to_docs(root: Path) -> tuple[bool, list[str]]:
+    """Bring ``software-overview.md`` and ``limits.md`` back from ``.docs/`` to ``docs/``.
+
+    They were classified as kit-owned between 2026-07-01 and 2026-08-04 and installed
+    under ``.docs/``. They are project-owned — the project writes them and owns their
+    readiness flags — so the Start Gate must read them from ``docs/``, which the kit
+    never overwrites.
+
+    Idempotent, and it never destroys content: a symlink is the workaround projects
+    used for this same misfiling, so dropping it completes the migration; a target
+    holding both keeps the ``docs/`` copy and gets the ``.docs/`` one set aside.
+    """
+    notes: list[str] = []
+    moved = False
+    for name in ("software-overview.md", "limits.md"):
+        src = root / ".docs" / name
+        dst = root / "docs" / name
+        if not src.exists() and not src.is_symlink():
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+
+        if src.is_symlink():
+            src.unlink()
+            notes.append(f"readiness: removed .docs/{name} symlink — docs/{name} is authoritative")
+            moved = True
+            continue
+
+        if dst.exists():
+            if src.read_bytes() == dst.read_bytes():
+                src.unlink()
+                notes.append(f"readiness: .docs/{name} was identical to docs/{name} — duplicate removed")
+                moved = True
+                continue
+            aside = root / _READINESS_ASIDE_DIR
+            aside.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(aside / name))
+            notes.append(
+                f"readiness: CONFLICT on {name} — docs/{name} kept as authoritative; "
+                f"the .docs/ copy is at {_READINESS_ASIDE_DIR}/{name} for review"
+            )
+            moved = True
+            continue
+
+        shutil.move(str(src), str(dst))
+        notes.append(f"readiness: .docs/{name} → docs/{name} (project-owned)")
+        moved = True
+    return moved, notes
+
+
 def _migrate_legacy_content(root: Path) -> tuple[bool, list[str]]:
     """Preserve legacy agent contracts in project-owned reading paths.
 
@@ -1052,12 +1185,28 @@ def _resolve_track_kit_docs(root: Path, cli_value: bool | None) -> bool:
 
 _PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]+)\}\}")
 
+# Tokens no longer COLLECTED (they are gone from _PLACEHOLDER_DESCRIPTIONS, so nothing
+# prompts for them) but still SUBSTITUTED when a stored value exists. Without this a
+# target installed before the retirement dead-ends: an upgrade at a ref whose files
+# still carry `{{SMTP_ACCOUNT}}` leaves it raw, `doctor` fails non-advisory with "kit
+# not configured", and `configure` cannot fix it because its known-token set is built
+# from _PLACEHOLDER_DESCRIPTIONS too. Found by the council of AI-Agents#5 / GK#7.
+_RETIRED_PLACEHOLDERS: dict[str, str] = {
+    "SMTP_ACCOUNT": "retired 2026-08-10 (AI-Agents#5): the canonical contract names no "
+                    "email transport, so nothing asks for this any more.",
+    # Same field one over, and the council caught the asymmetry: it was left describable
+    # while its sibling was retired, AND it was outside _OPERATOR_PLACEHOLDERS — so a
+    # legacy stored answer would have been written into the COMMITTED manifest, the
+    # exact hazard the SMTP_ACCOUNT comment says that set exists to prevent. No shipped
+    # file has ever carried the token, so nothing collected it either.
+    "SMTP_DOMAIN": "retired 2026-08-10 (AI-Agents#5): transport configuration, and no "
+                   "kit file ever carried the slot.",
+}
+
 _PLACEHOLDER_DESCRIPTIONS: dict[str, str] = {
     "OPERATOR_NAME": "operator / project owner name (used in agent greetings)",
     "GITHUB_OWNER": "GitHub username or organisation that owns the repo",
     "PROJECT_SLUG": "short identifier for this project (used in work_ids and logs, e.g. my-app)",
-    "SMTP_ACCOUNT": "SMTP email account (e.g. you@yourdomain.com)",
-    "SMTP_DOMAIN": "email domain (e.g. yourdomain.com)",
     "ORG_NAME": "organisation or company name",
     "PIX_KEY_UUID": "PIX random key UUID (Brazil payment system)",
     "PIX_HOLDER_NAME": "full name registered with the PIX key",
@@ -1100,7 +1249,9 @@ def _fill_placeholders(
         except OSError:
             continue
         for token in _PLACEHOLDER_RE.findall(text):
-            if token in _PLACEHOLDER_DESCRIPTIONS:
+            # Retired tokens are collected so a stored value can still be applied to a
+            # legacy file that carries them; they are never asked about below.
+            if token in _PLACEHOLDER_DESCRIPTIONS or token in _RETIRED_PLACEHOLDERS:
                 placeholder_files.setdefault(token, []).append(path)
 
     known = known or {}
@@ -1109,7 +1260,12 @@ def _fill_placeholders(
         return dict(known)
 
     remembered = {t: known[t] for t in placeholder_files if known.get(t)}
-    unknown = [t for t in sorted(placeholder_files) if t not in remembered]
+    # A retired token with no stored value is not "unknown" — there is nobody left to
+    # ask. Reporting it would send the operator to `configure`, which cannot fill it.
+    unknown = [
+        t for t in sorted(placeholder_files)
+        if t not in remembered and t not in _RETIRED_PLACEHOLDERS
+    ]
 
     if not sys.stdin.isatty():
         # Unattended: re-apply what we already know rather than leaving raw templates
@@ -1134,6 +1290,11 @@ def _fill_placeholders(
 
         values = {}
         for token in sorted(placeholder_files):
+            if token in _RETIRED_PLACEHOLDERS:
+                # Apply what is stored, ask nothing: the slot no longer exists.
+                if remembered.get(token):
+                    values[token] = remembered[token]
+                continue
             desc = _PLACEHOLDER_DESCRIPTIONS.get(token, "")
             current = remembered.get(token)
             prompt = f"  {{{{{token}}}}}"
@@ -1174,8 +1335,15 @@ def _fill_placeholders(
     if changed:
         print("\nPlaceholders filled in: " + ", ".join(sorted(set(changed))))
 
-    # Warn about any that were skipped
-    unfilled = [t for t in placeholder_files if t not in values]
+    # Warn about any that were skipped. Retired tokens are excluded for the same
+    # reason they never reach `unknown`: naming them sends the operator to a slot that
+    # no longer exists. The guard was added to `unknown` and to the prompt loop and
+    # missed here, because the test's fixture held only the retired token and the
+    # function returned before reaching this line. Council round 2 of GK#7.
+    unfilled = [
+        t for t in placeholder_files
+        if t not in values and t not in _RETIRED_PLACEHOLDERS
+    ]
     if unfilled:
         print(
             "Still unfilled (skipped): "
@@ -1186,6 +1354,62 @@ def _fill_placeholders(
 
 
 # ── .gitignore management ──────────────────────────────────────────────────────
+
+# The secret paths the managed block ignores, and the single source of truth for
+# `doctor._check_gitignore_secrets`, which probes the same list with `git check-ignore`.
+#
+# They were two lists, and they disagreed: the generator emitted eighteen entries and
+# none of them covered `.env`, while the check failed the repository for exactly that.
+# Every project the kit installed was born failing a mandatory gate on a file the kit
+# itself wrote — observed on CodexBridge, where `.credentials/` was covered and `.env`
+# was not. Two gates over one contract must read one list, or the newer one drifts and
+# the tool ends up refusing what it produces. That is the same defect as the readiness
+# flag on 2026-08-04, where a shell regex and a Python substring judged the same file
+# differently.
+#
+# `.env` is deliberately a family: `.env.local`, `.env.production` and friends carry
+# the same secrets. `.env.example` is re-included because it is documentation by
+# convention and every project has one — a rule that ignores it teaches operators to
+# fight the managed block, and `doctor`'s own tracked-secrets check already exempts it.
+# Suffixes and names that mark a file as a template shipped on purpose, not a secret.
+# `doctor._is_secret_template` imports these: the ignore block must re-include exactly
+# what the tracked-secrets check forgives, or the two disagree again in the other
+# direction — a file the checker calls safe that the block makes untrackable.
+SECRET_TEMPLATE_SUFFIXES: tuple[str, ...] = (".example", ".sample", ".template", ".dist")
+SECRET_TEMPLATE_NAMES: frozenset[str] = frozenset({".env.missing", ".env-example"})
+# Scaffolding the kit itself seeds into `.credentials/`. `.credentials/` as a bare
+# directory pattern would make all of them permanently untrackable: git does not
+# descend into an excluded directory, so a nested `!README.md` never fires. The
+# pattern has to exclude the *contents* and re-include the docs.
+CREDENTIALS_DOC_NAMES: tuple[str, ...] = (".gitignore", ".keep", "README*")
+
+
+def _secret_ignore_patterns() -> tuple[str, ...]:
+    patterns: list[str] = [
+        ".env",
+        ".env.*",
+        ".envrc",
+        # Package-manager and network credential files. Bare names, so no glob can
+        # reach past them — the low-risk half of what the security lens found missing.
+        ".npmrc",
+        ".pypirc",
+        ".netrc",
+        # A private key in a repository is a mistake often enough that the default is
+        # to ignore it. A project that genuinely tracks a key fixture uses `git add -f`
+        # once; the reverse mistake is unrecoverable. Risk accepted in the round record.
+        "*.pem",
+        "*.key",
+        ".credentials/*",
+    ]
+    patterns += [f"!.env{suffix}" for suffix in SECRET_TEMPLATE_SUFFIXES]
+    patterns += [f"!{name}" for name in sorted(SECRET_TEMPLATE_NAMES)]
+    patterns += [f"!.credentials/{name}" for name in CREDENTIALS_DOC_NAMES]
+    patterns += [f"!.credentials/*{suffix}" for suffix in SECRET_TEMPLATE_SUFFIXES]
+    return tuple(patterns)
+
+
+SECRET_IGNORE_PATTERNS: tuple[str, ...] = _secret_ignore_patterns()
+
 
 def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> list[str]:
     """Build .gitignore entries for the managed section.
@@ -1222,6 +1446,7 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     entries.append(_SECRETS_FILE)
     entries.append(f"{_STATE_DIR}/context-telemetry.jsonl")
     entries.append(f"{_STATE_DIR}/overwritten/")
+    entries.extend(SECRET_IGNORE_PATTERNS)
     return entries
 
 

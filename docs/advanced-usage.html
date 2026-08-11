@@ -45,7 +45,7 @@ governancekit --root /project install-agents
 # Update an existing installation
 governancekit --root /project install-agents --upgrade</code></pre>
     <table><tbody>
-      <tr><td><code>--ref REF</code></td><td>AI-Agents tag, branch, or commit. Default: checksum-pinned <code>v1.1.6</code>.</td></tr>
+      <tr><td><code>--ref REF</code></td><td>AI-Agents tag, branch, or commit. Default: checksum-pinned <code>v1.2.1</code>.</td></tr>
       <tr><td><code>--repo OWNER/REPO</code></td><td>Alternative source repository. Default: <code>EDortta/AI-Agents</code>.</td></tr>
       <tr><td><code>--force</code></td><td>Overwrites existing kit files.</td></tr>
       <tr><td><code>--upgrade</code></td><td>Updates kit-owned files while preserving project-owned state.</td></tr>
@@ -83,11 +83,24 @@ governancekit --root /project install-agents --upgrade</code></pre>
     <table><thead><tr><th>Command/parameter</th><th>Description</th></tr></thead><tbody>
       <tr><td><code>doctor</code></td><td>Validates governance files, readiness, identity, secrets, state, and sibling-branch warnings.</td></tr>
       <tr><td><code>doctor --json</code></td><td>Outputs structured results for CI.</td></tr>
+      <tr><td><code>install-agents --allow-unverified</code></td><td>Installs a tarball for which no checksum is known. Without it an unpinned ref is refused rather than warned about: the kit does not install what it cannot verify.</td></tr>
+      <tr><td><code>concurrency</code></td><td>Reports every working front open in this repository — live worktrees and branches carrying commits the integration branch lacks — marks the one this session sits on, flags the worktrees that hold nothing unmerged and can be removed, and states the runway left before the wind-down hard stop.</td></tr>
+      <tr><td><code>concurrency --closing</code></td><td>Same survey, phrased for session close: what stays open for the next day.</td></tr>
+      <tr><td><code>concurrency --json</code></td><td>Outputs the survey and the wind-down state as JSON.</td></tr>
+      <tr><td><code>council --record FILE</code></td><td>Records a council round from a JSON file, bound to the staged diff. The fingerprint and trigger list come from the tool, never from the file.</td></tr>
+      <tr><td><code>council --waive REASON</code></td><td>Clears the gate for the staged diff and records why. A reason is required — a waiver without one would be a silent escape.</td></tr>
+      <tr><td><code>council --requested</code></td><td>Treats this delivery as one the operator asked a council for (<code>council.md</code> §4).</td></tr>
+      <tr><td><code>council --json</code></td><td>Outputs the gate state, triggers, and record as JSON; exits non-zero when the gate blocks.</td></tr>
+      <tr><td><code>author-context</code></td><td>Drafts <code>docs/software-overview.md</code> and <code>docs/limits.md</code> with the project's configured LLM when they are absent or still templates, and reviews them — reporting what is missing, never rewriting — when you already wrote them. Nothing is applied and no readiness flag moves without your confirmation.</td></tr>
+      <tr><td><code>author-context --plan-only</code></td><td>Reports what would be drafted or reviewed and stops. Calls no provider.</td></tr>
+      <tr><td><code>author-context --yes</code></td><td>Accepts the proposals without prompting. Non-interactive runs without it always answer no.</td></tr>
+      <tr><td><code>author-context --json</code></td><td>Outputs the plan or the proposals as JSON.</td></tr>
       <tr><td><code>discover --json</code></td><td>Inspects the repository read-only and reports project shape, detected agents, and governance artifacts as JSON.</td></tr>
       <tr><td><code>map --output PATH</code></td><td>Writes the code map to a chosen path; default is <code>docs/codemap.md</code>.</td></tr>
       <tr><td><code>map --all</code></td><td>Includes private, single-underscore Python symbols.</td></tr>
-      <tr><td><code>migrate-activity-monitor --legacy-path PATH</code></td><td>Copies or merges a legacy monitor; defaults to <code>~/Sync/agent-status.json</code> and preserves that source.</td></tr>
+      <tr><td><code>migrate-activity-monitor --legacy-path PATH</code></td><td>Merges a single legacy monitor instead of every known one; every source is preserved, never deleted.</td></tr>
       <tr><td><code>migrate-activity-monitor --state-home PATH</code></td><td>Overrides the XDG state home; by default uses <code>$XDG_STATE_HOME</code> or <code>~/.local/state</code>.</td></tr>
+      <tr><td><code>migrate-activity-monitor --include-log</code></td><td>Also moves <code>~/Sync/agent-log.md</code> to <code>ai-agents/agent-log.md</code>; refused when a canonical log already exists, since append-only prose cannot be merged safely.</td></tr>
       <tr><td><code>resume</code></td><td>Shows active work, next step, handoff, identity, branch, and collision warnings.</td></tr>
     </tbody></table>
   </section>

@@ -1,20 +1,21 @@
 # Code Map · ai-governancekit
 
-> Generated: 2026-08-03 · Root: `/home/esteban/Sync/Projects/AI/GovernanceKit-main-merge`
+> Generated: 2026-08-04 · Root: `/home/esteban/Sync/Projects/AI/GovernanceKit-main-merge`
 > Refresh: `governancekit --root /home/esteban/Sync/Projects/AI/GovernanceKit-main-merge map`
 
 ## Summary
 
-- 55 file(s) · 431 symbol(s) indexed
-- Languages: config (1), python (52), shell (2)
+- 59 file(s) · 495 symbol(s) indexed
+- Languages: config (1), python (56), shell (2)
 - Top-level areas: `.`, `governancekit`, `scripts`, `tests`
 
 ## Governance
 
 - `AGENTS.md`
 - `docs/required-reading.md`
-- `.docs/software-overview.md`
-- `.docs/limits.md`
+- `docs/project-rules.md`
+- `docs/software-overview.md`
+- `docs/limits.md`
 
 ## Ignored Paths
 
@@ -41,6 +42,7 @@ governancekit/
   config_session.py  — "Resumable configuration sessions with explicit approval gates."
   configure.py
   context.py  — "Deterministic context selection, budgeting, provenance, and inspection."
+  context_authoring.py  — "Operator-confirmed authoring and review of the two readiness documents."
   discover.py  — "Read-only project discovery for adoption/configuration flows."
   doctor.py
   hooks.py  — "Local hook installation for governed repositories."
@@ -48,7 +50,7 @@ governancekit/
   install_agents.py
   integration.py  — "AI-Agents <-> GovernanceKit integration contract inspection."
   issue_bootstrap.py  — "Create local issue/epic scaffolding from installed templates."
-  path_safety.py  — "Fail-closed path checks for commands operating below ``--root``."
+  path_safety.py  — "Fail-closed path checks for ``--root`` itself and for paths below it."
   project_config.py  — "Project adoption/configuration state for AI-GovernanceKit."
   remove_agents.py  — "Conservative de-adoption planning for an installed AI-Agents kit."
   resume.py
@@ -57,7 +59,7 @@ governancekit/
   voice.py  — "Optional AI-ListenToMeOnCLI integration detection."
 pyproject.toml
 scripts/
-  notify-nexo.sh
+  merge-to-main.sh
   validate-governance.sh
 tests/
   test_activity_monitor.py
@@ -70,6 +72,7 @@ tests/
   test_config_session.py
   test_configure.py
   test_context.py
+  test_context_authoring.py
   test_discover.py
   test_doctor.py
   test_doctor_advisory_scan.py
@@ -82,8 +85,10 @@ tests/
   test_integration.py
   test_issue_bootstrap.py
   test_project_config.py
+  test_readiness_migration.py
   test_remove_agents.py
   test_resume.py
+  test_root_safety.py
   test_scope_conversation.py
   test_version.py
   test_voice.py
@@ -127,6 +132,9 @@ tests/
   - `capabilities_for(self, name)` *(method)*
   - `render(self)` *(method)*
 - `supported_scope_agents(discovered)`
+- `validate_provider_url(base_url)` — "Return *base_url* only when a credential may safely travel over it."
+- `read_confined_sources(root, sources)` — "Read *sources*, refusing any path that resolves outside *root*."
+- `request_completion(provider, root)` — "Send one chat completion and return its raw text."
 - `propose_project_scope(root, agent, sources)` — "Ask the selected, locally authenticated agent for a read-only proposal."
 
 ### `governancekit/classification.py`
@@ -203,6 +211,28 @@ tests/
 - `prune_telemetry(root, manifest_path, now)`
 - `format_context(result)`
 
+### `governancekit/context_authoring.py`
+
+> Operator-confirmed authoring and review of the two readiness documents.
+
+- **`DocState`** *(class)*
+- `flag_is_yes(text, marker)` — "Whether *text* carries ``marker: yes`` as a metadata line, not as prose."
+- `classify_document(root, rel)`
+- `find_description(root)` — "The project's own description file, if it has one."
+- **`DocumentPlan`** *(class)* — "What the kit intends to do with one document, before doing it."
+  - `marker` *(property)*
+- **`AuthoringPlan`** *(class)*
+  - `needs_description_advice` *(property)*
+  - `as_dict(self)` *(method)*
+- `build_authoring_plan(root)`
+- **`ReviewFinding`** *(class)* — "One gap the reviewer believes the authored document is missing."
+  - `as_dict(self)` *(method)*
+- **`DocumentProposal`** *(class)* — "A draft or a review for one document. Never applied without confirmation."
+  - `as_dict(self)` *(method)*
+- `confirm_document(root, rel)` — "Accept a document on the operator's word and mark it ready."
+- `draft_documents(root, plan, provider)` — "Ask the configured provider to draft the documents marked ``draft``."
+- `review_documents(root, plan, provider)` — "Ask the provider what an authored document still leaves unanswered."
+
 ### `governancekit/discover.py`
 
 > Read-only project discovery for adoption/configuration flows.
@@ -268,9 +298,11 @@ tests/
 
 ### `governancekit/path_safety.py`
 
-> Fail-closed path checks for commands operating below ``--root``.
+> Fail-closed path checks for ``--root`` itself and for paths below it.
 
 - **`UnsafePathError`** *(class)* — "A requested path escapes the governed project or traverses a symlink."
+- **`UnsafeRootError`** *(class)* — "``--root`` points at a location that must never be governed as a project."
+- `assert_governable_root(root)` — "Return *root* only when it can plausibly be a project directory."
 - `safe_path(root, path)` — "Return *path* only when it is contained by *root* without symlinks."
 - `safe_regular_file(root, path)` — "Whether *path* is a non-symlink regular file safely below *root*."
 
@@ -378,6 +410,12 @@ tests/
 - `test_llm_scope_adapter_reads_a_project_local_protected_credential_file(tmp_path, monkeypatch)`
 - `test_llm_scope_adapter_allows_a_credential_symlink_when_explicitly_enabled(tmp_path, monkeypatch)`
 - `test_llm_scope_adapter_rejects_a_credential_symlink_outside_the_trusted_root(tmp_path)`
+- `test_https_provider_url_is_accepted()`
+- `test_plain_http_is_refused_because_the_key_would_be_in_the_clear()`
+- `test_loopback_http_is_allowed()`
+- `test_a_url_without_a_scheme_is_refused()`
+- `test_cross_host_redirect_is_refused_while_carrying_a_credential()`
+- `test_same_host_redirect_is_still_followed()`
 
 ### `tests/test_classification.py`
 
@@ -396,6 +434,8 @@ tests/
 - `test_install_agents_silently_skips_optional_awt(monkeypatch, tmp_path)`
 - `test_install_agents_asks_before_using_configured_llm(monkeypatch, tmp_path)`
 - `test_docs_only_does_not_modify_root_gitignore(monkeypatch, tmp_path)`
+- `test_every_subcommand_has_a_handler()`
+- `test_root_guard_runs_before_the_handler(monkeypatch, tmp_path)`
 
 ### `tests/test_codemap.py`
 
@@ -486,6 +526,27 @@ tests/
 - `test_containment_detects_small_document_inside_large_one(tmp_path)`
 - `test_telemetry_has_timestamp_and_prune_applies_retention(tmp_path)`
 
+### `tests/test_context_authoring.py`
+
+- `test_template_prose_is_not_a_ready_flag()`
+- `test_metadata_line_is_a_ready_flag()`
+- `test_absent_document(tmp_path)`
+- `test_untouched_template_is_not_authored(tmp_path)`
+- `test_operator_written_document_is_authored(tmp_path)`
+- `test_ready_document_is_left_alone(tmp_path)`
+- `test_plan_maps_state_to_action(tmp_path)`
+- `test_description_is_found_in_preference_order(tmp_path)`
+- `test_empty_readme_does_not_count_as_a_description(tmp_path)`
+- `test_advice_is_raised_only_when_there_is_work_to_do(tmp_path)`
+- `test_confirming_a_draft_writes_it_and_marks_ready(tmp_path)`
+- `test_confirming_a_review_does_not_touch_the_operators_prose(tmp_path)`
+- `test_confirming_a_document_without_a_flag_adds_the_metadata_block(tmp_path)`
+- `test_confirming_a_missing_document_without_content_fails(tmp_path)`
+- `test_draft_leaves_the_flag_at_no(tmp_path, monkeypatch)`
+- `test_review_reports_findings_and_writes_nothing(tmp_path, monkeypatch)`
+- `test_a_non_json_answer_is_refused(tmp_path, monkeypatch)`
+- `test_installer_seeded_docs_readme_is_not_a_description(tmp_path)`
+
 ### `tests/test_discover.py`
 
 - `test_reports_new_project_when_only_governance_files_exist(tmp_path)`
@@ -500,6 +561,7 @@ tests/
 - **`DoctorTests`** *(class)*
   - `test_valid_repository_passes(self)` *(method)*
   - `test_missing_limits_ready_flag_fails(self)` *(method)*
+  - `test_unfilled_template_prose_does_not_satisfy_the_flag(self)` *(method)*
   - `test_empty_resume_next_step_fails(self)` *(method)*
   - `test_missing_required_reading_fails(self)` *(method)*
   - `test_required_reading_none_sentinel_passes(self)` *(method)*
@@ -610,6 +672,9 @@ tests/
 - **`DownloadChecksumTests`** *(class)*
   - `test_matching_checksum_is_accepted(self)` *(method)*
   - `test_mismatched_checksum_is_rejected_before_extraction(self)` *(method)*
+- `test_unknown_checksum_refuses_instead_of_warning(tmp_path, monkeypatch)`
+- `test_unknown_checksum_installs_when_explicitly_allowed(tmp_path, monkeypatch)`
+- `test_several_top_level_directories_are_refused(tmp_path, monkeypatch)`
 
 ### `tests/test_install_agents_safe_extract.py`
 
@@ -638,6 +703,16 @@ tests/
 - `test_parse_provider_specs_supports_modes_and_refs()`
 - `test_guided_provider_purpose_persists_without_a_secret(tmp_path)`
 - `test_cli_plan_and_apply_roundtrip(tmp_path, capsys)`
+
+### `tests/test_readiness_migration.py`
+
+- `test_readiness_file_moves_back_to_docs(tmp_path)`
+- `test_readiness_symlink_workaround_is_dropped(tmp_path)`
+- `test_readiness_conflict_keeps_docs_and_sets_the_other_aside(tmp_path)`
+- `test_identical_duplicate_is_removed_not_set_aside(tmp_path)`
+- `test_readiness_migration_is_idempotent(tmp_path)`
+- `test_session_memory_seeds_from_template_not_from_the_kit(tmp_path)`
+- `test_session_memory_falls_back_when_source_has_no_template(tmp_path)`
 
 ### `tests/test_remove_agents.py`
 
@@ -671,6 +746,14 @@ tests/
 - **`ResumeIdentityTests`** *(class)*
   - `test_displays_operator_and_host(self)` *(method)*
   - `test_warns_when_identity_missing(self)` *(method)*
+
+### `tests/test_root_safety.py`
+
+- `test_home_is_refused(monkeypatch, tmp_path)`
+- `test_ancestor_of_home_is_refused(monkeypatch, tmp_path)`
+- `test_filesystem_root_is_refused(monkeypatch, tmp_path)`
+- `test_project_below_home_is_allowed(monkeypatch, tmp_path)`
+- `test_cli_refuses_install_agents_in_home(monkeypatch, tmp_path)`
 
 ### `tests/test_scope_conversation.py`
 

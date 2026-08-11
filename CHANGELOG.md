@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-11
+
+### Changed
+
+- Default AI-Agents release is now checksum-pinned `v1.2.1` (was `v1.1.7`). It is a
+  minor, not a patch: the kit's templates move from the project's `templates/` to
+  `.docs/templates/`.
+- **This runtime is `0.3.0`, so it no longer satisfies a contract that declares
+  `>=0.2.2,<0.3.0`.** AI-Agents `v1.2.1` widens the declared range to
+  `>=0.2.2,<0.4.0`, which makes the two kits upgradable in either order — but only
+  for a project that already carries the `v1.2.1` contract. A project still on an
+  older kit keeps its own `<0.3.0` range and will report the integration contract as
+  incompatible until it is upgraded. See the upgrade note below.
+- `AGENTS.md` §Sending Email no longer prescribes an email transport. Transport, sender
+  and recipient list are project-specific and declared in `docs/required-reading.md`
+  (EDortta/AI-Agents#5, EDortta/AI-GovernanceKit#7).
+- `docs/required-reading.md` is seeded from a neutral template instead of the kit's own
+  index, which had been exporting the kit's local sources into every new project.
+
+### Removed
+
+- `SMTP_ACCOUNT` and `SMTP_DOMAIN` are no longer collected. A value stored by an earlier
+  install is still substituted and stays out of the tracked manifest.
+
+### Fixed
+
+- `doctor` no longer dies on a directory it cannot search. `_iter_source_files` guarded
+  `iterdir()` but not the per-item probes, so the `.git` `exists()` test that detects a
+  nested repo raised `PermissionError` and ended the whole run in a traceback with no
+  verdict printed. Found against a governed project holding a root-owned `drwx------`
+  data directory; the advisory scan now costs that directory, not the report.
+- `doctor` no longer reports a header-only `Fontes locais` table as malformed, no longer
+  tells a project to index an email transport this kit has withdrawn, and no longer lets
+  a stale contract mask the project's own declaration of the same path.
+- `configure` can fill a retired placeholder again. Removing it from the descriptions
+  left `doctor` failing non-advisory while naming a command that did nothing.
+
+### Upgrade note
+
+**Upgrade the governed projects' kit to `v1.2.1` before installing this runtime, or
+expect `doctor` to fail on them.** A project whose `.docs/governancekit-integration.json`
+still declares `>=0.2.2,<0.3.0` reports `AI-Agents integration contract requires
+GovernanceKit >=0.2.2,<0.3.0, current version is 0.3.0`. That finding is **not
+advisory** for a project whose `.gk/project-config.json` says `project_state:
+existing` (`doctor.py:239`), and a non-advisory failure is a STOP under the contract's
+§8b. Measured on the maintainer's machine when `0.3.0` was cut: 29 projects carried
+`.gk/manifest.json`, 4 of them had completed scope configuration, and all 4 were on
+kit `v1.1.6`. Widening the range in `v1.2.1` does not reach them — they hold their own
+copy of the old range.
+
+**A project with its own `templates/` directory should check `.gk/manifest.json`.** An
+install made between 2026-08-07 and 2026-08-10 may have recorded the project's own
+template files as kit-owned; `remove-agents` would then offer to delete them at full
+confidence. The entry is no longer created, but an existing one is not repaired
+automatically.
+
 ## [0.2.2] - 2026-07-27
 
 ### Added

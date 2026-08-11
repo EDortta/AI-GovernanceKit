@@ -4,13 +4,14 @@ import argparse
 import json
 import shlex
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
 from . import __version__
 from .doctor import DoctorResult, run_doctor
 from .context import ContextError, build_context, format_context
-from .path_safety import UnsafePathError
+from .path_safety import UnsafePathError, UnsafeRootError, assert_governable_root
 
 
 _ROOT_HELP_EPILOG = """Start here:
@@ -67,6 +68,58 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output results as JSON (useful for CI scripts).",
     )
 
+    concurrency_parser = subparsers.add_parser(
+        "concurrency",
+        help="Report how many worktrees and unmerged branches are open in this repository.",
+    )
+    concurrency_parser.add_argument(
+        "--json", dest="as_json", action="store_true", help="Output the survey as JSON."
+    )
+    concurrency_parser.add_argument(
+        "--closing",
+        action="store_true",
+        help="Phrase the report for session close: what stays open for the next day.",
+    )
+
+    council_parser = subparsers.add_parser(
+        "council",
+        help="Report or record the adversarial council required before a delivery commit.",
+    )
+    council_parser.add_argument(
+        "--json", dest="as_json", action="store_true", help="Output the gate state as JSON."
+    )
+    council_parser.add_argument(
+        "--record", type=Path, default=None,
+        help="Record a council round from a JSON file, bound to the staged diff.",
+    )
+    council_parser.add_argument(
+        "--waive", default=None, metavar="REASON",
+        help="Clear the gate for this staged diff, recording why. A reason is required.",
+    )
+    council_parser.add_argument(
+        "--requested", action="store_true",
+        help="Treat this delivery as one the operator asked a council for (council.md §4).",
+    )
+
+    author_parser = subparsers.add_parser(
+        "author-context",
+        help="Draft or review docs/software-overview.md and docs/limits.md with the configured LLM.",
+    )
+    author_parser.add_argument(
+        "--json", dest="as_json", action="store_true", help="Output the plan and proposals as JSON."
+    )
+    author_parser.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Report what would be drafted or reviewed, and stop. Calls no provider.",
+    )
+    author_parser.add_argument(
+        "--yes",
+        dest="assume_yes",
+        action="store_true",
+        help="Accept the proposals without prompting. Only for a non-interactive rerun of a reviewed result.",
+    )
+
     discover_parser = subparsers.add_parser(
         "discover",
         help="Inspect a repository read-only and report whether it looks new or existing.",
@@ -99,15 +152,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     monitor_parser = subparsers.add_parser(
         "migrate-activity-monitor",
-        help="Copy/merge ~/Sync/agent-status.json into XDG state without deleting the legacy file.",
+        help="Merge legacy agent-status.json copies into XDG state without deleting them.",
     )
     monitor_parser.add_argument(
         "--legacy-path", type=Path, default=None,
-        help="Legacy monitor path (default: ~/Sync/agent-status.json).",
+        help="Single legacy monitor path (default: every known legacy location).",
     )
     monitor_parser.add_argument(
         "--state-home", type=Path, default=None,
         help="XDG state-home override (default: $XDG_STATE_HOME or ~/.local/state).",
+    )
+    monitor_parser.add_argument(
+        "--include-log", action="store_true",
+        help="Also move ~/Sync/agent-log.md to XDG state (refused if a canonical log exists).",
     )
 
     context_parser = subparsers.add_parser(
@@ -402,6 +459,12 @@ def format_resume(result) -> str:
         lines.append(f"active branch: {result.active_branch}")
     if result.identity_warning:
         lines.append(f"WARNING: {result.identity_warning}")
+    if getattr(result, "concurrency", None) is not None:
+        from .concurrency import format_survey
+
+        rendered = format_survey(result.concurrency)
+        if rendered:
+            lines += ["", *rendered.splitlines()]
 
     if not result.next_step and not result.work_id:
         lines.append(f"Error: {result.warning}")
@@ -442,6 +505,592 @@ def format_resume(result) -> str:
     return "\n".join(lines)
 
 
+def _run_context(args) -> int:
+    if args.context_command == "telemetry":
+        from .context import prune_telemetry
+
+        try:
+            removed = prune_telemetry(args.root, args.manifest)
+        except ContextError as exc:
+            print(f"Context error: {exc}")
+            return 2
+        print(f"Telemetry entries pruned: {removed}")
+        return 0
+    try:
+        result = build_context(
+            args.root,
+            args.task,
+            risks=args.risks,
+            issue=args.issue,
+            manifest_path=args.manifest,
+            write_telemetry=getattr(args, "telemetry", False),
+            strict=args.context_command == "build",
+        )
+    except ContextError as exc:
+        if args.as_json:
+            print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+        else:
+            print(f"Context error: {exc}")
+        return 2
+    if args.as_json:
+        print(json.dumps(result.as_dict(include_content=args.context_command == "build"),
+                         sort_keys=True, ensure_ascii=False))
+    elif args.context_command == "build":
+        print(result.content)
+    else:
+        print(format_context(result))
+    return 1 if result.exceeded or result.hard_violations else 0
+
+
+def _run_doctor(args) -> int:
+    result = run_doctor(args.root)
+    if getattr(args, "as_json", False):
+        print(format_doctor_json(result))
+    else:
+        print(format_doctor(result))
+    return 0 if result.ok else 1
+
+
+def _run_discover(args) -> int:
+    from .discover import format_discovery, run_discover
+
+    result = run_discover(args.root)
+    if getattr(args, "as_json", False):
+        print(format_discovery_json(result))
+    else:
+        print(format_discovery(result))
+    return 0
+
+
+def _run_map(args) -> int:
+    from .codemap import run_map
+    result = run_map(args.root, output=args.output, include_private=args.include_private)
+    print(f"Code map written to: {result.output_path}")
+    print(f"  {result.file_count} file(s) · {result.symbol_count} symbol(s) indexed")
+    return 0
+
+
+def _run_resume(args) -> int:
+    from .resume import run_resume
+    result = run_resume(args.root)
+    print(format_resume(result))
+    return 0 if result.next_step else 1
+
+
+def _run_migrate_activity_monitor(args) -> int:
+    from .activity_monitor import (
+        ActivityMonitorError,
+        migrate_activity_log,
+        migrate_activity_monitor,
+    )
+
+    try:
+        result = migrate_activity_monitor(
+            source=args.legacy_path,
+            state_home=args.state_home,
+        )
+        log = migrate_activity_log(state_home=args.state_home) if args.include_log else None
+    except ActivityMonitorError as error:
+        print(f"Activity monitor migration failed: {error}")
+        return 1
+    action = "updated" if result.wrote_destination else "already current"
+    print(f"Activity monitor {action}: {result.destination}")
+    sources = ", ".join(str(path) for path in result.sources) or "none found"
+    print(
+        f"  imported {result.imported_sessions} session(s); "
+        f"{result.duplicate_sessions} duplicate(s); legacy source(s) preserved: {sources}"
+    )
+    if log is not None:
+        state = "moved to" if log.moved else "not moved"
+        print(f"Activity log {state} {log.destination} ({log.reason})")
+    return 0
+
+
+def _run_install_agents(args) -> int:
+    modes = [args.force, args.upgrade, args.docs_only]
+    if sum(bool(m) for m in modes) > 1:
+        parser.error("--force, --upgrade, and --docs-only are mutually exclusive.")
+    print(f"AI GovernanceKit {__version__} · install-agents")
+    from .install_agents import run_install_agents
+    try:
+        result = run_install_agents(
+            args.root,
+            ref=args.ref,
+            repo=args.repo,
+            force=args.force,
+            upgrade=args.upgrade,
+            docs_only=args.docs_only,
+            migrate_content=args.migrate_content,
+            track=args.track,
+            install_awt=args.install_awt,
+        )
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", flush=True)
+        return 1
+    action = "Upgraded" if result.upgraded else "Installed"
+    print(f"{action} {len(result.paths_installed)} path(s) into: {result.target}")
+    for p in result.paths_installed:
+        print(f"  {p}")
+    if result.preserved_paths:
+        print(
+            f"Preserved {len(result.preserved_paths)} project-authored file(s) "
+            "inside kit directories (not shipped by this kit version):"
+        )
+        for p in result.preserved_paths:
+            print(f"  kept: {p}")
+    if result.overwritten_edits:
+        print(
+            f"Replaced {len(result.overwritten_edits)} kit file(s) you had edited "
+            "by hand — your version was stashed under .gk/overwritten/:"
+        )
+        for p in result.overwritten_edits:
+            print(f"  stashed: {p}")
+        print(
+            "  Kit files are kit-owned. Move lasting project rules into your own "
+            "files so they are preserved instead of stashed."
+        )
+    if result.upgraded and not result.had_state:
+        print(
+            "Note: no kit state existed before this run, so nothing was deleted. "
+            "This run wrote one; later upgrades can retire files the kit drops."
+        )
+    if result.migrated:
+        print("Migrated legacy docs/ layout to .docs/:")
+        for note in result.migration_notes:
+            print(f"  {note}")
+    if result.gitignore_updated:
+        docs_state = "tracked in git" if result.track_kit_docs else "gitignored"
+        print(f".gitignore updated: {result.gitignore_path} (.docs/ {docs_state})")
+    if result.awt_message:
+        for line in result.awt_message.splitlines():
+            print(f"awt: {line}")
+    if args.upgrade:
+        from .adoption import detect_project_drift
+
+        print(
+            "Analyzing project files for upgrade drift; this can take several "
+            "minutes in a large project..."
+        )
+        drift = detect_project_drift(
+            args.root,
+            on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
+        )
+        if drift:
+            print("Project drift detected (advisory; accepted documents were not changed):")
+            for item in drift:
+                print(f"  - {item}")
+    if not args.docs_only:
+        from .identity import load_identity
+
+        identity = load_identity(args.root)
+        if identity is None or identity.missing_required():
+            root_command = shlex.quote(str(args.root.resolve()))
+            print("Next required local setup (per host/checkout):")
+            print(f"  governancekit --root {root_command} configure")
+    if not args.docs_only and not args.skip_project_configuration:
+        if args.non_interactive and not args.accept_generated:
+            print("Adoption proposal not applied: --non-interactive requires --accept-generated.")
+        elif not args.advanced:
+            from .adoption import (
+                apply_adoption_proposal,
+                build_adoption_proposal,
+                configured_adoption_provider,
+                format_adoption_proposal,
+                provider_label,
+            )
+            print(
+                "Preparing the project adoption proposal from project files; this "
+                "can take several minutes in a large project..."
+            )
+            proposal = build_adoption_proposal(
+                args.root,
+                on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
+            )
+            if args.non_interactive or args.quick:
+                written = apply_adoption_proposal(proposal)
+                print("Generated adoption applied: " + (", ".join(written) or "existing project documents preserved"))
+            elif sys.stdin.isatty():
+                provider = configured_adoption_provider(args.root)
+                if provider:
+                    answer = input(
+                        "Use configured LLM provider "
+                        f"{provider_label(provider)} to enrich this proposal? [y/N] "
+                    ).strip().lower()
+                    if answer in {"y", "yes"}:
+                        print(
+                            "Consulting configured LLM provider "
+                            f"{provider_label(provider)}; this can take up to 90 seconds..."
+                        )
+                        proposal = build_adoption_proposal(
+                            args.root,
+                            enrich_with_llm=True,
+                            on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
+                        )
+                print(format_adoption_proposal(proposal))
+                if input("Apply these suggestions? [Y/n] ").strip().lower() not in {"n", "no"}:
+                    written = apply_adoption_proposal(proposal)
+                    print("Generated adoption applied: " + (", ".join(written) or "existing project documents preserved"))
+            else:
+                print(format_adoption_proposal(proposal))
+                print("Run again with --non-interactive --accept-generated to apply it.")
+        elif sys.stdin.isatty():
+            answer = input("Review project scope now? [Y/n] ").strip().lower()
+            if answer not in {"n", "no"}:
+                from .config_session import format_config_session, start_config_session
+                from .scope_conversation import run_scope_conversation
+
+                try:
+                    conversation = run_scope_conversation(
+                        args.root,
+                        allow_project_credential_symlinks=True,
+                    )
+                except RuntimeError as exc:
+                    print(f"ERROR: {exc}")
+                    return 1
+                try:
+                    session = start_config_session(
+                        args.root,
+                        project_name=conversation.project_name,
+                        domains=conversation.domains,
+                        capabilities=conversation.capabilities,
+                        agents=conversation.agents,
+                        provider_configs=conversation.providers,
+                        selected_agent=conversation.selected_agent,
+                        capability_domains=conversation.capability_domains,
+                        required_reading=conversation.required_reading,
+                        scope_summary=conversation.scope_summary,
+                    )
+                except ValueError as exc:
+                    print(f"ERROR: {exc}")
+                    return 1
+                print(format_config_session(session, args.root))
+        else:
+            root_command = shlex.quote(str(args.root.resolve()))
+            print(f"Run: governancekit --root {root_command} config-session start --interactive to review project scope.")
+    return 0
+
+
+def _run_remove_agents(args) -> int:
+    from .remove_agents import (
+        apply_removal_plan,
+        build_removal_plan,
+        format_removal_plan,
+        load_removal_plan,
+        write_removal_plan,
+    )
+    try:
+        if args.remove_command == "plan":
+            plan = build_removal_plan(args.root, with_llm=args.with_llm)
+            output = write_removal_plan(args.root, plan, args.output)
+            payload = plan.as_dict() | {"plan_path": str(output)}
+            print(json.dumps(payload, sort_keys=True, ensure_ascii=False) if args.as_json else format_removal_plan(plan) + f"\nPlan written: {output}")
+            return 0
+        plan = load_removal_plan(args.root, args.plan)
+        result = apply_removal_plan(args.root, plan, accept_project_extractions=args.accept_project_extractions)
+    except (OSError, ValueError, UnsafePathError) as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    payload = {"backup_dir": str(result.backup_dir), "removed": result.removed, "preserved": result.preserved, "extracted": result.extracted}
+    if args.as_json:
+        print(json.dumps(payload, sort_keys=True, ensure_ascii=False))
+    else:
+        print("AI GovernanceKit remove-agents apply")
+        print(f"Backup: {result.backup_dir}")
+        for item in result.removed:
+            print(f"  removed: {item}")
+        for item in result.extracted:
+            print(f"  extracted: {item}")
+        if not result.removed:
+            print("  no files were eligible for automatic removal")
+    return 0
+
+
+def _run_configure(args) -> int:
+    from .configure import parse_set_pairs, run_configure, run_configure_identity
+    from .identity import ALL_FIELDS
+    try:
+        preset = parse_set_pairs(args.set_pairs)
+    except ValueError as exc:
+        parser.error(str(exc))
+    result = run_configure(args.root, preset=preset)
+    print("AI GovernanceKit configure")
+    if not result.found_tokens:
+        print("No kit placeholders found — nothing to configure.")
+    elif result.changed_files:
+        print(f"Filled {len(result.values)} variable(s) in {len(result.changed_files)} file(s):")
+        for p in result.changed_files:
+            print(f"  {p}")
+    else:
+        print("No values applied.")
+    if result.unfilled:
+        print("Still unfilled: " + ", ".join(f"[{t}]" for t in result.unfilled))
+
+    # ── host identity ──────────────────────────────────────────────────
+    identity_preset = {f: getattr(args, f) for f in ALL_FIELDS}
+    identity_flags_given = any(v is not None for v in identity_preset.values())
+    interactive = None if identity_flags_given is False else False
+    id_result = run_configure_identity(
+        args.root, preset=identity_preset, interactive=interactive
+    )
+    if id_result.saved:
+        print(f"Host identity saved: {id_result.path} (gitignored)")
+    elif id_result.missing_required:
+        missing = ", ".join(id_result.missing_required)
+        if identity_flags_given:
+            # The user explicitly tried to set identity but left fields out → error.
+            print(
+                "ERROR: host identity incomplete — missing required field(s): "
+                + missing
+                + "\n  provide via --operator-name/--host-id/--instance-path "
+                "(or run interactively)."
+            )
+            return 1
+        # No identity flags were given — this invocation is about kit placeholders
+        # (e.g. `configure --set OPERATOR_NAME=...`). Don't fail the command just
+        # because host identity isn't configured yet; advise and fall through so the
+        # exit code reflects whether the placeholder fill succeeded.
+        print(
+            "Note: host identity not configured yet (missing: "
+            + missing
+            + "). Run `configure` interactively or pass "
+            "--operator-name/--host-id/--instance-path to set it."
+        )
+
+    placeholders_ok = not result.unfilled
+    return 0 if placeholders_ok else 1
+
+
+def _run_configure_project(args) -> int:
+    from .project_config import (
+        apply_project_config_plan,
+        build_project_config_plan,
+        format_project_config_plan,
+        load_project_config,
+        parse_provider_specs,
+        render_project_config_markdown,
+    )
+
+    if args.project_command == "show":
+        current = load_project_config(args.root)
+        if current is None:
+            print("No project configuration found.")
+            return 1
+        if getattr(args, "as_json", False):
+            print(json.dumps(current.as_dict(), sort_keys=True, ensure_ascii=False))
+        else:
+            print(render_project_config_markdown(current).rstrip())
+        return 0
+
+    try:
+        parse_provider_specs(args.providers)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    plan = build_project_config_plan(
+        args.root,
+        project_name=args.project_name,
+        domains=args.domains,
+        capabilities=args.capabilities,
+        agents=args.agents,
+        provider_names=args.providers,
+    )
+    if args.project_command == "plan":
+        if getattr(args, "as_json", False):
+            print(format_project_config_json(plan))
+        else:
+            print(format_project_config_plan(plan))
+        return 0
+
+    written = apply_project_config_plan(plan)
+    print("AI GovernanceKit configure-project apply")
+    for rel in written:
+        print(f"  wrote: {rel}")
+    return 0
+
+
+def _run_classify_change(args) -> int:
+    from .classification import (
+        build_change_classification,
+        format_change_classification,
+        load_change_classification,
+        save_change_classification,
+    )
+
+    if args.classification_command == "show":
+        current = load_change_classification(args.root)
+        if current is None:
+            print("No change classification found.")
+            return 1
+        if getattr(args, "as_json", False):
+            print(json.dumps(current.as_dict(), sort_keys=True, ensure_ascii=False))
+        else:
+            print(format_change_classification(current))
+        return 0
+
+    classification = build_change_classification(
+        summary=args.summary,
+        labels=args.labels,
+        rationale=args.rationale,
+        affected_domains=args.domains,
+        affected_capabilities=args.capabilities,
+        compatibility=args.compatibility,
+        residual_risk=args.residual_risk,
+    )
+    if args.classification_command == "plan":
+        if getattr(args, "as_json", False):
+            print(json.dumps(classification.as_dict(), sort_keys=True, ensure_ascii=False))
+        else:
+            print(format_change_classification(classification))
+        return 0
+
+    rel = save_change_classification(args.root, classification)
+    print("AI GovernanceKit classify-change apply")
+    print(f"  wrote: {rel}")
+    return 0
+
+
+def _run_bootstrap_issue(args) -> int:
+    from .issue_bootstrap import bootstrap_issue
+
+    try:
+        result = bootstrap_issue(
+            args.root,
+            epic_number=args.epic_number,
+            epic_title=args.epic_title,
+            task_title=args.task_title,
+            owner=args.owner,
+            related_commit=args.related_commit,
+        )
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    print("AI GovernanceKit bootstrap-issue")
+    print(f"  epic: {result.epic_dir}")
+    for rel in result.files:
+        print(f"  wrote: {rel}")
+    return 0
+
+
+def _run_config_session(args) -> int:
+    from .config_session import (
+        apply_config_session,
+        format_config_session,
+        grant_config_approval,
+        load_config_session,
+        start_config_session,
+    )
+    from .project_config import parse_provider_specs
+
+    if args.session_command == "show":
+        session = load_config_session(args.root)
+        if session is None:
+            print("No configuration session found.")
+            return 1
+        if getattr(args, "as_json", False):
+            print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
+        else:
+            print(format_config_session(session, args.root))
+        return 0
+
+    if args.session_command == "start":
+        conversation = None
+        if args.interactive:
+            if not sys.stdin.isatty():
+                print("ERROR: --interactive requires a terminal.")
+                return 1
+            if any([args.project_name, args.domains, args.capabilities, args.agents, args.providers]):
+                parser.error("--interactive cannot be combined with project scope flags")
+            from .scope_conversation import run_scope_conversation
+
+            try:
+                conversation = run_scope_conversation(
+                    args.root,
+                    allow_project_credential_symlinks=args.credentials_allow_symlinks,
+                )
+            except RuntimeError as exc:
+                print(f"ERROR: {exc}")
+                return 1
+        if conversation is None:
+            try:
+                parse_provider_specs(args.providers)
+            except ValueError as exc:
+                parser.error(str(exc))
+        try:
+            session = start_config_session(
+                args.root,
+                project_name=conversation.project_name if conversation else args.project_name,
+                domains=conversation.domains if conversation else args.domains,
+                capabilities=conversation.capabilities if conversation else args.capabilities,
+                agents=conversation.agents if conversation else args.agents,
+                provider_names=args.providers if conversation is None else None,
+                provider_configs=conversation.providers if conversation else None,
+                selected_agent=conversation.selected_agent if conversation else None,
+                capability_domains=conversation.capability_domains if conversation else None,
+                required_reading=conversation.required_reading if conversation else None,
+                scope_summary=conversation.scope_summary if conversation else None,
+            )
+        except ValueError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        if getattr(args, "as_json", False):
+            print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
+        else:
+            print(format_config_session(session, args.root))
+        return 0
+
+    if args.session_command == "approve":
+        try:
+            session = grant_config_approval(args.root, args.approval)
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        if getattr(args, "as_json", False):
+            print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
+        else:
+            print(format_config_session(session, args.root))
+        return 0
+
+    try:
+        written = apply_config_session(args.root)
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    print("AI GovernanceKit config-session apply")
+    for rel in written:
+        print(f"  wrote: {rel}")
+    return 0
+
+
+def _run_install_hooks(args) -> int:
+    from .hooks import install_hook
+
+    try:
+        result = install_hook(args.root, hook_type=args.hook_type, force=args.force)
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    if getattr(args, "as_json", False):
+        print(json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False))
+    else:
+        print("AI GovernanceKit install-hooks")
+        print(f"  hook: {result.hook_type}")
+        print(f"  path: {result.path}")
+        print(f"  replaced: {'yes' if result.replaced else 'no'}")
+    return 0
+
+
+def _run_voice_integration(args) -> int:
+    from .voice import detect_voice_integration, format_voice_integration
+
+    result = detect_voice_integration(args.root)
+    if getattr(args, "as_json", False):
+        print(json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False))
+    else:
+        print(format_voice_integration(result))
+    return 0
+
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -456,566 +1105,278 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("\ngovernancekit: error: a command is required")
         return 2
 
-    if args.command == "context":
-        if args.context_command == "telemetry":
-            from .context import prune_telemetry
+    try:
+        assert_governable_root(args.root)
+    except UnsafeRootError as exc:
+        print(f"Unsafe --root: {exc}", file=sys.stderr)
+        return 2
 
-            try:
-                removed = prune_telemetry(args.root, args.manifest)
-            except ContextError as exc:
-                print(f"Context error: {exc}")
-                return 2
-            print(f"Telemetry entries pruned: {removed}")
+    handler = _COMMANDS.get(args.command)
+    if handler is None:
+        parser.error(f"unknown command: {args.command}")
+        return 2
+    return handler(args)
+
+def _confirm(question: str, *, assume_yes: bool) -> bool:
+    """Ask the operator. Non-interactive without --yes means no, never a silent yes."""
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        return False
+    return input(f"{question} [y/N]: ").strip().lower() in {"y", "yes"}
+
+
+def _run_author_context(args) -> int:
+    from .adoption import configured_adoption_provider, provider_label
+    from .context_authoring import (
+        DESCRIPTION_ADVICE,
+        DESCRIPTION_CANDIDATES,
+        build_authoring_plan,
+        confirm_document,
+        draft_documents,
+        review_documents,
+    )
+    from .discover import run_discover
+
+    root = args.root.resolve()
+    discovery = run_discover(root)
+    evidence = [*discovery.frameworks, *discovery.languages, *discovery.package_managers]
+    plan = build_authoring_plan(root, evidence=evidence)
+
+    if getattr(args, "as_json", False) and args.plan_only:
+        print(json.dumps(plan.as_dict(), indent=2, sort_keys=True, ensure_ascii=False))
+        return 0
+
+    print("Context authoring plan:")
+    for doc in plan.documents:
+        print(f"  {doc.rel}: {doc.state.value} -> {doc.action}")
+
+    if plan.needs_description_advice:
+        print()
+        print(DESCRIPTION_ADVICE.format(candidates=", ".join(DESCRIPTION_CANDIDATES)))
+        print()
+        if not _confirm("Continue without a project description?", assume_yes=args.assume_yes):
+            print("Stopped. Write the description first, then run this again.")
             return 0
-        try:
-            result = build_context(
-                args.root,
-                args.task,
-                risks=args.risks,
-                issue=args.issue,
-                manifest_path=args.manifest,
-                write_telemetry=getattr(args, "telemetry", False),
-                strict=args.context_command == "build",
-            )
-        except ContextError as exc:
-            if args.as_json:
-                print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
-            else:
-                print(f"Context error: {exc}")
-            return 2
-        if args.as_json:
-            print(json.dumps(result.as_dict(include_content=args.context_command == "build"),
-                             sort_keys=True, ensure_ascii=False))
-        elif args.context_command == "build":
-            print(result.content)
-        else:
-            print(format_context(result))
-        return 1 if result.exceeded or result.hard_violations else 0
 
-    if args.command == "doctor":
-        result = run_doctor(args.root)
-        if getattr(args, "as_json", False):
-            print(format_doctor_json(result))
-        else:
-            print(format_doctor(result))
-        return 0 if result.ok else 1
-
-    if args.command == "discover":
-        from .discover import format_discovery, run_discover
-
-        result = run_discover(args.root)
-        if getattr(args, "as_json", False):
-            print(format_discovery_json(result))
-        else:
-            print(format_discovery(result))
+    if args.plan_only:
+        return 0
+    if all(doc.action == "skip" for doc in plan.documents):
+        print("Both documents are already marked ready; nothing to do.")
         return 0
 
-    if args.command == "map":
-        from .codemap import run_map
-        result = run_map(args.root, output=args.output, include_private=args.include_private)
-        print(f"Code map written to: {result.output_path}")
-        print(f"  {result.file_count} file(s) · {result.symbol_count} symbol(s) indexed")
-        return 0
-
-    if args.command == "resume":
-        from .resume import run_resume
-        result = run_resume(args.root)
-        print(format_resume(result))
-        return 0 if result.next_step else 1
-
-    if args.command == "migrate-activity-monitor":
-        from .activity_monitor import ActivityMonitorError, migrate_activity_monitor
-
-        try:
-            result = migrate_activity_monitor(
-                source=args.legacy_path,
-                state_home=args.state_home,
-            )
-        except ActivityMonitorError as error:
-            print(f"Activity monitor migration failed: {error}")
-            return 1
-        action = "updated" if result.wrote_destination else "already current"
-        print(f"Activity monitor {action}: {result.destination}")
+    provider = configured_adoption_provider(root)
+    if provider is None:
         print(
-            f"  imported {result.imported_sessions} session(s); "
-            f"{result.duplicate_sessions} duplicate(s); legacy source preserved: {result.source}"
+            "No primary LLM provider is configured for this project. Run "
+            f"'governancekit --root {root} config-session' to configure one, or write the "
+            "documents by hand.",
+            file=sys.stderr,
         )
+        return 2
+    if not _confirm(
+        f"Send this project's description to {provider_label(provider)}?", assume_yes=args.assume_yes
+    ):
+        print("Stopped; no provider was called.")
         return 0
 
-    if args.command == "install-agents":
-        modes = [args.force, args.upgrade, args.docs_only]
-        if sum(bool(m) for m in modes) > 1:
-            parser.error("--force, --upgrade, and --docs-only are mutually exclusive.")
-        print(f"AI GovernanceKit {__version__} · install-agents")
-        from .install_agents import run_install_agents
-        try:
-            result = run_install_agents(
-                args.root,
-                ref=args.ref,
-                repo=args.repo,
-                force=args.force,
-                upgrade=args.upgrade,
-                docs_only=args.docs_only,
-                migrate_content=args.migrate_content,
-                track=args.track,
-                install_awt=args.install_awt,
-            )
-        except RuntimeError as exc:
-            print(f"ERROR: {exc}", flush=True)
-            return 1
-        action = "Upgraded" if result.upgraded else "Installed"
-        print(f"{action} {len(result.paths_installed)} path(s) into: {result.target}")
-        for p in result.paths_installed:
-            print(f"  {p}")
-        if result.preserved_paths:
-            print(
-                f"Preserved {len(result.preserved_paths)} project-authored file(s) "
-                "inside kit directories (not shipped by this kit version):"
-            )
-            for p in result.preserved_paths:
-                print(f"  kept: {p}")
-        if result.overwritten_edits:
-            print(
-                f"Replaced {len(result.overwritten_edits)} kit file(s) you had edited "
-                "by hand — your version was stashed under .gk/overwritten/:"
-            )
-            for p in result.overwritten_edits:
-                print(f"  stashed: {p}")
-            print(
-                "  Kit files are kit-owned. Move lasting project rules into your own "
-                "files so they are preserved instead of stashed."
-            )
-        if result.upgraded and not result.had_state:
-            print(
-                "Note: no kit state existed before this run, so nothing was deleted. "
-                "This run wrote one; later upgrades can retire files the kit drops."
-            )
-        if result.migrated:
-            print("Migrated legacy docs/ layout to .docs/:")
-            for note in result.migration_notes:
-                print(f"  {note}")
-        if result.gitignore_updated:
-            docs_state = "tracked in git" if result.track_kit_docs else "gitignored"
-            print(f".gitignore updated: {result.gitignore_path} (.docs/ {docs_state})")
-        if result.awt_message:
-            for line in result.awt_message.splitlines():
-                print(f"awt: {line}")
-        if args.upgrade:
-            from .adoption import detect_project_drift
+    try:
+        proposals = [*draft_documents(root, plan, provider), *review_documents(root, plan, provider)]
+    except RuntimeError as exc:
+        print(f"Context authoring failed: {exc}", file=sys.stderr)
+        return 2
 
-            print(
-                "Analyzing project files for upgrade drift; this can take several "
-                "minutes in a large project..."
-            )
-            drift = detect_project_drift(
-                args.root,
-                on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
-            )
-            if drift:
-                print("Project drift detected (advisory; accepted documents were not changed):")
-                for item in drift:
-                    print(f"  - {item}")
-        if not args.docs_only:
-            from .identity import load_identity
-
-            identity = load_identity(args.root)
-            if identity is None or identity.missing_required():
-                root_command = shlex.quote(str(args.root.resolve()))
-                print("Next required local setup (per host/checkout):")
-                print(f"  governancekit --root {root_command} configure")
-        if not args.docs_only and not args.skip_project_configuration:
-            if args.non_interactive and not args.accept_generated:
-                print("Adoption proposal not applied: --non-interactive requires --accept-generated.")
-            elif not args.advanced:
-                from .adoption import (
-                    apply_adoption_proposal,
-                    build_adoption_proposal,
-                    configured_adoption_provider,
-                    format_adoption_proposal,
-                    provider_label,
-                )
-                print(
-                    "Preparing the project adoption proposal from project files; this "
-                    "can take several minutes in a large project..."
-                )
-                proposal = build_adoption_proposal(
-                    args.root,
-                    on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
-                )
-                if args.non_interactive or args.quick:
-                    written = apply_adoption_proposal(proposal)
-                    print("Generated adoption applied: " + (", ".join(written) or "existing project documents preserved"))
-                elif sys.stdin.isatty():
-                    provider = configured_adoption_provider(args.root)
-                    if provider:
-                        answer = input(
-                            "Use configured LLM provider "
-                            f"{provider_label(provider)} to enrich this proposal? [y/N] "
-                        ).strip().lower()
-                        if answer in {"y", "yes"}:
-                            print(
-                                "Consulting configured LLM provider "
-                                f"{provider_label(provider)}; this can take up to 90 seconds..."
-                            )
-                            proposal = build_adoption_proposal(
-                                args.root,
-                                enrich_with_llm=True,
-                                on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
-                            )
-                    print(format_adoption_proposal(proposal))
-                    if input("Apply these suggestions? [Y/n] ").strip().lower() not in {"n", "no"}:
-                        written = apply_adoption_proposal(proposal)
-                        print("Generated adoption applied: " + (", ".join(written) or "existing project documents preserved"))
-                else:
-                    print(format_adoption_proposal(proposal))
-                    print("Run again with --non-interactive --accept-generated to apply it.")
-            elif sys.stdin.isatty():
-                answer = input("Review project scope now? [Y/n] ").strip().lower()
-                if answer not in {"n", "no"}:
-                    from .config_session import format_config_session, start_config_session
-                    from .scope_conversation import run_scope_conversation
-
-                    try:
-                        conversation = run_scope_conversation(
-                            args.root,
-                            allow_project_credential_symlinks=True,
-                        )
-                    except RuntimeError as exc:
-                        print(f"ERROR: {exc}")
-                        return 1
-                    try:
-                        session = start_config_session(
-                            args.root,
-                            project_name=conversation.project_name,
-                            domains=conversation.domains,
-                            capabilities=conversation.capabilities,
-                            agents=conversation.agents,
-                            provider_configs=conversation.providers,
-                            selected_agent=conversation.selected_agent,
-                            capability_domains=conversation.capability_domains,
-                            required_reading=conversation.required_reading,
-                            scope_summary=conversation.scope_summary,
-                        )
-                    except ValueError as exc:
-                        print(f"ERROR: {exc}")
-                        return 1
-                    print(format_config_session(session, args.root))
-            else:
-                root_command = shlex.quote(str(args.root.resolve()))
-                print(f"Run: governancekit --root {root_command} config-session start --interactive to review project scope.")
+    if getattr(args, "as_json", False):
+        print(json.dumps([p.as_dict() for p in proposals], indent=2, sort_keys=True, ensure_ascii=False))
         return 0
 
-    if args.command == "remove-agents":
-        from .remove_agents import (
-            apply_removal_plan,
-            build_removal_plan,
-            format_removal_plan,
-            load_removal_plan,
-            write_removal_plan,
-        )
-        try:
-            if args.remove_command == "plan":
-                plan = build_removal_plan(args.root, with_llm=args.with_llm)
-                output = write_removal_plan(args.root, plan, args.output)
-                payload = plan.as_dict() | {"plan_path": str(output)}
-                print(json.dumps(payload, sort_keys=True, ensure_ascii=False) if args.as_json else format_removal_plan(plan) + f"\nPlan written: {output}")
-                return 0
-            plan = load_removal_plan(args.root, args.plan)
-            result = apply_removal_plan(args.root, plan, accept_project_extractions=args.accept_project_extractions)
-        except (OSError, ValueError, UnsafePathError) as exc:
-            print(f"ERROR: {exc}")
-            return 1
-        payload = {"backup_dir": str(result.backup_dir), "removed": result.removed, "preserved": result.preserved, "extracted": result.extracted}
-        if args.as_json:
-            print(json.dumps(payload, sort_keys=True, ensure_ascii=False))
+    exit_code = 0
+    for proposal in proposals:
+        print()
+        if proposal.action == "review":
+            print(f"Review of {proposal.rel} (your file is untouched):")
+            if not proposal.findings:
+                print("  nothing missing was identified.")
+            for finding in proposal.findings:
+                print(f"  - [{finding.section}] {finding.detail}")
+            question = f"Accept {proposal.rel} as it stands and mark it ready?"
+            content = None
         else:
-            print("AI GovernanceKit remove-agents apply")
-            print(f"Backup: {result.backup_dir}")
-            for item in result.removed:
-                print(f"  removed: {item}")
-            for item in result.extracted:
-                print(f"  extracted: {item}")
-            if not result.removed:
-                print("  no files were eligible for automatic removal")
-        return 0
+            print(f"Draft for {proposal.rel}:")
+            print("\n".join(f"  {line}" for line in (proposal.content or "").splitlines()))
+            question = f"Accept this draft for {proposal.rel} and mark it ready?"
+            content = proposal.content
 
-    if args.command == "configure":
-        from .configure import parse_set_pairs, run_configure, run_configure_identity
-        from .identity import ALL_FIELDS
-        try:
-            preset = parse_set_pairs(args.set_pairs)
-        except ValueError as exc:
-            parser.error(str(exc))
-        result = run_configure(args.root, preset=preset)
-        print("AI GovernanceKit configure")
-        if not result.found_tokens:
-            print("No kit placeholders found — nothing to configure.")
-        elif result.changed_files:
-            print(f"Filled {len(result.values)} variable(s) in {len(result.changed_files)} file(s):")
-            for p in result.changed_files:
-                print(f"  {p}")
+        if _confirm(question, assume_yes=args.assume_yes):
+            confirm_document(root, proposal.rel, content=content)
+            print(f"  accepted: {proposal.rel} is now ready.")
         else:
-            print("No values applied.")
-        if result.unfilled:
-            print("Still unfilled: " + ", ".join(f"[{t}]" for t in result.unfilled))
-
-        # ── host identity ──────────────────────────────────────────────────
-        identity_preset = {f: getattr(args, f) for f in ALL_FIELDS}
-        identity_flags_given = any(v is not None for v in identity_preset.values())
-        interactive = None if identity_flags_given is False else False
-        id_result = run_configure_identity(
-            args.root, preset=identity_preset, interactive=interactive
-        )
-        if id_result.saved:
-            print(f"Host identity saved: {id_result.path} (gitignored)")
-        elif id_result.missing_required:
-            missing = ", ".join(id_result.missing_required)
-            if identity_flags_given:
-                # The user explicitly tried to set identity but left fields out → error.
-                print(
-                    "ERROR: host identity incomplete — missing required field(s): "
-                    + missing
-                    + "\n  provide via --operator-name/--host-id/--instance-path "
-                    "(or run interactively)."
-                )
-                return 1
-            # No identity flags were given — this invocation is about kit placeholders
-            # (e.g. `configure --set OPERATOR_NAME=...`). Don't fail the command just
-            # because host identity isn't configured yet; advise and fall through so the
-            # exit code reflects whether the placeholder fill succeeded.
-            print(
-                "Note: host identity not configured yet (missing: "
-                + missing
-                + "). Run `configure` interactively or pass "
-                "--operator-name/--host-id/--instance-path to set it."
-            )
-
-        placeholders_ok = not result.unfilled
-        return 0 if placeholders_ok else 1
-
-    if args.command == "configure-project":
-        from .project_config import (
-            apply_project_config_plan,
-            build_project_config_plan,
-            format_project_config_plan,
-            load_project_config,
-            parse_provider_specs,
-            render_project_config_markdown,
-        )
-
-        if args.project_command == "show":
-            current = load_project_config(args.root)
-            if current is None:
-                print("No project configuration found.")
-                return 1
-            if getattr(args, "as_json", False):
-                print(json.dumps(current.as_dict(), sort_keys=True, ensure_ascii=False))
+            saved = _save_proposal(root, proposal)
+            if saved:
+                print(f"  not accepted. The proposal is at {saved} — edit {proposal.rel} in your IDE.")
             else:
-                print(render_project_config_markdown(current).rstrip())
-            return 0
+                print(f"  not accepted. Edit {proposal.rel} in your IDE, then set its flag yourself.")
+            exit_code = 1
+    return exit_code
 
-        try:
-            parse_provider_specs(args.providers)
-        except ValueError as exc:
-            parser.error(str(exc))
 
-        plan = build_project_config_plan(
-            args.root,
-            project_name=args.project_name,
-            domains=args.domains,
-            capabilities=args.capabilities,
-            agents=args.agents,
-            provider_names=args.providers,
-        )
-        if args.project_command == "plan":
-            if getattr(args, "as_json", False):
-                print(format_project_config_json(plan))
-            else:
-                print(format_project_config_plan(plan))
-            return 0
+def _save_proposal(root: Path, proposal) -> str | None:
+    """Keep a rejected draft where the operator can diff it. Reviews have no file."""
+    if not proposal.content:
+        return None
+    from .path_safety import safe_path
 
-        written = apply_project_config_plan(plan)
-        print("AI GovernanceKit configure-project apply")
-        for rel in written:
-            print(f"  wrote: {rel}")
+    rel = f".gk/context-proposal/{Path(proposal.rel).name}"
+    path = safe_path(root, root / rel)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(proposal.content, encoding="utf-8")
+    return rel
+
+
+def _run_concurrency(args) -> int:
+    from .concurrency import (
+        format_survey,
+        format_winddown,
+        load_winddown_config,
+        survey_concurrency,
+        winddown_state,
+    )
+
+    survey = survey_concurrency(args.root)
+    hour, budget = load_winddown_config(args.root)
+    state = winddown_state(datetime.now().time(), hour=hour, budget_minutes=budget)
+
+    if getattr(args, "as_json", False):
+        payload = {"concurrency": survey.as_dict(), "winddown": state.as_dict()}
+        print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
         return 0
 
-    if args.command == "classify-change":
-        from .classification import (
-            build_change_classification,
-            format_change_classification,
-            load_change_classification,
-            save_change_classification,
-        )
-
-        if args.classification_command == "show":
-            current = load_change_classification(args.root)
-            if current is None:
-                print("No change classification found.")
-                return 1
-            if getattr(args, "as_json", False):
-                print(json.dumps(current.as_dict(), sort_keys=True, ensure_ascii=False))
-            else:
-                print(format_change_classification(current))
-            return 0
-
-        classification = build_change_classification(
-            summary=args.summary,
-            labels=args.labels,
-            rationale=args.rationale,
-            affected_domains=args.domains,
-            affected_capabilities=args.capabilities,
-            compatibility=args.compatibility,
-            residual_risk=args.residual_risk,
-        )
-        if args.classification_command == "plan":
-            if getattr(args, "as_json", False):
-                print(json.dumps(classification.as_dict(), sort_keys=True, ensure_ascii=False))
-            else:
-                print(format_change_classification(classification))
-            return 0
-
-        rel = save_change_classification(args.root, classification)
-        print("AI GovernanceKit classify-change apply")
-        print(f"  wrote: {rel}")
+    if not survey.available:
+        # Not a git repository: nothing to report, and nothing to complain about.
         return 0
+    print(format_survey(survey, moment="close" if args.closing else "start"))
+    print()
+    print(format_winddown(state))
+    return 0
 
-    if args.command == "bootstrap-issue":
-        from .issue_bootstrap import bootstrap_issue
 
-        try:
-            result = bootstrap_issue(
-                args.root,
-                epic_number=args.epic_number,
-                epic_title=args.epic_title,
-                task_title=args.task_title,
-                owner=args.owner,
-                related_commit=args.related_commit,
-            )
-        except RuntimeError as exc:
-            print(f"ERROR: {exc}")
+# One entry per command. A cross-cutting check belongs in main(), before this
+# dispatch, where the next command that is added cannot miss it.
+def _run_council(args) -> int:
+    from .council import (
+        NOTHING_STAGED,
+        NOT_A_REPO,
+        CouncilError,
+        CouncilRecord,
+        Waiver,
+        detect_triggers,
+        evaluate,
+        record_from_payload,
+        staged_fingerprint,
+        write_record,
+    )
+
+    root = args.root
+    now = datetime.now().isoformat(timespec="seconds")
+
+    if args.record is not None or args.waive is not None:
+        fingerprint = staged_fingerprint(root)
+        if fingerprint is None:
+            print("Nothing is staged; a council round is recorded against a staged diff.")
             return 1
-        print("AI GovernanceKit bootstrap-issue")
-        print(f"  epic: {result.epic_dir}")
-        for rel in result.files:
-            print(f"  wrote: {rel}")
-        return 0
-
-    if args.command == "config-session":
-        from .config_session import (
-            apply_config_session,
-            format_config_session,
-            grant_config_approval,
-            load_config_session,
-            start_config_session,
+        triggers = tuple(
+            trigger.name
+            for trigger in detect_triggers(root, operator_requested=args.requested)
         )
-        from .project_config import parse_provider_specs
-
-        if args.session_command == "show":
-            session = load_config_session(args.root)
-            if session is None:
-                print("No configuration session found.")
-                return 1
-            if getattr(args, "as_json", False):
-                print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
-            else:
-                print(format_config_session(session, args.root))
-            return 0
-
-        if args.session_command == "start":
-            conversation = None
-            if args.interactive:
-                if not sys.stdin.isatty():
-                    print("ERROR: --interactive requires a terminal.")
+        try:
+            if args.waive is not None:
+                reason = args.waive.strip()
+                if not reason:
+                    # An escape with no reason is a silent escape, which is the one
+                    # thing a waiver may never be.
+                    print("A waiver needs a reason. Nothing was recorded.")
                     return 1
-                if any([args.project_name, args.domains, args.capabilities, args.agents, args.providers]):
-                    parser.error("--interactive cannot be combined with project scope flags")
-                from .scope_conversation import run_scope_conversation
-
-                try:
-                    conversation = run_scope_conversation(
-                        args.root,
-                        allow_project_credential_symlinks=args.credentials_allow_symlinks,
-                    )
-                except RuntimeError as exc:
-                    print(f"ERROR: {exc}")
-                    return 1
-            if conversation is None:
-                try:
-                    parse_provider_specs(args.providers)
-                except ValueError as exc:
-                    parser.error(str(exc))
-            try:
-                session = start_config_session(
-                    args.root,
-                    project_name=conversation.project_name if conversation else args.project_name,
-                    domains=conversation.domains if conversation else args.domains,
-                    capabilities=conversation.capabilities if conversation else args.capabilities,
-                    agents=conversation.agents if conversation else args.agents,
-                    provider_names=args.providers if conversation is None else None,
-                    provider_configs=conversation.providers if conversation else None,
-                    selected_agent=conversation.selected_agent if conversation else None,
-                    capability_domains=conversation.capability_domains if conversation else None,
-                    required_reading=conversation.required_reading if conversation else None,
-                    scope_summary=conversation.scope_summary if conversation else None,
+                record = CouncilRecord(
+                    fingerprint=fingerprint,
+                    round=1,
+                    triggers=triggers,
+                    waiver=Waiver(reason=reason, recorded_at=now),
+                    recorded_at=now,
                 )
-            except ValueError as exc:
-                print(f"ERROR: {exc}")
-                return 1
-            if getattr(args, "as_json", False):
-                print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
             else:
-                print(format_config_session(session, args.root))
-            return 0
-
-        if args.session_command == "approve":
-            try:
-                session = grant_config_approval(args.root, args.approval)
-            except RuntimeError as exc:
-                print(f"ERROR: {exc}")
-                return 1
-            if getattr(args, "as_json", False):
-                print(json.dumps(session.as_dict(), sort_keys=True, ensure_ascii=False))
-            else:
-                print(format_config_session(session, args.root))
-            return 0
-
-        try:
-            written = apply_config_session(args.root)
-        except RuntimeError as exc:
-            print(f"ERROR: {exc}")
+                payload = json.loads(args.record.read_text(encoding="utf-8"))
+                record = record_from_payload(
+                    payload, fingerprint=fingerprint, triggers=triggers, recorded_at=now
+                )
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"Could not read the council round: {error}")
             return 1
-        print("AI GovernanceKit config-session apply")
-        for rel in written:
-            print(f"  wrote: {rel}")
-        return 0
-
-    if args.command == "install-hooks":
-        from .hooks import install_hook
-
-        try:
-            result = install_hook(args.root, hook_type=args.hook_type, force=args.force)
-        except RuntimeError as exc:
-            print(f"ERROR: {exc}")
+        except CouncilError as error:
+            print(f"Council round rejected: {error}")
             return 1
-        if getattr(args, "as_json", False):
-            print(json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False))
-        else:
-            print("AI GovernanceKit install-hooks")
-            print(f"  hook: {result.hook_type}")
-            print(f"  path: {result.path}")
-            print(f"  replaced: {'yes' if result.replaced else 'no'}")
+        path = write_record(root, record)
+        print(f"Council round recorded: {path}")
+
+    result = evaluate(root, operator_requested=args.requested)
+
+    if getattr(args, "as_json", False):
+        payload = {
+            "state": result.state,
+            "message": result.message,
+            "fingerprint": result.fingerprint,
+            "triggers": [
+                {"name": t.name, "reason": t.reason, "heuristic": t.heuristic}
+                for t in result.triggers
+            ],
+            "blocks": result.blocks,
+            "record": result.record.as_dict() if result.record else None,
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+        return 0 if not result.blocks else 1
+
+    if result.state in {NOT_A_REPO, NOTHING_STAGED}:
+        print(result.message)
         return 0
 
-    if args.command == "voice-integration":
-        from .voice import detect_voice_integration, format_voice_integration
+    print(f"Council gate: {result.state}")
+    for trigger in result.triggers:
+        suffix = "  [heuristic]" if trigger.heuristic else ""
+        print(f"  · {trigger.name}: {trigger.reason}{suffix}")
+    if result.triggers:
+        # Named rather than silently absent: a gate that hides its own blind spot
+        # is worse than one that has none.
+        print("  (out of a pre-commit hook's reach: council.md §4's release/tag trigger)")
+    print(f"\n  {result.message}")
+    return 1 if result.blocks else 0
 
-        result = detect_voice_integration(args.root)
-        if getattr(args, "as_json", False):
-            print(json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False))
-        else:
-            print(format_voice_integration(result))
-        return 0
 
-    parser.error(f"unknown command: {args.command}")
-    return 2
+_COMMANDS = {
+    "context": _run_context,
+    "author-context": _run_author_context,
+    "concurrency": _run_concurrency,
+    "council": _run_council,
+    "doctor": _run_doctor,
+    "discover": _run_discover,
+    "map": _run_map,
+    "resume": _run_resume,
+    "migrate-activity-monitor": _run_migrate_activity_monitor,
+    "install-agents": _run_install_agents,
+    "remove-agents": _run_remove_agents,
+    "configure": _run_configure,
+    "configure-project": _run_configure_project,
+    "classify-change": _run_classify_change,
+    "bootstrap-issue": _run_bootstrap_issue,
+    "config-session": _run_config_session,
+    "install-hooks": _run_install_hooks,
+    "voice-integration": _run_voice_integration,
+}
+
+
+# The pre-commit hook this kit installs invokes `python3 -m governancekit.cli`.
+# Without this guard that command imports the module, runs nothing, prints nothing
+# and exits 0 — so the hook's `doctor` half has been a no-op in every project that
+# ever installed it, while appearing to pass. Keeping the guard here (rather than
+# only in __main__.py) repairs hooks already written into repositories, which
+# cannot be reinstalled from here.
+if __name__ == "__main__":
+    raise SystemExit(main())

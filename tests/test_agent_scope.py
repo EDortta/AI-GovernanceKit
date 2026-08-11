@@ -108,7 +108,7 @@ def test_llm_scope_adapter_reads_a_project_local_protected_credential_file(tmp_p
         assert timeout == 90
         return Response()
 
-    monkeypatch.setattr("governancekit.agent_scope.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("governancekit.agent_scope._urlopen", fake_urlopen)
     provider = ProviderConfig(
         name="openai",
         base_url="https://example.test/v1",
@@ -152,7 +152,7 @@ def test_llm_scope_adapter_allows_a_credential_symlink_when_explicitly_enabled(t
         assert timeout == 90
         return Response()
 
-    monkeypatch.setattr("governancekit.agent_scope.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("governancekit.agent_scope._urlopen", fake_urlopen)
     provider = ProviderConfig(
         name="openai", base_url="https://example.test/v1", model="configured-model",
         mode="file-ref", credential_ref=".credentials/openai.json",
@@ -189,3 +189,59 @@ def test_llm_scope_adapter_rejects_a_credential_symlink_outside_the_trusted_root
     assert _credential_file_path(
         tmp_path, ".credentials/openai.key", allow_project_credential_symlinks=True
     ) == outside / "openai.key"
+
+
+# ── the channel the credential travels over ───────────────────────────────────
+
+def test_https_provider_url_is_accepted() -> None:
+    from governancekit.agent_scope import validate_provider_url
+
+    assert validate_provider_url("https://api.example.test/v1") == "https://api.example.test/v1"
+
+
+def test_plain_http_is_refused_because_the_key_would_be_in_the_clear() -> None:
+    from governancekit.agent_scope import validate_provider_url
+
+    with pytest.raises(RuntimeError, match="refusing to send a credential over http"):
+        validate_provider_url("http://api.example.test/v1")
+
+
+def test_loopback_http_is_allowed() -> None:
+    from governancekit.agent_scope import validate_provider_url
+
+    for url in ("http://localhost:8000/v1", "http://127.0.0.1:8000/v1"):
+        assert validate_provider_url(url) == url
+
+
+def test_a_url_without_a_scheme_is_refused() -> None:
+    from governancekit.agent_scope import validate_provider_url
+
+    with pytest.raises(RuntimeError, match="not a valid absolute URL"):
+        validate_provider_url("api.example.test/v1")
+
+
+def test_cross_host_redirect_is_refused_while_carrying_a_credential() -> None:
+    import urllib.error
+    import urllib.request
+
+    from governancekit.agent_scope import _NoCredentialLeakRedirects
+
+    handler = _NoCredentialLeakRedirects()
+    request = urllib.request.Request("https://api.example.test/v1/chat/completions")
+
+    with pytest.raises(urllib.error.URLError, match="cross-host redirect"):
+        handler.redirect_request(request, None, 302, "Found", {}, "https://elsewhere.test/collect")
+
+
+def test_same_host_redirect_is_still_followed() -> None:
+    import urllib.request
+
+    from governancekit.agent_scope import _NoCredentialLeakRedirects
+
+    handler = _NoCredentialLeakRedirects()
+    request = urllib.request.Request("https://api.example.test/v1/chat/completions")
+
+    redirected = handler.redirect_request(
+        request, None, 302, "Found", {}, "https://api.example.test/v2/chat/completions"
+    )
+    assert redirected is not None

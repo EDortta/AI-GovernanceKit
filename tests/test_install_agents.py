@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,7 +18,7 @@ def _make_source(src: Path) -> None:
     (src / "docs" / "agents" / "programmer.md").write_text("v2\n", encoding="utf-8")
     (src / "docs" / "governancekit-integration.json").write_text(
         '{"schema_version": 1, "ai_agents": {"repo": "EDortta/AI-Agents", "ref": "v1.1.6"}, '
-        '"governancekit": {"version_range": ">=0.2.2,<0.3.0", "required_features": ["version-reporting"]}}\n',
+        '"governancekit": {"version_range": ">=0.2.2,<0.4.0", "required_features": ["version-reporting"]}}\n',
         encoding="utf-8",
     )
     (src / "docs" / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
@@ -29,7 +31,8 @@ class InstallAgentsTests(unittest.TestCase):
     def test_dest_rel_maps_kit_docs_but_not_project(self) -> None:
         # Kit docs relocate to .docs/; project-owned seeds stay in docs/.
         self.assertEqual(ia._dest_rel("docs/agents"), ".docs/agents")
-        self.assertEqual(ia._dest_rel("docs/software-overview.md"), ".docs/software-overview.md")
+        self.assertEqual(ia._dest_rel("docs/software-overview.md"), "docs/software-overview.md")
+        self.assertEqual(ia._dest_rel("docs/limits.md"), "docs/limits.md")
         self.assertEqual(ia._dest_rel("docs/required-reading.md"), "docs/required-reading.md")
         self.assertEqual(ia._dest_rel("AGENTS.md"), "AGENTS.md")
 
@@ -55,13 +58,13 @@ class InstallAgentsTests(unittest.TestCase):
             (src / ".docs" / "agents" / "programmer.md").write_text("v3\n", encoding="utf-8")
             (src / ".docs" / "governancekit-integration.json").write_text(
                 '{"schema_version": 1, "ai_agents": {"repo": "EDortta/AI-Agents", "ref": "v1.1.6"}, '
-                '"governancekit": {"version_range": ">=0.2.2,<0.3.0", "required_features": ["version-reporting"]}}\n',
+                '"governancekit": {"version_range": ">=0.2.2,<0.4.0", "required_features": ["version-reporting"]}}\n',
                 encoding="utf-8",
             )
-            (src / ".docs" / "software-overview.md").write_text(
+            (src / "docs").mkdir()
+            (src / "docs" / "software-overview.md").write_text(
                 "- project_context_ready: yes\n", encoding="utf-8"
             )
-            (src / "docs").mkdir()
             (src / "docs" / "required-reading.md").write_text("- (none)\n", encoding="utf-8")
 
             installed = ia._do_fresh(src, dst, force=True)
@@ -69,8 +72,11 @@ class InstallAgentsTests(unittest.TestCase):
             self.assertIn(".docs/governancekit-integration.json", installed)
             self.assertEqual((dst / ".docs" / "agents" / "programmer.md").read_text(), "v3\n")
             self.assertIn('"schema_version": 1', (dst / ".docs" / "governancekit-integration.json").read_text())
-            self.assertEqual((dst / ".docs" / "software-overview.md").read_text().strip(),
+            # Project-owned, so it lands in docs/ — with the flag reset, because the
+            # project must re-answer it for this project.
+            self.assertEqual((dst / "docs" / "software-overview.md").read_text().strip(),
                              "- project_context_ready: no")
+            self.assertFalse((dst / ".docs" / "software-overview.md").exists())
             self.assertEqual((dst / "docs" / "required-reading.md").read_text(), "- (none)\n")
             self.assertFalse((dst / "docs" / "agents").exists())
 
@@ -440,13 +446,15 @@ class InstallAgentsTests(unittest.TestCase):
 
             # Kit docs moved to .docs/
             self.assertTrue((root / ".docs" / "workflows" / "session-close.md").is_file())
-            self.assertTrue((root / ".docs" / "software-overview.md").is_file())
             self.assertTrue((root / ".docs" / "issues" / "README.md").is_file())
             # Project docs promoted to docs/
             self.assertTrue((root / "docs" / "mydoc.md").is_file())
             self.assertFalse((root / "docs" / "project").exists())
-            # Project-owned files stay in docs/
+            # Project-owned files stay in docs/ — including the readiness files, whose
+            # content and flags the project owns even though the kit ships a template.
             self.assertTrue((root / "docs" / "required-reading.md").is_file())
+            self.assertTrue((root / "docs" / "software-overview.md").is_file())
+            self.assertFalse((root / ".docs" / "software-overview.md").exists())
             # Active issue stays in docs/issues/
             self.assertTrue((root / "docs" / "issues" / "001-active-[started]").is_dir())
             # Backup created
@@ -570,22 +578,164 @@ class InstallAgentsTests(unittest.TestCase):
             root = Path(temp_dir)
             doc = root / "AGENTS.md"
             doc.write_text(
-                "policy [OPERATOR_NAME] current {{SMTP_ACCOUNT}}\n",
+                "policy [OPERATOR_NAME] current {{ORG_NAME}}\n",
                 encoding="utf-8",
             )
 
             values = ia._fill_placeholders(
                 root,
                 ["AGENTS.md"],
-                known={"OPERATOR_NAME": "Esteban", "SMTP_ACCOUNT": "esteban@example.com"},
+                known={"OPERATOR_NAME": "Esteban", "ORG_NAME": "Acme"},
             )
 
             self.assertEqual(
                 doc.read_text(encoding="utf-8"),
-                "policy [OPERATOR_NAME] current esteban@example.com\n",
+                "policy [OPERATOR_NAME] current Acme\n",
             )
             self.assertEqual(values["OPERATOR_NAME"], "Esteban")
-            self.assertEqual(values["SMTP_ACCOUNT"], "esteban@example.com")
+            self.assertEqual(values["ORG_NAME"], "Acme")
+
+
+class SendingEmailRetirementTests(unittest.TestCase):
+    """AI-Agents#5 and its council rounds, on the Python installer's side."""
+
+    def test_the_reading_index_is_seeded_from_a_template_not_from_the_kit(self) -> None:
+        # The kit's own index declares the kit's email transport and local sources.
+        # Copying it into a new project made that project assert one operator's helper
+        # as its own transport, in the exact table the email contract tells the agent
+        # to trust — the cross-project carryover AI-Agents#5 exists to forbid.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            src = Path(temp_dir) / "src"
+            (src / "docs").mkdir(parents=True)
+            (src / "templates").mkdir()
+            (src / "docs" / "required-reading.md").write_text(
+                "| `~/.config/email/send.py` | opcional | o transporte DAQUI |\n",
+                encoding="utf-8",
+            )
+            (src / "templates" / "required-reading.template.md").write_text(
+                "# Required Reading\n\n## Fontes locais\n", encoding="utf-8",
+            )
+
+            resolved = ia._resolve_src(src, "docs/required-reading.md")
+
+            self.assertEqual(resolved, src / "templates" / "required-reading.template.md")
+            self.assertNotIn("send.py", resolved.read_text(encoding="utf-8"))
+
+    def test_templates_is_never_a_managed_path_at_the_project_root(self) -> None:
+        # It was, for one commit, so the shipped shell installer could find its
+        # starters. The council reproduced the cost: `templates` is the commonest
+        # top-level directory name in web projects and every kit path here is
+        # unprefixed, so the entry gitignored the project's templates at any depth,
+        # rmtree'd them on `--force`, and — via the manifest — DELETED them on the
+        # second upgrade. Reinstating it needs a namespaced destination.
+        self.assertNotIn("templates", ia._FRESH_PATHS)
+        self.assertNotIn("templates", ia._UPGRADE_PATHS)
+
+    def test_a_project_owning_a_templates_directory_keeps_it(self) -> None:
+        # The behavioural half: the assertions above pin the lists, this pins what the
+        # lists cause. A bare `templates` entry reaches .gitignore as an unanchored
+        # pattern, which is how the files became invisible before they were deleted.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            ia._update_gitignore(root / ".gitignore", ia._FRESH_PATHS, track_kit_docs=False)
+
+            written = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+            self.assertNotIn("templates", [line.strip() for line in written])
+
+    def test_smtp_account_is_no_longer_collected_but_stays_operator_local(self) -> None:
+        # Not fillable: the canonical contract names no transport, so an install cannot
+        # know whether the project sends email, let alone through SMTP.
+        self.assertNotIn("SMTP_ACCOUNT", ia._PLACEHOLDER_DESCRIPTIONS)
+        # Still classified: an install predating the retirement holds the operator's
+        # address in .gk/operator.json, and this set is what keeps it out of the
+        # COMMITTED manifest. Dropping it would publish a legacy value on next upgrade.
+        self.assertIn("SMTP_ACCOUNT", ia._OPERATOR_PLACEHOLDERS)
+
+    def test_a_retired_token_is_still_filled_from_a_stored_value(self) -> None:
+        # A legacy target upgraded at a ref whose files still carry the token would
+        # otherwise dead-end: the slot stays raw, `doctor` fails NON-advisory with "kit
+        # not configured", and `configure` cannot fix it because its known-token set is
+        # built from the same dict the retirement emptied. Retired means "never asked",
+        # not "never applied".
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            doc = root / "AGENTS.md"
+            doc.write_text("contato: {{SMTP_ACCOUNT}}\n", encoding="utf-8")
+
+            values = ia._fill_placeholders(
+                root, ["AGENTS.md"], known={"SMTP_ACCOUNT": "legacy@example.invalid"},
+            )
+
+            self.assertEqual(
+                doc.read_text(encoding="utf-8"), "contato: legacy@example.invalid\n",
+            )
+            self.assertEqual(values.get("SMTP_ACCOUNT"), "legacy@example.invalid")
+            self.assertIn("SMTP_ACCOUNT", ia._RETIRED_PLACEHOLDERS)
+            # And it stays on the side that never reaches a committed file.
+            self.assertIn("SMTP_ACCOUNT", ia._OPERATOR_PLACEHOLDERS)
+
+    def test_a_retired_token_with_no_stored_value_is_not_reported_as_unknown(self) -> None:
+        # Reporting it would send the operator to `configure`, which cannot fill it.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "AGENTS.md").write_text("contato: {{SMTP_ACCOUNT}}\n", encoding="utf-8")
+
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                ia._fill_placeholders(root, ["AGENTS.md"], known={})
+
+            self.assertNotIn("SMTP_ACCOUNT", buffer.getvalue())
+
+    def test_a_retired_token_with_no_stored_value_is_still_fixable(self) -> None:
+        # The dead end the retirement created and the first fix missed: with no stored
+        # value, doctor fails NON-advisory naming `configure`, and configure could not
+        # fill a token it no longer knew. The check failed forever and its own remedy
+        # did nothing — worse than before the retirement, when configure worked.
+        from governancekit.configure import run_configure
+        from governancekit.doctor import _check_unfilled_placeholders
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "AGENTS.md").write_text("contato: {{SMTP_ACCOUNT}}\n", encoding="utf-8")
+
+            self.assertFalse(_check_unfilled_placeholders(root).passed)
+
+            run_configure(root, preset={"SMTP_ACCOUNT": "ops@example.invalid"},
+                          interactive=False)
+
+            self.assertEqual(
+                (root / "AGENTS.md").read_text(encoding="utf-8"),
+                "contato: ops@example.invalid\n",
+            )
+            self.assertTrue(_check_unfilled_placeholders(root).passed)
+
+    def test_a_retired_token_is_absent_from_the_unfilled_report(self) -> None:
+        # The guard reached `unknown` and the prompt loop but not the final report, so
+        # a run that filled anything else still named the retired slot.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "AGENTS.md").write_text(
+                "org {{ORG_NAME}} contato {{SMTP_ACCOUNT}}\n", encoding="utf-8",
+            )
+
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                ia._fill_placeholders(root, ["AGENTS.md"], known={"ORG_NAME": "Acme"})
+
+            self.assertIn("Placeholders filled in", buffer.getvalue())
+            self.assertNotIn("SMTP_ACCOUNT", buffer.getvalue())
+
+    def test_the_pinned_ref_has_a_verified_checksum(self) -> None:
+        # The chain that delivers any of this to a user has four links, and two live in
+        # another repository: source -> tag -> (DEFAULT_REF + checksum here) -> upgrade.
+        # A DEFAULT_REF with no checksum entry downloads unverified or refuses; a
+        # DEFAULT_REF left behind delivers the OLD kit while the fix sits unreleased,
+        # which is how the withdrawn contract kept reinstalling itself. Council r2 of
+        # GK#7 (R2-6/R2-14).
+        self.assertIn((ia.REPO, ia.DEFAULT_REF), ia.KNOWN_TARBALL_SHA256)
+        digest = ia.KNOWN_TARBALL_SHA256[(ia.REPO, ia.DEFAULT_REF)]
+        self.assertRegex(digest, r"^[0-9a-f]{64}$")
 
 
 if __name__ == "__main__":

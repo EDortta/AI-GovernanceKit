@@ -18,6 +18,7 @@ from .identity import (
 from .install_agents import (
     _FRESH_PATHS,
     _PLACEHOLDER_DESCRIPTIONS,
+    _RETIRED_PLACEHOLDERS,
     _PLACEHOLDER_RE,
     _PROJECT_SEED_PATHS,
     _dest_rel,
@@ -38,7 +39,16 @@ _TEXT_NAMES: frozenset[str] = frozenset({
 
 # Known kit placeholders. Only these are filled — arbitrary [WORD] tokens (e.g.
 # the doctor's own `[FAIL]` / `[HINT]` output samples in README) are left alone.
-_KNOWN_TOKENS: frozenset[str] = frozenset(_PLACEHOLDER_DESCRIPTIONS)
+#
+# RETIRED tokens are included. They are no longer COLLECTED (nothing prompts for them),
+# but a legacy file can still carry the slot, and `doctor`'s non-advisory
+# `unfilled placeholders` check names THIS command as the remedy. Deriving the set from
+# the descriptions alone made that remedy a no-op: the check failed forever and the
+# command it named did nothing — a regression against the behaviour before the
+# retirement, when `configure` could fill it. Council round 2 of GK#7.
+_KNOWN_TOKENS: frozenset[str] = frozenset(_PLACEHOLDER_DESCRIPTIONS) | frozenset(
+    _RETIRED_PLACEHOLDERS
+)
 
 # Credentials are local project state, not kit templates. They may intentionally
 # contain symlinks to a private credential store and must never be read or changed
