@@ -83,6 +83,7 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_local_reading_sources(repo_root),
         _check_local_sources_indexed(repo_root),
         _check_sending_email_contract(repo_root),
+        _check_readiness_documents_are_the_projects_own(repo_root),
         _check_project_config(repo_root),
         _check_agents_integration_contract(repo_root),
         _check_host_identity(repo_root),
@@ -470,7 +471,24 @@ def _check_ready_flag(root: Path, relative_path: str, flag: str) -> CheckResult:
     content = path.read_text(encoding="utf-8")
     if pattern.search(content):
         return CheckResult(relative_path, True, f"contains `{flag}`")
-    return CheckResult(relative_path, False, f"does not contain `{flag}`")
+    # Name the action. A document with no metadata line at all — a short hand-written
+    # overview, which the kit deliberately refuses to overwrite — fails this check on
+    # every run, and until now nothing told the operator that the fix is one line they
+    # add themselves. The council's migrator lens called it permanently red with no
+    # stated way out.
+    if not re.search(rf"^-?[ \t]*{re.escape(marker)}[ \t]*:", content, re.MULTILINE):
+        return CheckResult(
+            relative_path,
+            False,
+            f"has no `{marker}` line — add `- {marker}: yes` to its metadata block once "
+            "the document is accurate",
+        )
+    return CheckResult(
+        relative_path,
+        False,
+        f"does not contain `{flag}` — set that line yourself once the document is "
+        "accurate; the kit never sets it for you",
+    )
 
 
 _REQUIRED_READING_REL = "docs/required-reading.md"
@@ -780,6 +798,96 @@ def _check_sending_email_contract(root: Path) -> CheckResult:
         f"run {_command(root, 'install-agents --upgrade')}",
         advisory=True,
     )
+
+
+def _check_readiness_documents_are_the_projects_own(root: Path) -> CheckResult:
+    """Advisory: the readiness documents still carry the kit's own text.
+
+    The two flag checks above answer "did someone say ready?". This one answers a
+    question nothing asked before: *whose words are in the file?* A target installed
+    before 2026-08-12 has the kit's own overview — "This repository provides a
+    universal, reusable agent-governance bundle" — sitting in its `docs/`, because the
+    installer seeds those two files from the kit's own copies and the adoption flow
+    that was supposed to replace them skipped its write on a prose match.
+
+    The worse shape is the same file with the flag at `yes`: a machine wrote both, so
+    the Start Gate is open over text describing a different project entirely.
+
+    ADVISORY, deliberately. The fleet must not start failing CI over a message, and
+    `classify_document` deliberately lets an operator's `yes` beat any heuristic —
+    this reports the contradiction without overriding the operator's word.
+    """
+    name = "readiness documents"
+    from .context_authoring import (
+        LIMITS_REL,
+        OVERVIEW_REL,
+        flag_is_yes,
+        is_kit_authored,
+        is_kit_template,
+    )
+
+    # The kit's own source repository legitimately holds that text and legitimately
+    # says `yes`: there, those files describe the kit because the kit IS the project.
+    # Telling the AI-Agents checkout its overview is about somebody else's software
+    # is the check reading its own template as a defect. Decided by an artifact only a
+    # source kit has — the templates it ships to others.
+    if (root / "templates" / "required-reading.template.md").is_file():
+        return CheckResult(name, True, "source kit: these documents describe it", advisory=True)
+
+    stale: list[str] = []
+    declared: list[str] = []
+    for rel, marker in ((OVERVIEW_REL, "project_context_ready"), (LIMITS_REL, "limits_ready")):
+        path = root / rel
+        try:
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if flag_is_yes(text, marker):
+            # Ready over text a machine wrote — template or generated, both count.
+            if is_kit_authored(text):
+                declared.append(rel)
+            continue
+        # Flag still `no`: the two mandatory flag checks already report that, by name.
+        # Only the kit's own SEEDED prose adds something they do not say — that the
+        # document is about the kit rather than about this project. Generated content
+        # is thin, not misdescribed, and saying it twice trains an operator to skim.
+        if is_kit_template(text):
+            stale.append(rel)
+
+    if declared:
+        # The remedy is the flag line, and it has to be named. `author-context` maps
+        # READY to "skip" — deliberately, because an operator's word beats a heuristic —
+        # so pointing there sends this population to a command that prints "nothing to
+        # do" and changes nothing. Naming a no-op as the way out is the trap this
+        # repository has shipped before, and the council's migrator lens found it here.
+        listed = ", ".join(declared)
+        markers = ", ".join(
+            f"`- {'project_context_ready' if rel.endswith('software-overview.md') else 'limits_ready'}: no`"
+            for rel in declared
+        )
+        return CheckResult(
+            name,
+            False,
+            f"{listed} declares itself ready over text this kit wrote — no operator "
+            f"confirmed that content. Read it. If it is not right, set {markers} by "
+            f"hand first; then {_command(root, 'author-context')} can redraft it "
+            "(while the flag says `yes` that command skips the file).",
+            advisory=True,
+        )
+    if stale:
+        return CheckResult(
+            name,
+            False,
+            f"{', '.join(stale)} still carries the kit's own template text — it "
+            f"describes the kit, not this project. Run {_command(root, 'author-context')}.",
+            advisory=True,
+        )
+    # Do not claim authorship the check cannot support. A document the deterministic
+    # path just generated is not "written by the project"; it is thin, which the two
+    # mandatory flag checks already say. Answer only what this check knows.
+    return CheckResult(name, True, "no kit template text in the readiness documents", advisory=True)
 
 
 def _check_active_issue(root: Path) -> CheckResult:

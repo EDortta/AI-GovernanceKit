@@ -640,13 +640,33 @@ def _run_install_agents(args) -> int:
     print(f"{action} {len(result.paths_installed)} path(s) into: {result.target}")
     for p in result.paths_installed:
         print(f"  {p}")
-    if result.preserved_paths:
+    if result.seeded_paths:
+        # Say it in the operator's terms: what was added, and — the part that matters
+        # after this ran `rmtree` for months — what was left exactly as it was.
         print(
-            f"Preserved {len(result.preserved_paths)} project-authored file(s) "
-            "inside kit directories (not shipped by this kit version):"
+            f"Seeded {len(result.seeded_paths)} missing file(s) into .credentials/: "
+            + ", ".join(Path(p).name for p in result.seeded_paths)
         )
-        for p in result.preserved_paths:
-            print(f"  kept: {p}")
+    if result.preserved_paths:
+        # Credential paths are counted, never named. The manifest filter exists because
+        # "the paths alone say which providers a programmer holds keys for"; printing
+        # them to stdout puts the same list in every install log that gets pasted into
+        # an issue or a CI job. Found by the council's second-caller lens, against the
+        # comment I had written one screen away.
+        credentials = [p for p in result.preserved_paths if p.startswith(f"{Path('.credentials')}/")]
+        others = [p for p in result.preserved_paths if p not in credentials]
+        if others:
+            print(
+                f"Preserved {len(others)} project-authored file(s) "
+                "inside kit directories (not shipped by this kit version):"
+            )
+            for p in others:
+                print(f"  kept: {p}")
+        if credentials:
+            print(
+                f"Kept {len(credentials)} existing file(s) in .credentials/ — your "
+                "tokens, identity and provider keys were not touched."
+            )
     if result.overwritten_edits:
         print(
             f"Replaced {len(result.overwritten_edits)} kit file(s) you had edited "
@@ -735,48 +755,47 @@ def _run_install_agents(args) -> int:
         if args.non_interactive and not args.accept_generated:
             print("Adoption proposal not applied: --non-interactive requires --accept-generated.")
         elif not args.advanced:
-            from .adoption import (
-                apply_adoption_proposal,
-                build_adoption_proposal,
-                configured_adoption_provider,
-                format_adoption_proposal,
-                provider_label,
-            )
+            # The two readiness documents are authored here, by the same step the
+            # `author-context` command runs: discovery, then the project's own README
+            # and sources through a provider the operator consents to, then the
+            # operator confirming each document. Adoption used to own a second
+            # generator that wrote both files itself and stamped them ready — a
+            # machine opening the Start Gate over text nobody had read.
             print(
-                "Preparing the project adoption proposal from project files; this "
+                "Preparing the project context from project files; this "
                 "can take several minutes in a large project..."
             )
-            proposal = build_adoption_proposal(
-                args.root,
-                on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
-            )
+            scan = lambda directory: print(f"  scanning: {directory}")  # noqa: E731
             if args.non_interactive or args.quick:
-                written = apply_adoption_proposal(proposal)
-                print("Generated adoption applied: " + (", ".join(written) or "existing project documents preserved"))
+                # No prompting, so no consent, so no provider call. Deterministic and
+                # complete, with the flags left for a human.
+                _deterministic_context(args.root.resolve(), on_top_level_directory=scan)
             elif sys.stdin.isatty():
-                provider = configured_adoption_provider(args.root)
-                if provider:
-                    answer = input(
-                        "Use configured LLM provider "
-                        f"{provider_label(provider)} to enrich this proposal? [y/N] "
-                    ).strip().lower()
-                    if answer in {"y", "yes"}:
-                        print(
-                            "Consulting configured LLM provider "
-                            f"{provider_label(provider)}; this can take up to 90 seconds..."
-                        )
-                        proposal = build_adoption_proposal(
-                            args.root,
-                            enrich_with_llm=True,
-                            on_top_level_directory=lambda directory: print(f"  scanning: {directory}"),
-                        )
-                print(format_adoption_proposal(proposal))
-                if input("Apply these suggestions? [Y/n] ").strip().lower() not in {"n", "no"}:
-                    written = apply_adoption_proposal(proposal)
-                    print("Generated adoption applied: " + (", ".join(written) or "existing project documents preserved"))
+                _context_step(args, deterministic_fallback=True, on_top_level_directory=scan)
             else:
-                print(format_adoption_proposal(proposal))
-                print("Run again with --non-interactive --accept-generated to apply it.")
+                # Piped, and no flag asking for anything to be applied. The gate 20
+                # lines up refuses `--non-interactive` without `--accept-generated`;
+                # writing here anyway would let the same run bypass it by simply not
+                # passing `--non-interactive`. Two branches of one `if` must not
+                # disagree about whether an unattended run may write.
+                from .adoption import (
+                    build_adoption_proposal,
+                    configured_adoption_provider,
+                    format_adoption_proposal,
+                    format_provider_offer,
+                )
+
+                if configured_adoption_provider(args.root) is None:
+                    print()
+                    print(format_provider_offer(args.root.resolve()))
+                print()
+                print(format_adoption_proposal(
+                    build_adoption_proposal(args.root, on_top_level_directory=scan)
+                ))
+                print(
+                    "Nothing was written. Run again with --non-interactive "
+                    "--accept-generated to apply it."
+                )
         elif sys.stdin.isatty():
             answer = input("Review project scope now? [Y/n] ").strip().lower()
             if answer not in {"n", "no"}:
@@ -1186,24 +1205,80 @@ def _confirm(question: str, *, assume_yes: bool) -> bool:
     return input(f"{question} [y/N]: ").strip().lower() in {"y", "yes"}
 
 
-def _run_author_context(args) -> int:
-    from .adoption import configured_adoption_provider, provider_label
+def _deterministic_context(
+    root: Path, *, on_top_level_directory=None, announce_provider_offer: bool = True
+) -> int:
+    """Write the two documents from discovery alone, and say what is still shut.
+
+    The branch that keeps a project without a provider operable — the `[MANDATORY]`
+    rule in AI-Agents `.docs/agents/credentials-operations.md`: "A project remains
+    operable in manual mode even when no provider is configured yet." Nothing here
+    calls out, and nothing here declares readiness.
+    """
+    from .adoption import (
+        apply_adoption_proposal,
+        build_adoption_proposal,
+        configured_adoption_provider,
+        format_provider_offer,
+        format_readiness_warning,
+    )
+
+    # Say it here too, not only on the interactive branch. The claim that "three code
+    # paths now speak" was true of one: `--quick`, `--non-interactive` and the piped
+    # run all land here, and those are the paths a fleet install actually takes — the
+    # ones where nobody is watching to ask. A scripted run that never mentions the
+    # option is the same silence, just harder to notice.
+    if announce_provider_offer and configured_adoption_provider(root) is None:
+        print()
+        print(format_provider_offer(root, about_to_write=True))
+        print()
+
+    proposal = build_adoption_proposal(root, on_top_level_directory=on_top_level_directory)
+    applied = apply_adoption_proposal(proposal)
+    for rel in applied.written:
+        print(f"  wrote: {rel}")
+    for rel, why in applied.preserved:
+        print(f"  kept:  {rel} — {why}")
+    warning = format_readiness_warning(applied.unconfirmed, root, written=applied.written)
+    if warning:
+        print()
+        print(warning)
+    return 0
+
+
+def _context_step(
+    args,
+    *,
+    deterministic_fallback: bool,
+    on_top_level_directory=None,
+) -> int:
+    """Draft and confirm the two readiness documents. Shared by two commands.
+
+    `author-context` calls it with ``deterministic_fallback=False``: that command
+    promises an LLM, so a missing provider is an error (exit 2) rather than something
+    quietly different. `install-agents` calls it with ``True``: adoption must complete
+    without a provider, loudly but successfully.
+    """
+    from .adoption import configured_adoption_provider, format_provider_offer, provider_label
     from .context_authoring import (
         DESCRIPTION_ADVICE,
         DESCRIPTION_CANDIDATES,
         build_authoring_plan,
         confirm_document,
         draft_documents,
+        is_kit_authored,
         review_documents,
     )
     from .discover import run_discover
 
     root = args.root.resolve()
-    discovery = run_discover(root)
+    discovery = run_discover(root, on_top_level_directory)
     evidence = [*discovery.frameworks, *discovery.languages, *discovery.package_managers]
     plan = build_authoring_plan(root, evidence=evidence)
+    assume_yes = getattr(args, "assume_yes", False)
+    plan_only = getattr(args, "plan_only", False)
 
-    if getattr(args, "as_json", False) and args.plan_only:
+    if getattr(args, "as_json", False) and plan_only:
         print(json.dumps(plan.as_dict(), indent=2, sort_keys=True, ensure_ascii=False))
         return 0
 
@@ -1215,11 +1290,20 @@ def _run_author_context(args) -> int:
         print()
         print(DESCRIPTION_ADVICE.format(candidates=", ".join(DESCRIPTION_CANDIDATES)))
         print()
-        if not _confirm("Continue without a project description?", assume_yes=args.assume_yes):
-            print("Stopped. Write the description first, then run this again.")
-            return 0
+        if not _confirm("Continue without a project description?", assume_yes=assume_yes):
+            if not deterministic_fallback:
+                print("Stopped. Write the description first, then run this again.")
+                return 0
+            # Inside an install, "stopped" cannot mean "left with nothing": that is the
+            # silence this delivery exists to remove. Write what discovery can prove,
+            # leave the flags shut, and say both things.
+            print(
+                "Writing what discovery can prove for now — write the description, then "
+                "run 'author-context' to redo these two documents properly."
+            )
+            return _deterministic_context(root, on_top_level_directory=on_top_level_directory)
 
-    if args.plan_only:
+    if plan_only:
         return 0
     if all(doc.action == "skip" for doc in plan.documents):
         print("Both documents are already marked ready; nothing to do.")
@@ -1227,23 +1311,51 @@ def _run_author_context(args) -> int:
 
     provider = configured_adoption_provider(root)
     if provider is None:
-        print(
-            "No primary LLM provider is configured for this project. Run "
-            f"'governancekit --root {root} config-session' to configure one, or write the "
-            "documents by hand.",
-            file=sys.stderr,
+        if not deterministic_fallback:
+            print(
+                "No primary LLM provider is configured for this project. Run "
+                f"'governancekit --root {root} config-session' to configure one, or write the "
+                "documents by hand.",
+                file=sys.stderr,
+            )
+            return 2
+        print()
+        print(format_provider_offer(root))
+        print()
+        return _deterministic_context(
+            root, on_top_level_directory=on_top_level_directory,
+            announce_provider_offer=False,
         )
-        return 2
+
+    # A configured provider is not consent: the operator says yes each time, because
+    # this sends the project's own description and sources to a third party.
+    # Name what actually goes on the wire. A DRAFT sends the project's description and
+    # the detected evidence; a REVIEW sends the document under review in full — and a
+    # limits document is exactly where production hostnames and vault paths are
+    # written. The prompt said "description" for both. Found in council round 2, with
+    # the outbound payload captured.
+    reviewed = [doc.rel for doc in plan.documents if doc.action == "review"]
+    what = "this project's description and detected evidence"
+    if reviewed:
+        what += f", plus the full text of {', '.join(reviewed)}"
     if not _confirm(
-        f"Send this project's description to {provider_label(provider)}?", assume_yes=args.assume_yes
+        f"Send {what} to {provider_label(provider)}?", assume_yes=assume_yes
     ):
         print("Stopped; no provider was called.")
+        if deterministic_fallback:
+            print("Continuing without it — discovery is deterministic.")
+            return _deterministic_context(root, on_top_level_directory=on_top_level_directory)
         return 0
 
     try:
         proposals = [*draft_documents(root, plan, provider), *review_documents(root, plan, provider)]
     except RuntimeError as exc:
         print(f"Context authoring failed: {exc}", file=sys.stderr)
+        if deterministic_fallback:
+            # A provider's failure is a pending item, not a failed installation
+            # (docs/napkin-lessons.md, 2026-08-02).
+            print("Falling back to deterministic discovery; no LLM result was applied.")
+            return _deterministic_context(root, on_top_level_directory=on_top_level_directory)
         return 2
 
     if getattr(args, "as_json", False):
@@ -1261,13 +1373,40 @@ def _run_author_context(args) -> int:
                 print(f"  - [{finding.section}] {finding.detail}")
             question = f"Accept {proposal.rel} as it stands and mark it ready?"
             content = None
+            replaces_project_text = False
         else:
             print(f"Draft for {proposal.rel}:")
             print("\n".join(f"  {line}" for line in (proposal.content or "").splitlines()))
+            # A draft REPLACES the file. The review branch says "your file is untouched";
+            # this one said nothing, and under `--yes` there was no prompt at all — so a
+            # document the project wrote could be overwritten wholesale with no stash and
+            # no backup. `apply_adoption_proposal` has guarded this since it started using
+            # `is_kit_authored`; this path, which writes the same two files, did not.
+            # Length is a poor judge of authorship: a real overview whose lines read
+            # `Stack: FastAPI, Postgres` classifies TEMPLATE, because those look like
+            # metadata. Found by the council's migrator lens.
+            existing = root / proposal.rel
+            replaces_project_text = (
+                existing.is_file()
+                and not is_kit_authored(existing.read_text(encoding="utf-8", errors="replace"))
+            )
+            if replaces_project_text:
+                print(f"  NOTE: {proposal.rel} already holds text this kit did not write.")
+                print(f"        Accepting REPLACES it. A copy is kept at {proposal.rel}.pre-draft.")
             question = f"Accept this draft for {proposal.rel} and mark it ready?"
             content = proposal.content
 
-        if _confirm(question, assume_yes=args.assume_yes):
+        if replaces_project_text and not assume_yes and not sys.stdin.isatty():
+            # No terminal, so no answer: never replace project text unasked.
+            print(f"  skipped: {proposal.rel} holds project text and there is no terminal to ask.")
+            exit_code = 1
+            continue
+
+        if _confirm(question, assume_yes=assume_yes):
+            if replaces_project_text:
+                backup = _keep_pre_draft_copy(root, proposal.rel)
+                if backup:
+                    print(f"  previous version kept at {backup}")
             confirm_document(root, proposal.rel, content=content)
             print(f"  accepted: {proposal.rel} is now ready.")
         else:
@@ -1277,7 +1416,59 @@ def _run_author_context(args) -> int:
             else:
                 print(f"  not accepted. Edit {proposal.rel} in your IDE, then set its flag yourself.")
             exit_code = 1
+
+    # The verdict comes off disk. What the loop above believes it accepted is not
+    # evidence about the file, and the previous flow reported success from exactly
+    # that kind of belief.
+    from .adoption import format_readiness_warning
+    from .context_authoring import LIMITS_REL, OVERVIEW_REL, DocState, classify_document
+
+    unconfirmed = [
+        rel for rel in (OVERVIEW_REL, LIMITS_REL)
+        if classify_document(root, rel) is not DocState.READY
+    ]
+    warning = format_readiness_warning(unconfirmed, root)
+    if warning:
+        print()
+        print(warning)
+    if deterministic_fallback:
+        # An unconfirmed document is a pending item for the operator, not a failed
+        # installation. `author-context` still reports 1 so a script can see it.
+        return 0
     return exit_code
+
+
+def _run_author_context(args) -> int:
+    return _context_step(args, deterministic_fallback=False)
+
+
+def _keep_pre_draft_copy(root: Path, rel: str) -> str | None:
+    """Copy a project-authored document aside before a draft replaces it.
+
+    The kit has a stash for exactly this situation on the installer side
+    (`.gk/overwritten/`) and had nothing on the authoring side, where the operator is
+    one `y` away from losing prose they wrote by hand.
+    """
+    import shutil
+
+    from .path_safety import safe_path
+
+    source = safe_path(root, root / rel)
+    if not source.is_file():
+        return None
+    backup = safe_path(root, source.parent / (source.name + ".pre-draft"))
+    if backup.exists():
+        # One slot, silently reused: accepting a second draft overwrote the FIRST
+        # backup, which held the operator's own prose — and the message still said a
+        # copy was kept. The remedy `doctor` prints (lower the flag by hand, then
+        # redraft) walks straight into it. Keep the oldest, which is the only copy the
+        # kit did not write.
+        return backup.relative_to(root).as_posix()
+    try:
+        shutil.copy2(source, backup)
+    except OSError:
+        return None
+    return backup.relative_to(root).as_posix()
 
 
 def _save_proposal(root: Path, proposal) -> str | None:

@@ -28,3 +28,19 @@ grep -c "OPERATOR_NAME" "$T/AGENTS.md.kit-new" 2>/dev/null | xargs -I{} echo "pl
 grep -q "Esteban" "$T/AGENTS.md.kit-new" && echo ".kit-new: RENDERIZADO" || echo ".kit-new: cru"
 echo; echo "### 6. doctor"
 eval $GK --root "$T" doctor 2>&1 | grep -iE "sending email|manifest" | head -4
+
+echo
+echo "### 7. adoção de contexto — alvo novo, com README, SEM provider de LLM"
+# Caso separado: o alvo acima roda com --skip-project-configuration de propósito, então
+# o passo de contexto nem executa nele. Aqui o que se verifica é o contrário: que a
+# adoção escreve os dois documentos, deixa os flags em `no` e diz que o gate está fechado.
+C="${T}-contexto"; rm -rf "$C"; mkdir -p "$C"; git init -q "$C"
+printf '# Alvo\n\nUm serviço de cobrança para igrejas.\n' > "$C/README.md"
+eval $GK --root "$C" install-agents --non-interactive --accept-generated 2>&1 \
+  | grep -E "^  (wrote|kept|Seeded)|Start Gate|No provider is configured" | head -8
+echo "  ---"
+grep -m1 "project_context_ready" "$C/docs/software-overview.md"
+grep -m1 "limits_ready" "$C/docs/limits.md"
+kit=$(grep -c "universal, reusable agent-governance bundle" "$C/docs/software-overview.md" || true)
+echo "  ocorrências do texto do kit: ${kit:-0} (esperado 0)"
+eval $GK --root "$C" doctor 2>&1 | grep -E "readiness documents|software-overview" | head -3

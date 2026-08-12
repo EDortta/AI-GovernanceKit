@@ -166,6 +166,13 @@ _DOCS_PATHS = _KIT_DOC_PATHS
 # so it is the first place anyone writes a project rule.
 _PROTECTED_FILES: tuple[str, ...] = ("AGENTS.md",)
 
+# The project's own directory, seeded but never claimed. It holds the programmer's
+# identity file, their GitHub/Jira tokens and the LLM keys `scope_conversation` writes
+# to `.credentials/llm/<provider>.key`. The kit adds what is missing and touches
+# nothing else — the shell installer's `seed_dir_missing`, ported.
+_CREDENTIALS_DIR = ".credentials"
+_SEED_ONLY_PATHS: frozenset[str] = frozenset({_CREDENTIALS_DIR})
+
 # The project's documentation territory. Created on fresh install, never overwritten.
 _PROJECT_DOCS_DIR = "docs"
 _PROJECT_DOCS_README = """# Project Documentation
@@ -304,6 +311,10 @@ class InstallResult:
     # kit installed. The project's version stayed; the kit's waits as <file>.kit-new
     # and is NOT recorded in the manifest until a human merges it.
     drifted_paths: list[str] = field(default_factory=list)
+    # Files added into a directory the project owns (`.credentials/`), and the ones
+    # already there that this run left alone. Reported: an operator who is told
+    # "installed 26 paths" and nothing else cannot know their tokens survived.
+    seeded_paths: list[str] = field(default_factory=list)
     # Files replaced this run whose previous content was copied to .gk/pre-upgrade/.
     # Reported: insurance nobody knows about is insurance nobody uses, and the
     # directory is cleared at the start of the next upgrade.
@@ -452,7 +463,10 @@ def run_install_agents(
                 clear_backups=not docs_only,
             )
         else:
-            result.paths_installed = _do_fresh(src_root, root, force=force)
+            result.paths_installed = _do_fresh(
+                src_root, root, force=force,
+                seeded=result.seeded_paths, preserved=result.preserved_paths,
+            )
 
         # Idempotent: seeds docs/ on fresh install and lets existing installs adopt
         # it on --upgrade / --docs-only without overwriting it.
@@ -490,6 +504,7 @@ def run_install_agents(
         metadata=metadata,
         prune_missing=upgrade and not docs_only,
         preserved=result.preserved_paths,
+        seeded=result.seeded_paths,
     )
 
     if install_awt and _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
@@ -601,10 +616,64 @@ def _safe_extractall(tf: tarfile.TarFile, dest: Path) -> None:
 _CONFLICT_FORCE_THRESHOLD = 0.10  # suggest --force when conflicts exceed this ratio
 
 
-def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
+def _seed_dir_missing(src_dir: Path, dst_dir: Path, root: Path) -> tuple[list[str], list[str]]:
+    """Copy only what is absent, file by file. Never replaces, never deletes.
+
+    Mirrors `seed_dir_missing` in the shell installer, whose comment is the whole
+    specification: `.credentials/` holds the programmer's real tokens and their
+    identity file, so the directory belongs to the project even though the kit seeds
+    scaffolding into it.
+
+    This runtime did the opposite until today: `.credentials` was an ordinary conflict,
+    so answering `y` — or passing `--force`, which never asks — ran `shutil.rmtree` over
+    the operator's tokens and LLM keys and copied the kit's scaffolding in their place.
+    """
+    if dst_dir.exists() and not dst_dir.is_dir():
+        # The project has a FILE (or a broken link) where the kit ships a directory.
+        # Nothing here may replace it — this whole function exists because that path
+        # belongs to the project — and crashing the install over it helps nobody. The
+        # old code reached `unlink()`; the seed-only branch jumps over that, so without
+        # this the first `mkdir` raised FileExistsError and killed the run.
+        return [], [dst_dir.relative_to(root).as_posix()]
+    seeded: list[str] = []
+    preserved: list[str] = []
+    for src_file in sorted(p for p in src_dir.rglob("*") if p.is_file()):
+        rel = src_file.relative_to(src_dir)
+        target = safe_path(root, dst_dir / rel)
+        if target.exists():
+            preserved.append(target.relative_to(root).as_posix())
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_file, target)
+        seeded.append(target.relative_to(root).as_posix())
+    for existing in sorted(p for p in dst_dir.rglob("*") if p.is_file()):
+        rel_to_root = existing.relative_to(root).as_posix()
+        if rel_to_root not in seeded and rel_to_root not in preserved:
+            preserved.append(rel_to_root)
+    return seeded, sorted(preserved)
+
+
+def _do_fresh(
+    src: Path,
+    dst: Path,
+    *,
+    force: bool,
+    seeded: list[str] | None = None,
+    preserved: list[str] | None = None,
+) -> list[str]:
     available = [rel for rel in _FRESH_PATHS if _resolve_src(src, rel).exists()]
     # Conflicts are checked against the DESTINATION path (docs/ → .docs/).
-    conflicts = [rel for rel in available if (dst / _dest_rel(rel)).exists()]
+    #
+    # Two families are never conflicts, because they are never the kit's to replace:
+    # `.credentials/` (tokens, identity, LLM keys) and the two readiness documents the
+    # project writes. `--force` is documented as "overwrite existing KIT files"; these
+    # are the project's. The shell installer has guarded both since it grew the
+    # protection, and this is that convergence.
+    protected = {rel for rel in available if rel in _SEED_ONLY_PATHS or rel in _PROJECT_SEED_PATHS}
+    conflicts = [
+        rel for rel in available
+        if rel not in protected and (dst / _dest_rel(rel)).exists()
+    ]
 
     skip: set[str] = set()
 
@@ -632,12 +701,33 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
                 skip.add(rel)
 
     installed: list[str] = []
+    # Readiness documents that were already on disk when this run started. The reset
+    # below lowers only what this run seeded, and "already there" is the honest test —
+    # deriving it from what the SOURCE ships would demote a confirmed document whenever
+    # a release happened not to carry that file.
+    kept_readiness = {
+        _dest_rel(rel) for rel in _PROJECT_SEED_PATHS
+        if (dst / _dest_rel(rel)).exists()
+    }
     for rel in available:
         if rel in skip:
             continue
         src_path = _resolve_src(src, rel)
         dst_path = safe_path(dst, dst / _dest_rel(rel))
         dst_path.parent.mkdir(parents=True, exist_ok=True)
+        if rel in _SEED_ONLY_PATHS and src_path.is_dir():
+            was_seeded, was_kept = _seed_dir_missing(src_path, dst_path, dst)
+            if seeded is not None:
+                seeded.extend(was_seeded)
+            if preserved is not None:
+                preserved.extend(was_kept)
+            # Deliberately NOT appended to `installed`: that list becomes the manifest,
+            # and the manifest is tracked. See `_write_state`.
+            continue
+        if rel in _PROJECT_SEED_PATHS and dst_path.exists():
+            if preserved is not None:
+                preserved.append(_dest_rel(rel))
+            continue
         if dst_path.exists():
             if dst_path.is_dir():
                 shutil.rmtree(dst_path)
@@ -649,27 +739,39 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
             shutil.copy2(src_path, dst_path)
         installed.append(_dest_rel(rel))
 
-    _reset_readiness_flags(dst)
+    # Only what this run just SEEDED. A readiness document the project already had was
+    # preserved three lines above; lowering its flag would demote an answer the operator
+    # gave — in the same run whose report says "kept" — and shut the Start Gate over
+    # content nobody changed. Found by the council's migrator lens.
+    _reset_readiness_flags(dst, skip=kept_readiness)
     return installed
 
 
-def _reset_readiness_flags(root: Path) -> None:
-    for rel, pattern, replacement in [
-        (
-            "docs/software-overview.md",
-            "- project_context_ready: yes",
-            "- project_context_ready: no",
-        ),
-        (
-            "docs/limits.md",
-            "- limits_ready: yes",
-            "- limits_ready: no",
-        ),
-    ]:
+def _reset_readiness_flags(root: Path, *, skip: set[str] | None = None) -> None:
+    """Lower both readiness flags on a fresh install, as a metadata LINE.
+
+    Anchored, like every other reader and writer of these flags. A plain `replace`
+    matches mid-line, and the seeded documents explain the flag in a sentence — the
+    same prose that made the adoption gate skip its write for eight days.
+    """
+    for rel, marker in (
+        ("docs/software-overview.md", "project_context_ready"),
+        ("docs/limits.md", "limits_ready"),
+    ):
+        if skip and rel in skip:
+            continue
         path = safe_path(root, root / rel)
-        if path.is_file():
-            text = path.read_text(encoding="utf-8", errors="replace")
-            path.write_text(text.replace(pattern, replacement), encoding="utf-8")
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        lowered = re.sub(
+            rf"^(-?[ \t]*{re.escape(marker)}[ \t]*:[ \t]*)yes[ \t]*$",
+            lambda m: f"{m.group(1)}no",
+            text,
+            flags=re.MULTILINE,
+        )
+        if lowered != text:
+            path.write_text(lowered, encoding="utf-8")
 
 
 # ── upgrade ────────────────────────────────────────────────────────────────────
@@ -1037,6 +1139,7 @@ def _write_state(
     metadata: dict[str, str],
     prune_missing: bool = False,
     preserved: list[str] | None = None,
+    seeded: list[str] | None = None,
 ) -> None:
     """Persist file hashes and operator answers.
 
@@ -1067,6 +1170,19 @@ def _write_state(
         # pre-.docs paths must not survive forever as fake managed files. Narrow
         # documentation refreshes deliberately do not prune outside their scope.
         files = {rel: digest for rel, digest in files.items() if (root / rel).is_file()}
+    # `.gk/manifest.json` is TRACKED on purpose — a team must judge file ownership from
+    # the same baseline. So nothing under `.credentials/` may appear in it: a SHA-256 of
+    # a low-entropy token is a confirmation oracle, and the paths alone say which
+    # providers a programmer holds keys for. Until today the directory was rmtree'd
+    # before this ran, so only kit scaffolding was ever hashed; making the seeding
+    # non-destructive would otherwise have started committing the real thing. The
+    # filter runs over the MERGED dict, so a project that already carries those entries
+    # loses them on its next run of any mode.
+    files = {
+        rel: digest for rel, digest in files.items()
+        if not rel.startswith(f"{_CREDENTIALS_DIR}/") and rel != _CREDENTIALS_DIR
+    }
+
     unclaimed = set(preserved or ())
     for rel in installed:
         target = safe_path(root, root / rel)
@@ -1122,6 +1238,17 @@ def _write_state(
         encoding="utf-8",
     )
 
+    # What the kit seeded into `.credentials/`, by NAME. Not under `files` and never
+    # with a digest: the names are this kit's own scaffolding, identical in every
+    # project, while a hash of anything in that directory is the thing that must not be
+    # written. Without this record `remove-agents` had no evidence of kit authorship
+    # there at all, and de-adoption left the kit's own README and examples behind.
+    previous_seeded = previous.get("seeded_credentials")
+    seeded_credentials = sorted({
+        *(previous_seeded if isinstance(previous_seeded, list) else []),
+        *(Path(rel).name for rel in (seeded or []) if rel.startswith(f"{_CREDENTIALS_DIR}/")),
+    })
+
     safe_path(root, root / _STATE_FILE).write_text(
         json.dumps(
             {
@@ -1129,6 +1256,7 @@ def _write_state(
                 "repo": repo,
                 "ref": ref,
                 "metadata": shareable,
+                "seeded_credentials": seeded_credentials,
                 "files": files,
             },
             indent=2,
@@ -1719,6 +1847,16 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
         elif dest.startswith(_SRC_DOC_PREFIX):
             # Project-owned docs/ files: keep tracked.
             continue
+        elif dest == _CREDENTIALS_DIR:
+            # The secret patterns below already cover this directory, as `.credentials/*`
+            # plus re-includes for the scaffolding. Emitting the bare directory name here
+            # too silently wins over them: git does not descend into an excluded
+            # directory, so `!.credentials/README*` never fires and every file the kit
+            # seeds there is permanently untrackable. The comment above
+            # CREDENTIALS_DOC_NAMES has said so since the patterns were written; this
+            # branch was quietly contradicting it, and the gitignore test never ran the
+            # real path list.
+            continue
         else:
             entries.append(dest)
     # The legacy-migration backup is a full copy of the pre-migration docs/ tree and
@@ -1743,6 +1881,10 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     # in `git status` as untracked and one `git add -A` from committing the operator's
     # name. Introduced by rendering the source, caught by the council's second round.
     entries.append("*.kit-new")
+    # Same reason, other artifact: `<file>.pre-draft` is the copy taken when an accepted
+    # draft replaces text the project wrote. It holds the operator's own prose, and it
+    # was the one stash of this kit that git could see.
+    entries.append("*.pre-draft")
     entries.extend(SECRET_IGNORE_PATTERNS)
     return entries
 

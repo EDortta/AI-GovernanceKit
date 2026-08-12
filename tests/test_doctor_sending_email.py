@@ -299,3 +299,187 @@ class HostIdentityRemedyTest(unittest.TestCase):
             self.assertIn("--operator-name", result.message)
             self.assertIn("--host-id", result.message)
             self.assertIn("--instance-path", result.message)
+
+
+class ReadinessDocumentOwnershipTest(unittest.TestCase):
+    """Whose words are in the two readiness documents — a question nothing asked.
+
+    The flag checks answer "did someone say ready?". A target installed before
+    2026-08-12 carries the KIT's own overview in its docs/, because the installer
+    seeds from the kit's copies and the adoption flow that should have replaced them
+    skipped its write on a prose match. Advisory: the fleet must not start failing CI
+    over a message, and an operator's `yes` outranks any heuristic.
+    """
+
+    def _seed(self, root: Path, flag: str) -> None:
+        (root / "docs").mkdir(parents=True, exist_ok=True)
+        (root / "docs" / "software-overview.md").write_text(
+            f"# Software Overview\n\n- project_context_ready: {flag}\n\n"
+            "## Install-Time Role\n\nWhen copied into a target project, the programmer "
+            "must replace this content with that project's actual context.\n",
+            encoding="utf-8",
+        )
+
+    def test_the_kits_own_text_is_reported(self) -> None:
+        from governancekit.doctor import _check_readiness_documents_are_the_projects_own
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._seed(root, "no")
+
+            result = _check_readiness_documents_are_the_projects_own(root)
+
+            self.assertFalse(result.passed)
+            self.assertTrue(result.advisory)
+            self.assertIn("describes the kit, not this project", result.message)
+
+    def test_kit_text_that_declares_itself_ready_is_named_as_such(self) -> None:
+        from governancekit.doctor import _check_readiness_documents_are_the_projects_own
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._seed(root, "yes")
+
+            result = _check_readiness_documents_are_the_projects_own(root)
+
+            self.assertIn("no operator confirmed that content", result.message)
+            self.assertTrue(result.advisory, "the fleet must not start failing over this")
+
+    def test_a_project_that_wrote_its_own_documents_passes(self) -> None:
+        from governancekit.doctor import _check_readiness_documents_are_the_projects_own
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "docs").mkdir()
+            (root / "docs" / "software-overview.md").write_text(
+                "# Overview\n\n- project_context_ready: yes\n\nWe bill churches monthly.\n",
+                encoding="utf-8",
+            )
+
+            self.assertTrue(_check_readiness_documents_are_the_projects_own(root).passed)
+
+    def test_a_confirmed_document_that_quotes_the_phrase_is_not_reclassified(self) -> None:
+        # The guard against "fixing" this inside classify_document: READY means an
+        # operator said so, and their word must beat a heuristic.
+        from governancekit.context_authoring import DocState, classify_document
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._seed(root, "yes")
+
+            self.assertIs(
+                classify_document(root, "docs/software-overview.md"), DocState.READY
+            )
+
+    def test_the_check_is_registered_in_the_doctor(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            names = [c.name for c in run_doctor(Path(d)).checks]
+            self.assertIn("readiness documents", names)
+
+    def test_generated_content_is_not_reported_as_the_kits_own_description(self) -> None:
+        # The two mandatory flag checks already name a `no` flag. This check exists to
+        # add what they cannot say — that the document describes the KIT — and a
+        # generated document does not: it is thin, not misdescribed. Saying it twice,
+        # in worse words, is how an operator learns to skim.
+        from governancekit.doctor import _check_readiness_documents_are_the_projects_own
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "docs").mkdir()
+            (root / "docs" / "software-overview.md").write_text(
+                "# Software Overview\n\n- project_context_ready: no\n\n"
+                "## Evidence-based proposal\n\n- Project: demo\n- Detected stack: python\n",
+                encoding="utf-8",
+            )
+
+            result = _check_readiness_documents_are_the_projects_own(root)
+
+            self.assertTrue(result.passed, result.message)
+
+    def test_generated_content_that_declares_itself_ready_is_still_reported(self) -> None:
+        from governancekit.doctor import _check_readiness_documents_are_the_projects_own
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "docs").mkdir()
+            (root / "docs" / "software-overview.md").write_text(
+                "# Software Overview\n\n- project_context_ready: yes\n\n"
+                "## Evidence-based proposal\n\n- Project: demo\n",
+                encoding="utf-8",
+            )
+
+            result = _check_readiness_documents_are_the_projects_own(root)
+
+            self.assertFalse(result.passed)
+            self.assertIn("no operator confirmed", result.message)
+
+    def test_the_remedy_for_a_machine_written_yes_is_not_a_command_that_skips_it(self) -> None:
+        # `author-context` maps READY to "skip", by design — an operator's word beats a
+        # heuristic. So naming it as the way out of a machine-written `yes` sends this
+        # population to a command that prints "nothing to do" and changes nothing. The
+        # exit is the flag line, and the message has to say so.
+        from governancekit.doctor import _check_readiness_documents_are_the_projects_own
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "docs").mkdir()
+            (root / "docs" / "software-overview.md").write_text(
+                "# Software Overview\n\n- project_context_ready: yes\n\n"
+                "## Evidence-based proposal\n\n- Project: demo\n",
+                encoding="utf-8",
+            )
+
+            message = _check_readiness_documents_are_the_projects_own(root).message
+
+            self.assertIn("`- project_context_ready: no`", message)
+            self.assertIn("skips the file", message)
+
+
+class ReadinessFlagRemedyTest(unittest.TestCase):
+    def test_a_document_with_no_flag_line_is_told_to_add_one(self) -> None:
+        # The short hand-written overview: the kit deliberately refuses to overwrite it,
+        # so it fails a mandatory check on every run. Nothing said the fix is one line
+        # the operator adds — permanently red with no stated way out.
+        from governancekit.doctor import _check_ready_flag
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "docs").mkdir()
+            (root / "docs" / "limits.md").write_text(
+                "# Limits\n\nWe never touch payroll.\n", encoding="utf-8"
+            )
+
+            result = _check_ready_flag(root, "docs/limits.md", "limits_ready: yes")
+
+            self.assertFalse(result.passed)
+            self.assertIn("has no `limits_ready` line", result.message)
+            self.assertIn("- limits_ready: yes", result.message)
+
+    def test_a_document_whose_flag_says_no_is_told_who_sets_it(self) -> None:
+        from governancekit.doctor import _check_ready_flag
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "docs").mkdir()
+            (root / "docs" / "limits.md").write_text(
+                "# Limits\n\n- limits_ready: no\n", encoding="utf-8"
+            )
+
+            message = _check_ready_flag(root, "docs/limits.md", "limits_ready: yes").message
+
+            self.assertIn("the kit never sets it for you", message)
+
+    def test_the_source_kit_is_not_told_its_own_documents_describe_someone_else(self) -> None:
+        # In the AI-Agents checkout those files describe the kit because the kit IS the
+        # project, and their `yes` is legitimate. The check was reading its own shipped
+        # template as a defect. Fixture is the real repository.
+        from governancekit.doctor import _check_readiness_documents_are_the_projects_own
+
+        agents = Path("/home/esteban/Sync/Projects/AI/Agents")
+        if not (agents / "templates" / "required-reading.template.md").is_file():
+            self.skipTest("the AI-Agents checkout is not available here")
+
+        result = _check_readiness_documents_are_the_projects_own(agents)
+
+        self.assertTrue(result.passed, result.message)
+        self.assertIn("source kit", result.message)

@@ -124,3 +124,58 @@ class KitNewArtifactTest(unittest.TestCase):
             plan = build_removal_plan(root)
 
         self.assertIn("AGENTS.md.kit-new", [i.path for i in plan.items])
+
+
+class CredentialScaffoldingTest(unittest.TestCase):
+    """De-adoption must still find what the kit seeds into `.credentials/`.
+
+    Those files used to be manifest entries. Keeping credential paths out of the
+    tracked manifest — a SHA-256 of a token is a confirmation oracle — removed the only
+    inventory they had, and the planner walked away from the kit's own scaffolding.
+    Found by the council's second-caller lens.
+    """
+
+    def test_the_kits_own_scaffolding_is_removed_not_merely_listed(self) -> None:
+        # Listing it as `unknown / preserve` left it on disk after a full de-adoption —
+        # the finding's symptom, unchanged. The evidence is the installer's own record
+        # of what it seeded, because the manifest deliberately holds no digest here.
+        import json as _json
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _seed(root, ".credentials/README.md", "how to put tokens here\n")
+            _seed(root, ".credentials/identity.json.example", "{}\n")
+            (root / ".gk").mkdir(parents=True, exist_ok=True)
+            (root / ".gk" / "manifest.json").write_text(_json.dumps({
+                "state_version": 1, "files": {},
+                "seeded_credentials": ["README.md", "identity.json.example"],
+            }), encoding="utf-8")
+
+            items = {item.path: item for item in build_removal_plan(root).items}
+
+        for rel in (".credentials/README.md", ".credentials/identity.json.example"):
+            self.assertIn(rel, items)
+            self.assertEqual(items[rel].action, "remove", items[rel].evidence)
+            self.assertFalse(items[rel].requires_operator_review)
+
+    def test_the_operators_own_credential_files_are_never_candidates(self) -> None:
+        # The important half: a real token must not become a removal candidate just
+        # because the planner learned to look in that directory.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _seed(root, ".credentials/README.md", "MY OWN NOTES, not the kit's\n")
+            _seed(root, ".credentials/identity.json", '{"operator_name": "Esteban"}\n')
+            _seed(root, ".credentials/llm/openrouter.key", "sk-real\n")
+            _manifest(root, {})  # nothing recorded as seeded
+
+            paths = [item.path for item in build_removal_plan(root).items]
+
+        self.assertNotIn(".credentials/identity.json", paths)
+        self.assertNotIn(".credentials/llm/openrouter.key", paths)
+        # And a README the operator wrote is not removed just because the kit ships a
+        # file by that name: without a seeding record there is no evidence of kit
+        # authorship, so it is reviewed, never deleted.
+        readme = next((i for i in build_removal_plan(root).items
+                       if i.path == ".credentials/README.md"), None)
+        if readme is not None:
+            self.assertNotEqual(readme.action, "remove", readme.evidence)

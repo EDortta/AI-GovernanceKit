@@ -155,3 +155,50 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
     assert current["project_name"] == "Sample"
     assert current["domains"] == ["backend"]
     assert current["providers"][0]["credential_ref"] == "OPENAI_API_KEY"
+
+
+def test_one_eligibility_predicate_serves_both_call_sites() -> None:
+    """Declared twice before today, which is the defect that has cost this kit most.
+
+    `adoption._primary_provider` and `scope_conversation` each carried their own copy
+    of "can this provider actually be called". Two copies of one rule drift, and the
+    drift is invisible until a project is configured and nothing uses it.
+    """
+    from governancekit import adoption, scope_conversation
+    from governancekit.project_config import ProviderConfig, is_llm_eligible
+
+    complete = ProviderConfig(
+        name="openai", purpose=None, base_url="https://example.invalid/v1",
+        model="gpt-test", mode="env", credential_ref="K", role="primary",
+    )
+    assert is_llm_eligible(complete)
+    for missing in (
+        ProviderConfig(**{**complete.__dict__, "base_url": None}),
+        ProviderConfig(**{**complete.__dict__, "model": None}),
+        ProviderConfig(**{**complete.__dict__, "role": "fallback"}),
+        ProviderConfig(**{**complete.__dict__, "mode": "manual"}),
+        ProviderConfig(**{**complete.__dict__, "credential_ref": None}),
+    ):
+        assert not is_llm_eligible(missing), missing
+    # Both modules must reach the same function, not their own copy of the rule.
+    assert "is_llm_eligible" in adoption._primary_provider.__code__.co_names
+    assert is_llm_eligible is scope_conversation.is_llm_eligible
+
+
+def test_a_provider_that_can_never_be_called_is_reported() -> None:
+    """The `--provider NAME:MODE:REF:ROLE` grammar cannot express base_url or model.
+
+    A provider declared that way passes every existing warning and is then skipped by
+    every LLM-assisted step, silently — the operator believes the project is
+    configured. Reported as a warning, which is also what stops a config session.
+    """
+    from governancekit.project_config import ProviderConfig, provider_warnings
+
+    incomplete = ProviderConfig(
+        name="openai", purpose=None, base_url=None, model=None,
+        mode="env", credential_ref="K", role="primary",
+    )
+
+    warnings = provider_warnings([incomplete])
+
+    assert any("cannot be used for LLM-assisted steps" in w for w in warnings), warnings

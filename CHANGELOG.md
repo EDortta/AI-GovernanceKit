@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`install-agents` now authors the two readiness documents instead of generating
+  them.** It runs the same step `author-context` runs — discovery, then the project's
+  own README and sources through a provider the operator consents to, then the
+  operator confirming each document. Adoption owned a second generator that wrote both
+  files itself; on a real target it produced neither, because of the two defects
+  below, and reported success.
+
+  **A missing provider is loud on every path, and never fatal.** The recorded `[MANDATORY]` policy —
+  "a project remains operable in manual mode even when no provider is configured yet"
+  — holds: without a provider the flow writes both documents from deterministic
+  discovery, leaves the flags at `no` and says so. What changes is the silence: three
+  code paths used to skip the LLM without a word, so an operator saw a clean run and
+  concluded that was all the kit could do. They are now told what is available, that
+  free does not mean keyless, and how to configure one.
+
+- **Machine-generated content never declares readiness.** The generator emitted
+  `- project_context_ready: yes` in the same file where it listed what it had failed
+  to determine — a machine opening the Start Gate over text nobody had read. Both
+  documents are now rendered by the one renderer that leaves the flag at `no`;
+  `confirm_document` remains the only thing in the kit that writes `yes`.
+
+- **The free-model catalog is data with provenance.** `governancekit/_llm_catalog.json`
+  is derived from littlelm-proxy's catalog by `scripts/refresh-llm-catalog.py`, which
+  has a `--check` mode, and the interview's presets are built from it. Precisely: the
+  `openrouter` entry — 14 free models behind one key — is catalog-derived; the `openai`,
+  `gemini` and `nvidia` endpoints remain hand-written, now in
+  `llm_catalog._PAID_ENDPOINTS`, because a free-model catalog does not describe a paid
+  tier. Those three model names moved rather than gaining a source, and the test that
+  compares presets against the catalog cannot tell the difference. Stated plainly
+  because the first draft of this entry claimed all four were derived.
+
+### Fixed
+
+- **Adoption stopped skipping its own write on a prose match.** The gate was
+  `f"{marker}: yes" in old`, unanchored, over the whole file — and the template the
+  installer seeds explains the flag in a sentence. So the SENTENCE matched, the kit
+  concluded the project had declared itself ready, wrote nothing, and printed
+  "existing project documents preserved" over its own boilerplate. `doctor` had the
+  same defect and was anchored on 2026-08-04; the writer kept it for eight more days.
+  The state now comes from `classify_document`, and deterministic writing replaces only
+  text the kit itself put there.
+
+- **`--force` no longer destroys `.credentials/` or the project's readiness documents.**
+  `.credentials` was an ordinary conflict, so answering `y` — or passing `--force`,
+  which never asks — ran `shutil.rmtree` over the operator's identity file, tokens and
+  `.credentials/llm/*.key`. The kit now seeds only what is missing, file by file, and
+  reports what it added and what it left alone. Same for `docs/software-overview.md`
+  and `docs/limits.md`, which are the project's words. The shell installer has done
+  both for months; this is the Python side converging on it.
+
+- **Nothing under `.credentials/` reaches the tracked manifest.** `.gk/manifest.json`
+  is shared deliberately, and it was recording a SHA-256 for every file in that
+  directory — safe only because the directory was being deleted first. Making the
+  seeding non-destructive without this would have started committing hashes of real
+  tokens. Existing manifests lose those entries on the next run of any mode.
+
+- **The generated `.gitignore` stopped contradicting its own comment.** A bare
+  `.credentials` entry won over the `.credentials/*` + re-include patterns, and git
+  does not descend into an excluded directory, so every file the kit seeds there was
+  permanently untrackable. The gitignore test did not catch it because it
+  **asserted the bare entry as correct**: it passed `.credentials` in its path list and
+  checked for exactly the wrong string. This delivery flips that assertion. (The first
+  draft of this entry blamed the path list, while the contradicting artifact was the
+  very line being changed.)
+
+- **The readiness reset is anchored**, like every other reader and writer of those
+  flags. A plain `replace` also rewrote prose quoting the metadata line.
+
+- **One eligibility predicate.** "Can this provider actually be called" was declared in
+  `adoption` and again inline in `scope_conversation`. A provider that can never be
+  called — the `--provider` grammar cannot express `base_url` or `model` — is now
+  reported instead of being skipped in silence by every step.
+
 ### Added
 
 - **Drift gate between the two kits** (`governancekit/kit_drift.py`). Three things this

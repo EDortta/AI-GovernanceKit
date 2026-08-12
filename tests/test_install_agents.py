@@ -403,8 +403,13 @@ class InstallAgentsTests(unittest.TestCase):
             ["AGENTS.md", "docs/agents", ".credentials"], track_kit_docs=True
         )
         self.assertNotIn(".docs/", entries)
-        # Secrets and rule files stay ignored regardless.
-        self.assertIn(".credentials", entries)
+        # Secrets and rule files stay ignored regardless — but `.credentials` is
+        # covered by the secret patterns as `.credentials/*` plus re-includes, never
+        # as a bare directory. Git does not descend into an excluded directory, so a
+        # bare entry would make the scaffolding the kit seeds there permanently
+        # untrackable, which is the opposite of what the patterns were written for.
+        self.assertNotIn(".credentials", entries)
+        self.assertIn(".credentials/*", entries)
         self.assertIn("AGENTS.md", entries)
 
     def test_gitignore_section_keeps_secrets_across_modes(self) -> None:
@@ -909,6 +914,132 @@ class CouncilRoundOneTest(unittest.TestCase):
                 self.assertIn(entry, ignored)
 
 
+class ProjectOwnedPathsTest(unittest.TestCase):
+    """Two families the installer seeds and must never claim back.
+
+    `.credentials/` holds the programmer's identity, their tokens and the LLM keys the
+    interview writes. The two readiness documents are what the project says about
+    itself. Both were ordinary conflicts: answering `y` — or `--force`, which never
+    asks — ran `shutil.rmtree` over them. The shell installer has guarded both for
+    months; this is the Python side converging on it.
+    """
+
+    def _source(self, src: Path) -> None:
+        _make_source(src)
+        creds = src / ".credentials"
+        creds.mkdir()
+        (creds / "README.md").write_text("how to put tokens here\n", encoding="utf-8")
+        (creds / "identity.json.example").write_text("{}\n", encoding="utf-8")
+
+    def test_force_never_deletes_an_existing_credentials_directory(self) -> None:
+        # The data-loss test. `--force` skips the prompt entirely, so this path had no
+        # human in it at all.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            self._source(src)
+            creds = dst / ".credentials"
+            (creds / "llm").mkdir(parents=True)
+            (creds / "identity.json").write_text('{"operator_name": "Esteban"}\n', encoding="utf-8")
+            (creds / "llm" / "openai.key").write_text("sk-real-key\n", encoding="utf-8")
+
+            seeded: list[str] = []
+            preserved: list[str] = []
+            ia._do_fresh(src, dst, force=True, seeded=seeded, preserved=preserved)
+
+            self.assertEqual(
+                (creds / "identity.json").read_text(), '{"operator_name": "Esteban"}\n'
+            )
+            self.assertEqual((creds / "llm" / "openai.key").read_text(), "sk-real-key\n")
+            self.assertIn(".credentials/README.md", seeded)
+            self.assertIn(".credentials/identity.json", preserved)
+
+    def test_credentials_are_never_recorded_in_the_tracked_manifest(self) -> None:
+        # `.gk/manifest.json` is tracked on purpose. A SHA-256 of a low-entropy token
+        # is a confirmation oracle, and the paths alone say which providers a
+        # programmer holds keys for. This only stayed safe while the directory was
+        # being deleted first.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            self._source(src)
+            (dst / ".credentials").mkdir()
+            (dst / ".credentials" / "identity.json").write_text("{}\n", encoding="utf-8")
+
+            installed = ia._do_fresh(src, dst, force=True, seeded=[], preserved=[])
+            ia._write_state(dst, installed, repo="r", ref="v1", metadata={})
+
+            recorded = ia._state_files(ia._read_state(dst))
+            self.assertFalse(
+                [rel for rel in recorded if rel.startswith(".credentials")],
+                f"the tracked manifest names credential files: {sorted(recorded)}",
+            )
+
+    def test_a_legacy_manifest_loses_its_credential_entries_on_the_next_run(self) -> None:
+        # The fleet migration: projects installed before today already carry these
+        # entries in a committed file.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".gk").mkdir()
+            (root / ".gk" / "manifest.json").write_text(
+                '{"files": {".credentials/identity.json": "abc", "AGENTS.md": "def"}}',
+                encoding="utf-8",
+            )
+            (root / "AGENTS.md").write_text("# kit\n", encoding="utf-8")
+
+            ia._write_state(root, [], repo="r", ref="v1", metadata={})
+
+            recorded = ia._state_files(ia._read_state(root))
+            self.assertNotIn(".credentials/identity.json", recorded)
+            self.assertIn("AGENTS.md", recorded)
+
+    def test_force_does_not_replace_an_authored_readiness_document(self) -> None:
+        # `--force` is documented as "overwrite existing KIT files". These are the
+        # project's, and the shell installer has never overwritten them.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            self._source(src)
+            docs = dst / "docs"
+            docs.mkdir()
+            (docs / "software-overview.md").write_text(
+                "# Ours\n\n- project_context_ready: yes\n\nWe bill churches monthly.\n",
+                encoding="utf-8",
+            )
+
+            preserved: list[str] = []
+            ia._do_fresh(src, dst, force=True, seeded=[], preserved=preserved)
+
+            text = (docs / "software-overview.md").read_text()
+            self.assertIn("We bill churches monthly.", text)
+            self.assertIn("docs/software-overview.md", preserved)
+            # And the operator's answer survives with it. The reset lowers only what
+            # this run seeded: demoting a preserved document shuts the Start Gate over
+            # content nobody touched, in the same run that reports the file as "kept".
+            # The first cut of this test asserted the demotion as correct.
+            self.assertIn("- project_context_ready: yes", text)
+
+    def test_the_readiness_reset_lowers_the_LINE_and_not_prose_that_quotes_it(self) -> None:
+        # The reset is the third reader/writer of these flags, and the last one still
+        # matching a bare substring. A document that quotes the metadata line inside a
+        # sentence — the natural way to explain the flag to whoever must set it — had
+        # its sentence rewritten too, turning an instruction into its own opposite.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "docs").mkdir()
+            (root / "docs" / "limits.md").write_text(
+                "# Limits\n\n- limits_ready: yes\n\n"
+                "Write - limits_ready: yes in the metadata block once these are accurate.\n",
+                encoding="utf-8",
+            )
+
+            ia._reset_readiness_flags(root)
+
+            text = (root / "docs" / "limits.md").read_text()
+            self.assertIn("- limits_ready: no\n", text)
+            self.assertIn(
+                "Write - limits_ready: yes in the metadata block", text,
+                "the reset rewrote the sentence that explains the flag",
+            )
+
+
 class CouncilRoundTwoTest(unittest.TestCase):
     """What round 2 found in round 1's fixes. Three of the five were regressions the
     fixes themselves introduced, which is the argument for the second round."""
@@ -1162,3 +1293,66 @@ class UpgradeReplacesFilesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CouncilRoundOnAdoptionTest(unittest.TestCase):
+    """What the four lenses found in the adoption/credentials delivery."""
+
+    def test_a_file_where_the_kit_ships_a_directory_does_not_crash_the_install(self) -> None:
+        # The seed-only branch jumps over the `unlink()` the old code reached, so the
+        # mismatched-type case had no handler at all and `_do_fresh` raised
+        # FileExistsError. Nothing here may replace the file — that path is the
+        # project's — but killing the run over it helps nobody.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            (src / ".credentials").mkdir()
+            (src / ".credentials" / "README.md").write_text("docs\n", encoding="utf-8")
+            (dst / ".credentials").write_text("i am a file, not a directory\n", encoding="utf-8")
+
+            preserved: list[str] = []
+            ia._do_fresh(src, dst, force=True, seeded=[], preserved=preserved)
+
+            self.assertEqual(
+                (dst / ".credentials").read_text(), "i am a file, not a directory\n"
+            )
+            self.assertIn(".credentials", preserved)
+
+    def test_a_confirmed_readiness_flag_survives_a_fresh_run(self) -> None:
+        # The reset lowers what this run SEEDED. A preserved document keeps the answer
+        # the operator gave — the alternative shuts the Start Gate over content nobody
+        # touched, in the same run whose report calls the file "kept".
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            docs = dst / "docs"
+            docs.mkdir()
+            for rel, marker in (("software-overview.md", "project_context_ready"),
+                                ("limits.md", "limits_ready")):
+                (docs / rel).write_text(
+                    f"# Ours\n\n- {marker}: yes\n\nSix lines of real project prose.\n"
+                    "Second line.\nThird line.\nFourth line.\nFifth line.\nSixth line.\n",
+                    encoding="utf-8",
+                )
+
+            ia._do_fresh(src, dst, force=True, seeded=[], preserved=[])
+
+            self.assertIn("- project_context_ready: yes", (docs / "software-overview.md").read_text())
+            self.assertIn("- limits_ready: yes", (docs / "limits.md").read_text())
+
+    def test_a_freshly_seeded_document_is_still_lowered(self) -> None:
+        # The guard must not cost the reset its job: a document this run installed from
+        # the kit arrives saying `yes` and must not open the Start Gate.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            (src / "docs" / "software-overview.md").write_text(
+                "# Kit\n\n- project_context_ready: yes\n", encoding="utf-8"
+            )
+
+            ia._do_fresh(src, dst, force=True, seeded=[], preserved=[])
+
+            self.assertIn(
+                "- project_context_ready: no",
+                (dst / "docs" / "software-overview.md").read_text(),
+            )

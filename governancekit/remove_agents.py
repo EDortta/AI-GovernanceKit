@@ -58,6 +58,22 @@ _ROOT_RULE_FILES = ("AGENTS.md", ".cursorrules", "CLAUDE.md", ".windsurfrules", 
 # without importing the installer.
 _KIT_NEW_SUFFIX = ".kit-new"
 
+_CREDENTIALS_DIR = ".credentials"
+# Exactly what the kit seeds into the project's credential directory: its own
+# documentation and examples, never a real credential. Named literally, because the
+# manifest no longer carries these paths and a pattern like `*.example` would let the
+# planner reach for a file the operator created.
+_CREDENTIALS_SCAFFOLDING: tuple[str, ...] = (
+    ".gitignore",
+    "README.md",
+    "README-ptbr.md",
+    "README-es.md",
+    "identity.json.example",
+    "jira.json.example",
+    "programmer.token.example",
+    "reviewer.token.example",
+)
+
 
 @dataclass(frozen=True)
 class RemovalItem:
@@ -111,6 +127,33 @@ def _manifest_files(root: Path) -> dict[str, str]:
     return {str(key): str(value) for key, value in files.items() if isinstance(value, str)}
 
 
+def _kit_seeded_credentials(root: Path) -> dict[str, str]:
+    """`.credentials/` files this installer recorded having seeded into THIS project.
+
+    The manifest deliberately carries no digest for that directory, so the evidence of
+    kit authorship is the installer's own record of what it put there — names only.
+    A file the operator wrote is never in that list, whatever it is called.
+    """
+    try:
+        data = json.loads((root / ".gk/manifest.json").read_text(encoding="utf-8"))
+        recorded = data.get("seeded_credentials", [])
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(recorded, list):
+        return {}
+    seeded: dict[str, str] = {}
+    for name in recorded:
+        name = str(name)
+        # Only names this kit actually seeds, so a hand-edited state cannot point the
+        # planner at an operator's file.
+        if name not in _CREDENTIALS_SCAFFOLDING:
+            continue
+        target = root / _CREDENTIALS_DIR / name
+        if target.is_file() and not target.is_symlink():
+            seeded[f"{_CREDENTIALS_DIR}/{name}"] = name
+    return seeded
+
+
 def _candidate_paths(root: Path, manifest: dict[str, str]) -> list[str]:
     candidates = set(manifest)
     for name in _ROOT_RULE_FILES:
@@ -124,6 +167,16 @@ def _candidate_paths(root: Path, manifest: dict[str, str]) -> list[str]:
         # behind. Found by the council's sweep lens.
         if (root / f"{name}{_KIT_NEW_SUFFIX}").is_file():
             candidates.add(f"{name}{_KIT_NEW_SUFFIX}")
+    # `.credentials/` is seeded but never manifested — a SHA-256 of a token has no place
+    # in a tracked file. That filter left this planner blind: the scaffolding the kit
+    # puts there had no inventory left, so de-adoption walked away from its own files in
+    # a command whose job is to leave nothing behind. Only the shipped documentation and
+    # examples are named; the operator's own files carry no kit fingerprint and stay out
+    # of the plan, which is the same answer the manifest used to give.
+    for name in _CREDENTIALS_SCAFFOLDING:
+        candidate = root / _CREDENTIALS_DIR / name
+        if candidate.is_file() and not candidate.is_symlink():
+            candidates.add(f"{_CREDENTIALS_DIR}/{name}")
     for directory in (".docs", ".amazonq/rules", ".github/copilot-instructions.md", "scripts"):
         target = root / directory
         if target.is_file():
@@ -241,6 +294,19 @@ def build_removal_plan(root: Path, *, with_llm: bool = False, extractor: Callabl
             continue
         referenced = _referenced(root, rel)
         expected = manifest.get(rel)
+        if expected is None and rel in _kit_seeded_credentials(root):
+            # Seeded by the installer, deliberately absent from the manifest (a digest
+            # of anything in that directory has no place in a tracked file), and
+            # therefore invisible to every branch below — so de-adoption walked away
+            # leaving the kit's own README and examples behind. Byte-identity against
+            # the shipped copy is the evidence the manifest used to carry. Anything
+            # else there, including a file of the same name the operator wrote, has no
+            # such proof and never reaches this branch.
+            items.append(RemovalItem(
+                rel, "kit-seeded-unchanged", 1.0, "remove",
+                ["matches the file this kit seeds, byte for byte"], False, referenced,
+            ))
+            continue
         if expected and _sha256(path) == expected and not referenced:
             # A matching hash proves the file is unchanged since it was recorded. It
             # does NOT prove the record was ever right. `_write_state` merges the
