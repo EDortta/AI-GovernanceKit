@@ -658,6 +658,17 @@ def _run_install_agents(args) -> int:
             "  Kit files are kit-owned. Move lasting project rules into your own "
             "files so they are preserved instead of stashed."
         )
+    if result.drifted_paths:
+        print(
+            f"Kept {len(result.drifted_paths)} protected file(s) that differ from what "
+            "this kit installed — the new version is beside them, unmerged:"
+        )
+        for p in result.drifted_paths:
+            print(f"  kept: {p} -> new version at {p}.kit-new")
+        print(
+            "  Merge what you want, then delete the .kit-new file. Until then this "
+            "project keeps the older contract."
+        )
     if result.upgraded and not result.had_state:
         print(
             "Note: no kit state existed before this run, so nothing was deleted. "

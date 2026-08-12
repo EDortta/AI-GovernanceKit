@@ -22,6 +22,7 @@ Every drift direction seen in practice turns a test red:
 * runtime version leaves the declared range   -> range mismatch
 * either copy of the shared section edited    -> digest mismatch
 * a seed template missing from the release    -> seed mismatch
+* either installer changes which files it protects -> protected-set mismatch
 """
 
 from __future__ import annotations
@@ -64,6 +65,12 @@ class KitSnapshot:
     # handoff and reading index instead of an empty template. That is R2-15, and it
     # shipped for three releases because nothing compared the two lists.
     template_seed_sources: tuple[str, ...]
+    # Root files the SHELL installer refuses to overwrite once they differ from what
+    # it installed. Both kits replace the same files in the same targets, so a file
+    # protected by one and replaced by the other is a data-loss path that reads as
+    # closed. That was R2-16': the shell has fought for AGENTS.md since 2026-07-23
+    # while this runtime kept replacing it with a bare copy.
+    protected_root_files: tuple[str, ...]
 
     @classmethod
     def load(cls, path: Path | None = None) -> "KitSnapshot":
@@ -82,6 +89,7 @@ class KitSnapshot:
                 governancekit_version_range=raw["governancekit_version_range"],
                 shared_section_sha256=raw["shared_section_sha256"],
                 template_seed_sources=tuple(raw["template_seed_sources"]),
+                protected_root_files=tuple(raw["protected_root_files"]),
             )
         except (KeyError, TypeError) as exc:
             raise SnapshotError(f"kit snapshot at {path} is missing {exc}") from exc
@@ -98,9 +106,23 @@ class KitSnapshot:
                 "governancekit_version_range": self.governancekit_version_range,
                 "shared_section_sha256": self.shared_section_sha256,
                 "template_seed_sources": list(self.template_seed_sources),
+                "protected_root_files": list(self.protected_root_files),
             },
             indent=2,
         ) + "\n"
+
+
+def extract_protected_root_files(text: str) -> tuple[str, ...]:
+    """Read ``PROTECTED_ROOT_FILES`` out of the shell installer's source.
+
+    Returns an empty tuple when the assignment is absent, so a release that drops
+    the protection fails the comparison instead of erroring out — same reasoning as
+    :func:`digest_shared_section` over a deleted section.
+    """
+    match = re.search(r"^PROTECTED_ROOT_FILES=\((.*?)\)", text, re.MULTILINE | re.DOTALL)
+    if not match:
+        return ()
+    return tuple(re.findall(r'"([^"]+)"', match.group(1)))
 
 
 def extract_shared_section(text: str) -> str:

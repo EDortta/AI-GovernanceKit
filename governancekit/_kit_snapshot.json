@@ -7,5 +7,8 @@
     "templates/handoff.template.md",
     "templates/napkin-lessons.template.md",
     "templates/required-reading.template.md"
+  ],
+  "protected_root_files": [
+    "AGENTS.md"
   ]
 }

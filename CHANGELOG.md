@@ -27,6 +27,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An upgrade no longer replaces a hand-edited root file without a word (R2-16').**
+  `_do_upgrade` judged directories against the manifest — stashing kit files the
+  project had edited, keeping project-authored ones — and then copied every *file*
+  with a bare `shutil.copy2`. `AGENTS.md` is the first file every agent is told to
+  read and therefore the first place anyone writes a project rule; the shell
+  installer has refused to overwrite a drifted copy since 2026-07-23, after a target
+  was found holding ~300 lines of project rules in it, including reviewer logins.
+  This runtime replaced the same file for another twenty days. It now applies the
+  same decision table: identical content is a silent no-op, a protected file that
+  differs is kept with the new version beside it as `<file>.kit-new`, an edited
+  non-protected file is stashed under `.gk/overwritten/`, unknown provenance fails
+  closed for protected files, and every replaced file leaves a copy in
+  `.gk/pre-upgrade/`. A kept file is left out of the manifest, so the *second*
+  upgrade cannot read the project's own version as untouched kit content.
+
+- **The two installers' protected-file lists are now compared, not asserted in prose.**
+  `_kit_snapshot.json` records `protected_root_files` as read from the pinned
+  release's `scripts/install-agents-kit.sh`; `tests/test_kit_drift.py` fails when the
+  two sides disagree. A protection that exists in one of two implementations of the
+  same contract reads as closed while half the fleet is unprotected — the third time
+  that shape has cost this kit a delivery.
+
 - **`configure` can fill `{{OPERATOR_NAME}}` without a terminal.** The placeholder pass
   ran before host identity was collected and never read the identity file at all, so off
   a TTY it filled nothing while the answer sat in `.governancekit-identity.json` — a file

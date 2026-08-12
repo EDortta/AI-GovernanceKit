@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -736,6 +737,160 @@ class SendingEmailRetirementTests(unittest.TestCase):
         self.assertIn((ia.REPO, ia.DEFAULT_REF), ia.KNOWN_TARBALL_SHA256)
         digest = ia.KNOWN_TARBALL_SHA256[(ia.REPO, ia.DEFAULT_REF)]
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
+
+
+class UpgradeReplacesFilesTest(unittest.TestCase):
+    """R2-16': the file branch of `_do_upgrade` was a bare `shutil.copy2`.
+
+    The directory branch has judged every file against the manifest since the day
+    `_sync_dir` replaced an `rmtree`, and the shell installer judges single files
+    too. Between them sat every root file — `AGENTS.md` first among them, which is
+    the file every agent is told to read and therefore the first place anyone
+    writes a project rule.
+    """
+
+    def _target(self, dst: Path) -> Path:
+        return dst / "AGENTS.md"
+
+    def test_a_protected_file_the_project_edited_survives_the_upgrade(self) -> None:
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            agents = self._target(dst)
+            agents.write_text("# kit AGENTS\n\n## Project rules\n\nreviewer: ana\n", encoding="utf-8")
+            manifest = {"AGENTS.md": ia._file_sha256(Path(__file__))}
+
+            drifted: list[str] = []
+            installed = ia._do_upgrade(
+                src, dst, paths=["AGENTS.md"], manifest=manifest, drifted=drifted
+            )
+
+            self.assertIn("reviewer: ana", agents.read_text())
+            self.assertEqual(drifted, ["AGENTS.md"])
+            self.assertIn("# kit AGENTS", (dst / "AGENTS.md.kit-new").read_text())
+            # Not "installed": the manifest must not learn a hash for a file the kit
+            # did not write, or the NEXT upgrade reads it as untouched kit content.
+            self.assertEqual(installed, [])
+
+    def test_a_drifted_protected_file_survives_a_SECOND_upgrade(self) -> None:
+        # The manifest poison only shows on the second cycle, which is why the first
+        # one is not enough to call this closed. If the first upgrade recorded the
+        # project's version as kit content, the second one reads "hash matches,
+        # untouched kit file" and replaces it — the protection would hold exactly once.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            agents = self._target(dst)
+            shutil.copy2(src / "AGENTS.md", agents)
+            ia._write_state(dst, ["AGENTS.md"], repo="r", ref="v1", metadata={})
+            agents.write_text("# kit AGENTS\n\nreviewer: ana\n", encoding="utf-8")
+
+            for _ in range(2):
+                drifted: list[str] = []
+                installed = ia._do_upgrade(
+                    src, dst, paths=["AGENTS.md"],
+                    manifest=ia._state_files(ia._read_state(dst)), drifted=drifted,
+                )
+                ia._write_state(
+                    dst, installed, repo="r", ref="v2", metadata={}, prune_missing=True
+                )
+                self.assertEqual(drifted, ["AGENTS.md"])
+
+            self.assertIn("reviewer: ana", agents.read_text())
+
+    def test_a_protected_file_of_unknown_provenance_fails_closed(self) -> None:
+        # No manifest entry at all — a pre-.gk install. Those are precisely the ones
+        # most likely to hold hand-written rules, so the unknown case keeps the file.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            agents = self._target(dst)
+            agents.write_text("PROJECT CONTRACT\n", encoding="utf-8")
+
+            drifted: list[str] = []
+            ia._do_upgrade(src, dst, paths=["AGENTS.md"], manifest={}, drifted=drifted)
+
+            self.assertEqual(agents.read_text(), "PROJECT CONTRACT\n")
+            self.assertEqual(drifted, ["AGENTS.md"])
+
+    def test_a_protected_file_identical_to_the_kit_is_not_drift(self) -> None:
+        # The migration case: the file already IS the kit's version while the manifest
+        # still holds a pre-migration hash. Judging by the manifest alone would demand
+        # a merge of a file against itself, and leave a .kit-new nobody needs.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            agents = self._target(dst)
+            shutil.copy2(src / "AGENTS.md", agents)
+            stale = dst / "AGENTS.md.kit-new"
+            stale.write_text("from an earlier run\n", encoding="utf-8")
+
+            drifted: list[str] = []
+            installed = ia._do_upgrade(
+                src, dst,
+                paths=["AGENTS.md"],
+                manifest={"AGENTS.md": ia._file_sha256(Path(__file__))},
+                drifted=drifted,
+            )
+
+            self.assertEqual(drifted, [])
+            self.assertFalse(stale.exists(), "a .kit-new is stale once the two match")
+            self.assertEqual(installed, ["AGENTS.md"])
+
+    def test_an_edited_root_file_that_is_not_protected_is_stashed_then_replaced(self) -> None:
+        # Kit-owned for writing: the new version wins, but the edit is real intent and
+        # must be recoverable rather than destroyed.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            (src / "CLAUDE.md").write_text("kit v2\n", encoding="utf-8")
+            edited = dst / "CLAUDE.md"
+            edited.write_text("EDITED BY PROJECT\n", encoding="utf-8")
+            manifest = {"CLAUDE.md": ia._file_sha256(Path(__file__))}
+
+            overwritten: list[str] = []
+            drifted: list[str] = []
+            ia._do_upgrade(
+                src, dst, paths=["CLAUDE.md"], manifest=manifest,
+                overwritten=overwritten, drifted=drifted,
+            )
+
+            self.assertEqual(edited.read_text(), "kit v2\n")
+            self.assertEqual(overwritten, ["CLAUDE.md"])
+            self.assertEqual(drifted, [])
+            stash = dst / ia._STATE_DIR / "overwritten" / "CLAUDE.md"
+            self.assertEqual(stash.read_text(), "EDITED BY PROJECT\n")
+
+    def test_every_replaced_root_file_leaves_a_pre_upgrade_copy(self) -> None:
+        # Insurance independent of the judgement above: even a file the manifest calls
+        # untouched keeps a copy, so a wrong call costs one `cp` to undo.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            (src / "CLAUDE.md").write_text("kit v2\n", encoding="utf-8")
+            pristine = dst / "CLAUDE.md"
+            pristine.write_text("kit v1\n", encoding="utf-8")
+            manifest = {"CLAUDE.md": ia._file_sha256(pristine)}
+
+            overwritten: list[str] = []
+            ia._do_upgrade(
+                src, dst, paths=["CLAUDE.md"], manifest=manifest, overwritten=overwritten
+            )
+
+            self.assertEqual(pristine.read_text(), "kit v2\n")
+            self.assertEqual(overwritten, [], "an untouched kit file is replaced silently")
+            backup = dst / ia._STATE_DIR / "pre-upgrade" / "CLAUDE.md"
+            self.assertEqual(backup.read_text(), "kit v1\n")
+
+    def test_the_backup_directories_are_ignored_by_the_state_gitignore(self) -> None:
+        # A backup that reaches git is not a backup, it is a commit of the file the
+        # operator was trying to keep private, plus noise on every upgrade.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ia._write_state(root, [], repo="r", ref="v1", metadata={})
+            ignored = (root / ia._STATE_DIR / ".gitignore").read_text()
+            self.assertIn("overwritten/", ignored)
+            self.assertIn("pre-upgrade/", ignored)
 
 
 if __name__ == "__main__":

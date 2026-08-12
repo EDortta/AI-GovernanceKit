@@ -146,6 +146,19 @@ _UPGRADE_PATHS: list[str] = [
 # Alias kept for --docs-only callers and tests.
 _DOCS_PATHS = _KIT_DOC_PATHS
 
+# A protected file is kit-owned for READING and project-owned for WRITING: once its
+# content differs from what the kit installed, the kit stops claiming it. The new
+# version lands beside it as `<file>.kit-new` and a human merges.
+#
+# This mirrors `PROTECTED_ROOT_FILES` in the shell installer, and the two lists must
+# stay identical — `tests/test_kit_drift.py` asserts that against the pinned release
+# rather than trusting this comment. The shell has had this since 2026-07-23, when a
+# real target was found holding ~300 lines of project rules in AGENTS.md, including
+# reviewer logins; this installer replaced the same file with a bare `shutil.copy2`
+# for another twenty days. AGENTS.md is the first file every agent is told to read,
+# so it is the first place anyone writes a project rule.
+_PROTECTED_FILES: tuple[str, ...] = ("AGENTS.md",)
+
 # The project's documentation territory. Created on fresh install, never overwritten.
 _PROJECT_DOCS_DIR = "docs"
 _PROJECT_DOCS_README = """# Project Documentation
@@ -280,6 +293,10 @@ class InstallResult:
     # Kit files the project had edited by hand; the new kit version replaced them and
     # a copy of the edit was stashed under .gk/overwritten/.
     overwritten_edits: list[str] = field(default_factory=list)
+    # Protected files (see _PROTECTED_FILES) whose content no longer matches what the
+    # kit installed. The project's version stayed; the kit's waits as <file>.kit-new
+    # and is NOT recorded in the manifest until a human merges it.
+    drifted_paths: list[str] = field(default_factory=list)
     metadata_known: list[str] = field(default_factory=list)
 
 
@@ -410,6 +427,7 @@ def run_install_agents(
                 manifest=_state_files(state),
                 preserved=result.preserved_paths,
                 overwritten=result.overwritten_edits,
+                drifted=result.drifted_paths,
             )
         else:
             result.paths_installed = _do_fresh(src_root, root, force=force)
@@ -641,6 +659,7 @@ def _do_upgrade(
     manifest: dict[str, str] | None = None,
     preserved: list[str] | None = None,
     overwritten: list[str] | None = None,
+    drifted: list[str] | None = None,
 ) -> list[str]:
     installed: list[str] = []
     known = manifest if manifest is not None else {}
@@ -652,10 +671,85 @@ def _do_upgrade(
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         if src_path.is_dir():
             _sync_dir(src_path, dst_path, dst, known, preserved, overwritten)
-        else:
-            shutil.copy2(src_path, dst_path)
+        elif not _replace_kit_file(
+            src_path, dst_path, dst, known,
+            overwritten=overwritten, drifted=drifted,
+        ):
+            # The project's version stayed. Leaving the path out of `installed` keeps
+            # it out of _write_state as well, so the manifest holds no hash for a file
+            # the kit did not write — recording it would tell the NEXT upgrade
+            # "untouched kit content, safe to replace", which is the loss this exists
+            # to prevent.
+            continue
         installed.append(_dest_rel(rel))
     return installed
+
+
+def _replace_kit_file(
+    src_file: Path,
+    target: Path,
+    root: Path,
+    known: dict[str, str],
+    *,
+    overwritten: list[str] | None = None,
+    drifted: list[str] | None = None,
+) -> bool:
+    """Replace a single kit-owned file, judging it against the manifest first.
+
+    Returns whether the kit's version now stands at *target*.
+
+    ==========================  ==========================================================
+    manifest says               what happens
+    ==========================  ==========================================================
+    content already identical   nothing to preserve and nothing to report; a stale
+                                ``.kit-new`` from an earlier run is cleared
+    hash matches                untouched kit content; replaced silently
+    hash differs, protected     kept; the new version lands as ``<file>.kit-new``
+    hash differs, other         stashed under ``.gk/overwritten/``, then replaced
+    no entry, protected         fail closed — kept, ``.kit-new`` written
+    no entry, other             replaced (the behaviour that predates the manifest)
+    ==========================  ==========================================================
+
+    Failing closed on "no entry" is the case that matters: the installs most likely to
+    hold hand-written rules are precisely the ones predating the manifest.
+
+    Byte-identical content short-circuits everything *before* the manifest is
+    consulted. That is not an optimisation — after a layout migration the file IS the
+    rendered kit version while the manifest still holds the pre-migration hash, and
+    judging by the manifest alone would demand a merge of a file against itself.
+    """
+    if target.is_file():
+        rel_to_root = target.relative_to(root).as_posix()
+        kit_new = safe_path(root, target.parent / (target.name + ".kit-new"))
+        if _file_sha256(target) == _file_sha256(src_file):
+            kit_new.unlink(missing_ok=True)
+            return True
+
+        recorded = known.get(rel_to_root)
+        if recorded is None or recorded != _file_sha256(target):
+            if rel_to_root in _PROTECTED_FILES:
+                shutil.copy2(src_file, kit_new)
+                if drifted is not None:
+                    drifted.append(rel_to_root)
+                return False
+            if recorded is not None:
+                stash = safe_path(root, root / _STATE_DIR / "overwritten" / rel_to_root)
+                stash.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(target, stash)
+                if overwritten is not None:
+                    overwritten.append(rel_to_root)
+
+        # Cheap insurance, independent of the judgement above: even a file the manifest
+        # calls untouched keeps a copy, so a wrong call costs one `cp` to undo. Under
+        # .gk/ rather than beside the file, so an upgrade does not litter the project
+        # root with a dozen .bak files.
+        backup = safe_path(root, root / _STATE_DIR / "pre-upgrade" / rel_to_root)
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target, backup)
+        kit_new.unlink(missing_ok=True)
+
+    shutil.copy2(src_file, target)
+    return True
 
 
 def _sync_dir(
@@ -834,6 +928,7 @@ def _write_state(
         "secrets.json\n"
         "context-telemetry.jsonl\n"
         "overwritten/\n"
+        "pre-upgrade/\n"
         # Council records key off a local staged diff, which means nothing to anyone
         # else once the commit lands. The durable record is the prose council.md §4
         # requires in docs/napkin-lessons.md and the active RESUME.md.
@@ -1446,6 +1541,7 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     entries.append(_SECRETS_FILE)
     entries.append(f"{_STATE_DIR}/context-telemetry.jsonl")
     entries.append(f"{_STATE_DIR}/overwritten/")
+    entries.append(f"{_STATE_DIR}/pre-upgrade/")
     entries.extend(SECRET_IGNORE_PATTERNS)
     return entries
 

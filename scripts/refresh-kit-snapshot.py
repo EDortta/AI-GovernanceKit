@@ -37,13 +37,21 @@ from governancekit.install_agents import (
     REPO,
     _TEMPLATE_SEEDS,
 )
-from governancekit.kit_drift import KitSnapshot, digest_shared_section
+from governancekit.kit_drift import (
+    KitSnapshot,
+    digest_shared_section,
+    extract_protected_root_files,
+)
 
 # The canonical carrier of the shared section inside the AI-Agents release. The
 # section lives here, not in that repo's AGENTS.md, which is why the gate cannot
 # just diff two files with the same name.
 _SHARED_SECTION_SOURCE = ".docs/workflows/sending-email.md"
 _CONTRACT_SOURCE = ".docs/governancekit-integration.json"
+# The other implementation of the same upgrade contract. It is the copy that gets
+# deposited into every target, so what it protects is what a governed project is
+# entitled to expect from an upgrade — whichever installer runs it.
+_SHELL_INSTALLER_SOURCE = "scripts/install-agents-kit.sh"
 
 
 def _download_verified(repo: str, ref: str, dest: Path) -> Path:
@@ -83,6 +91,7 @@ def build_snapshot() -> KitSnapshot:
         with tarfile.open(tarball, "r:gz") as tar:
             contract = json.loads(_member(tar, _CONTRACT_SOURCE))
             section = _member(tar, _SHARED_SECTION_SOURCE)
+            installer = _member(tar, _SHELL_INSTALLER_SOURCE)
             carried = {name.split("/", 1)[-1] for name in tar.getnames()}
     return KitSnapshot(
         agents_ref=contract["ai_agents"]["ref"],
@@ -91,6 +100,7 @@ def build_snapshot() -> KitSnapshot:
         template_seed_sources=tuple(
             sorted(src for src in set(_TEMPLATE_SEEDS.values()) if src in carried)
         ),
+        protected_root_files=extract_protected_root_files(installer),
     )
 
 

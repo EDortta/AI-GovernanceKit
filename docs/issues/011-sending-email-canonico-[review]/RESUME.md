@@ -9,16 +9,33 @@
 
 ## Next Step (DO THIS FIRST)
 
-Decidir se `development` deste repositório vai para `main` (hoje 45 commits atrás) e se
-é empurrado. O AI-Agents já foi: `main` + `v1.2.0` publicadas.
+**Nenhum achado da rodada 2 continua aberto.** O que falta é decisão do operador: o
+gate de concílio do commit de entrega do R2-16' (ver abaixo) e o item 4 do escopo.
 
-**R2-18 fechado em 2026-08-11** (`b1c46ea`): o gate de deriva existe, com snapshot
-derivado do tarball verificado e três asserções offline, cada direção verificada por
-mutação. Ver `docs/issues/013-kit-drift-gate-[finished]/`.
+> As duas linhas que este bloco trazia até 2026-08-12 — "decidir se `development` vai
+> para `main`" e "Restam 5" — estavam vencidas há um dia. `main` recebeu
+> `development` em `2767b4b` e as duas estão empurradas e em dia com `origin`; e
+> `711f853` fechou quatro dos cinco em 2026-08-11 sem passar por aqui. Um RESUME que
+> lista como aberto o que já foi fechado custa o mesmo que uma contagem inventada:
+> a próxima sessão planeja a partir dele. Corrigido, com o histórico à vista.
 
-Restam **5**: R2-2 (manifesto envenenado sem reparo), R2-16' (`_do_upgrade` sobrescreve
-arquivo de topo sem hash-check nem stash), R2-15 (`configure` não persiste em `.gk/`),
-R2-11 (napkin sem as contagens do §4), R2-17 (`_is_kit_owned` sem `as_posix()`).
+Fechados desde a última escrita deste arquivo:
+
+- **R2-18** em 2026-08-11 (`b1c46ea`): gate de deriva entre os dois kits, com snapshot
+  derivado do tarball verificado e asserções offline, cada direção verificada por
+  mutação. Ver `docs/issues/013-kit-drift-gate-[finished]/`.
+- **R2-2, R2-15, R2-16 (`configure`) e R2-11** em 2026-08-11 (`711f853`). **R2-17** foi
+  reportado como NÃO reproduzível — o único caller de `_is_kit_owned` já normaliza com
+  `as_posix()` (`doctor.py:1125`) — e não "consertado".
+- **R2-16'** em 2026-08-12: o `_do_upgrade` deste runtime substituía todo arquivo de
+  topo com um `shutil.copy2` nu — sem hash-check, sem stash, sem cópia de segurança —
+  enquanto o instalador **shell**, que é a outra implementação do mesmo contrato e a
+  que o kit deposita em todo alvo, protege o `AGENTS.md` desde 2026-07-23. Agora o
+  runtime aplica a mesma tabela de decisão, e a paridade entre as duas listas é
+  asserção lida do release pinado (`protected_root_files` no `_kit_snapshot.json`),
+  não comentário. Verificado no elo 4: alvo real, `AGENTS.md` com regra de projeto,
+  **dois** ciclos de `--upgrade` — o arquivo sobrevive aos dois e o manifesto nunca
+  aprende o hash da versão do projeto, que é a poison que só aparece no segundo.
 
 ### Verificado no elo 4, não na fonte
 
@@ -35,7 +52,15 @@ se verifica no projeto governado.
 | 1. mesma seção nos dois kits, uma origem só | **fechado com gate** (2026-08-11). Era prosa pedindo "mude lá primeiro"; agora `tests/test_kit_drift.py` compara o digest do corpo aqui contra o da release pinada e fica vermelho se qualquer lado editar. |
 | 2. remover `SMTP_ACCOUNT` do instalador | fechado. Fora do `_PLACEHOLDER_DESCRIPTIONS`; mantido no `_OPERATOR_PLACEHOLDERS` (verificado: removê-lo publica o valor legado no manifesto rastreado) e declarado em `_RETIRED_PLACEHOLDERS` (nunca perguntado, ainda substituído). |
 | 3. reconciliar sintaxe de placeholder | fechado: `[OPERATOR_NAME]` → `{{OPERATOR_NAME}}`. |
-| 4. o `doctor` audita a seção | **parcial.** Nenhum check audita a seção pelo nome. O que existe audita o índice para onde ela aponta e detecta contrato obsoleto que ainda a prescreve. |
+| 4. o `doctor` audita a seção | **parcial.** Nenhum check audita a seção pelo nome. O que existe audita o índice para onde ela aponta e detecta contrato obsoleto que ainda a prescreve. É o único item do escopo que não fechou, e fechá-lo é decisão do operador: um check que lê a seção pelo nome é o quinto detector textual deste kit, e os quatro anteriores custaram um defeito de escopo cada. |
+
+> Uma consequência do R2-16' cai exatamente aqui. O remédio que a mensagem do
+> `local sources indexed` oferece ao alvo com contrato retirado — "adote a versão
+> `.kit-new` ao lado, ou rode `install-agents --upgrade`" — pressupõe que arquivo
+> protegido não é sobrescrito. Era verdade no instalador shell e falso neste runtime:
+> quem seguisse o conselho pelo caminho Python perdia a edição em vez de recebê-la ao
+> lado. O comentário do `doctor.py:1150` afirmava a garantia; nada a implementava
+> aqui. Agora implementa.
 
 ## Council — rodada 1 (três lentes)
 

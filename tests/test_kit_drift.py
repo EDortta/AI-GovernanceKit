@@ -16,6 +16,7 @@ from governancekit.integration import _matches_range
 from governancekit.kit_drift import (
     KitSnapshot,
     digest_shared_section,
+    extract_protected_root_files,
     extract_shared_section,
 )
 
@@ -139,5 +140,49 @@ class TemplateSeedTest(unittest.TestCase):
             "no-ops: the target silently gets the kit's own file instead of an empty "
             "template, and nothing anywhere reports it.",
         )
+
+
+class ProtectedFileParityTest(unittest.TestCase):
+    """R2-16': two installers, one upgrade contract, two different answers.
+
+    A governed project is upgraded by whichever installer is at hand — the shell
+    script the kit deposits in it, or this runtime. The shell has refused to
+    overwrite a drifted `AGENTS.md` since 2026-07-23, after a target was found
+    holding ~300 lines of project rules in it. This runtime replaced the same file
+    with a bare `shutil.copy2` until 2026-08-12. The protection read as closed
+    because one of the two implementations had it.
+    """
+
+    def test_both_installers_protect_the_same_root_files(self) -> None:
+        from governancekit.install_agents import _PROTECTED_FILES
+
+        snapshot = KitSnapshot.load()
+        self.assertEqual(
+            sorted(_PROTECTED_FILES),
+            sorted(snapshot.protected_root_files),
+            "this runtime and the shell installer in AI-Agents "
+            f"{snapshot.agents_ref} disagree about which root files a project owns "
+            "once it edits them. A file protected by one and replaced by the other "
+            "is a data-loss path that reads as closed.",
+        )
+
+    def test_a_release_that_dropped_the_protection_does_not_read_as_agreement(self) -> None:
+        """An absent assignment must compare unequal, not raise and get skipped."""
+        self.assertEqual(extract_protected_root_files("nothing here\n"), ())
+        self.assertNotEqual(extract_protected_root_files("nothing here\n"), ("AGENTS.md",))
+
+    def test_the_list_is_read_from_the_assignment_and_not_from_prose(self) -> None:
+        """The installer's own comments name AGENTS.md repeatedly, and README*.md by
+        name as deliberately absent. A reader that greps for filenames would find
+        both."""
+        source = (
+            '# AGENTS.md is the first file every agent reads.\n'
+            '# README*.md are deliberately ABSENT.\n'
+            'PROTECTED_ROOT_FILES=("AGENTS.md" "CLAUDE.md")\n'
+            'KIT_ROOT_FILES=("GEMINI.md")\n'
+        )
+        self.assertEqual(extract_protected_root_files(source), ("AGENTS.md", "CLAUDE.md"))
+
+
 if __name__ == "__main__":
     unittest.main()
