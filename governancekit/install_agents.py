@@ -147,8 +147,15 @@ _UPGRADE_PATHS: list[str] = [
 _DOCS_PATHS = _KIT_DOC_PATHS
 
 # A protected file is kit-owned for READING and project-owned for WRITING: once its
-# content differs from what the kit installed, the kit stops claiming it. The new
+# content differs from what the kit installed, `--upgrade` stops claiming it. The new
 # version lands beside it as `<file>.kit-new` and a human merges.
+#
+# `--upgrade`, and only `--upgrade`. `--force` is the fresh path and is documented as
+# "overwrite existing kit files": it still removes and replaces this file with no
+# stash, no backup and no report. The shell installer's `copy_path` does the same
+# `rm -rf` under `--force`, so the two agree, and correcting one side alone would
+# recreate exactly the divergence this pair of lists exists to prevent. Recorded as an
+# accepted risk in the epic's RESUME rather than half-fixed here.
 #
 # This mirrors `PROTECTED_ROOT_FILES` in the shell installer, and the two lists must
 # stay identical — `tests/test_kit_drift.py` asserts that against the pinned release
@@ -297,6 +304,12 @@ class InstallResult:
     # kit installed. The project's version stayed; the kit's waits as <file>.kit-new
     # and is NOT recorded in the manifest until a human merges it.
     drifted_paths: list[str] = field(default_factory=list)
+    # Files replaced this run whose previous content was copied to .gk/pre-upgrade/.
+    # Reported: insurance nobody knows about is insurance nobody uses, and the
+    # directory is cleared at the start of the next upgrade.
+    backed_up: list[str] = field(default_factory=list)
+    # Stored answers substituted into the download before anything was compared.
+    substitutions_prerendered: int = 0
     metadata_known: list[str] = field(default_factory=list)
 
 
@@ -416,6 +429,13 @@ def run_install_agents(
 
     with tempfile.TemporaryDirectory() as tmp:
         src_root = _download(repo, ref, Path(tmp), allow_unverified=allow_unverified)
+        # Render the incoming source with what this project already answered, BEFORE
+        # anything is compared or copied. Without this the comparison is rigged: the
+        # target holds `Esteban` where the download still holds `{{OPERATOR_NAME}}`,
+        # so a file the kit itself rendered can never read as identical to the kit.
+        result.substitutions_prerendered = _prerender_source(
+            src_root, _state_metadata(state)
+        )
 
         if docs_only or upgrade:
             result.had_state = bool(state)
@@ -428,6 +448,8 @@ def run_install_agents(
                 preserved=result.preserved_paths,
                 overwritten=result.overwritten_edits,
                 drifted=result.drifted_paths,
+                backed_up=result.backed_up,
+                clear_backups=not docs_only,
             )
         else:
             result.paths_installed = _do_fresh(src_root, root, force=force)
@@ -467,6 +489,7 @@ def run_install_agents(
         ref=ref,
         metadata=metadata,
         prune_missing=upgrade and not docs_only,
+        preserved=result.preserved_paths,
     )
 
     if install_awt and _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
@@ -660,9 +683,26 @@ def _do_upgrade(
     preserved: list[str] | None = None,
     overwritten: list[str] | None = None,
     drifted: list[str] | None = None,
+    backed_up: list[str] | None = None,
+    clear_backups: bool = True,
 ) -> list[str]:
     installed: list[str] = []
     known = manifest if manifest is not None else {}
+    # The backup holds the state before THIS upgrade. Accumulating runs would make the
+    # name mean nothing in particular: after two upgrades `.gk/pre-upgrade/GEMINI.md`
+    # would be the file as it stood before the FIRST one, and the operator restoring it
+    # would silently roll back a version they never asked to lose. The shell clears it
+    # per run for this reason; the port did not, and a council lens reproduced the
+    # divergence — in a fleet where both installers run, the directory's meaning
+    # depended on which one had run last.
+    #
+    # `--docs-only` passes False, and the second round is why: clearing there deleted
+    # the backups a full upgrade had just made of the root contracts, which that mode
+    # never touches. A narrower run must not destroy the wider run's insurance.
+    if clear_backups:
+        stale_backups = safe_path(dst, dst / _STATE_DIR / "pre-upgrade")
+        if stale_backups.is_dir():
+            shutil.rmtree(stale_backups)
     for rel in (paths if paths is not None else _UPGRADE_PATHS):
         src_path = _resolve_src(src, rel)
         dst_path = safe_path(dst, dst / _dest_rel(rel))
@@ -673,7 +713,7 @@ def _do_upgrade(
             _sync_dir(src_path, dst_path, dst, known, preserved, overwritten)
         elif not _replace_kit_file(
             src_path, dst_path, dst, known,
-            overwritten=overwritten, drifted=drifted,
+            overwritten=overwritten, drifted=drifted, backed_up=backed_up,
         ):
             # The project's version stayed. Leaving the path out of `installed` keeps
             # it out of _write_state as well, so the manifest holds no hash for a file
@@ -685,6 +725,109 @@ def _do_upgrade(
     return installed
 
 
+def persist_placeholder_values(root: Path, values: dict[str, str]) -> None:
+    """Record answers given outside an install, so the next upgrade still knows them.
+
+    ``configure`` used to fill the files and remember nothing. Everything downstream
+    reads the stored answers: ``_fill_placeholders`` re-applies them after a template
+    is overwritten, and ``_prerender_source`` renders the incoming source with them
+    before any comparison. Without the record, a target configured this way looked
+    hand-edited on the next upgrade — the file differed from the kit by exactly the
+    substitution the operator had just been told to perform — and, for the protected
+    file, that verdict is permanent: it is kept, so it never converges back.
+
+    The split between shared, operator-local and secret values is `_write_state`'s;
+    this only routes the answers into it without touching any file hash.
+    """
+    if not values:
+        return
+    state = _read_state(root)
+    _write_state(
+        root,
+        [],
+        repo=str(state.get("repo") or REPO),
+        ref=str(state.get("ref") or DEFAULT_REF),
+        metadata=values,
+    )
+
+
+def _prerender_source(src_root: Path, known: dict[str, str]) -> int:
+    """Substitute stored answers into the downloaded source; return substitutions made.
+
+    This runs BEFORE the first comparison, and the ordering is the whole point. Every
+    judgement downstream — the byte-identity short-circuit, the manifest hash, what
+    lands in ``<file>.kit-new`` — compares a target the kit has already rendered
+    against this source. Leave the source raw and a configured `AGENTS.md` differs
+    from the kit by exactly the substitution the kit performed, which reads as
+    operator intent. The consequences were reproduced by three separate council
+    lenses: a target whose manifest entry was lost (a pre-`.gk` install, or a shell
+    install where `write_manifest` bailed for want of `python3`) became permanently
+    drifted and never received another `AGENTS.md`; `configure` — which rewrites the
+    file and does not update the manifest — froze it the same way; and the `.kit-new`
+    an operator was told to merge carried raw `{{OPERATOR_NAME}}`, so following the
+    instruction turned `doctor` red.
+
+    The shell installer has done this since it grew the protection, and says why in a
+    comment (`apply_identity`): "A filled slot then reads as 'identical to the kit',
+    not as drift." Porting its decision table without its ordering ported half a
+    mechanism.
+
+    Binary files (the shipped icons) and symlinks are never rewritten — an undecodable
+    file is skipped, exactly as the shell's pass does.
+
+    Two properties are load-bearing, and the first cut had neither.
+
+    **One pass.** Substitution is a single regex sweep, so a value can never be
+    re-substituted. Sequential ``str.replace`` calls over one buffer let a value that
+    *contains* a token be expanded by a later round: with ``ORG_NAME`` set to
+    ``{{PIX_PAYLOAD}}`` in the manifest — the half a team SHARES, and which a
+    teammate or a pull request can set — the next pass expanded the victim's local
+    secret into the text the first pass had injected, wrote it into a kit file, and
+    recorded its hash. Under ``--track`` that file is git-tracked.
+
+    **Known tokens only.** The table is filtered to the placeholders this kit
+    declares, exactly as ``_fill_placeholders`` filters. Without it the kit did not
+    even need to ship the token: the injected text supplied it.
+
+    Both were found by the council's adversarial-user lens, against a mechanism that
+    is not reachable at the pinned release and was one shareable placeholder away
+    from being reachable at the next one.
+    """
+    tokens = {
+        key: value
+        for key, value in (known or {}).items()
+        if value
+        and (key in _PLACEHOLDER_DESCRIPTIONS or key in _RETIRED_PLACEHOLDERS)
+        # A stored value is text this process did not author. Capping it costs nothing
+        # a real answer needs (the longest declared slot is an e-mail address) and
+        # bounds the memory a hostile manifest can make this pass allocate.
+        and len(value) <= _MAX_PLACEHOLDER_VALUE
+    }
+    if not tokens:
+        return 0
+    substitutions = 0
+    for path in sorted(src_root.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+
+        def _substitute(match: re.Match[str]) -> str:
+            nonlocal substitutions
+            replacement = tokens.get(match.group(1))
+            if replacement is None:
+                return match.group(0)
+            substitutions += 1
+            return replacement
+
+        rendered = _PLACEHOLDER_RE.sub(_substitute, text)
+        if rendered != text:
+            path.write_text(rendered, encoding="utf-8")
+    return substitutions
+
+
 def _replace_kit_file(
     src_file: Path,
     target: Path,
@@ -693,6 +836,7 @@ def _replace_kit_file(
     *,
     overwritten: list[str] | None = None,
     drifted: list[str] | None = None,
+    backed_up: list[str] | None = None,
 ) -> bool:
     """Replace a single kit-owned file, judging it against the manifest first.
 
@@ -746,6 +890,8 @@ def _replace_kit_file(
         backup = safe_path(root, root / _STATE_DIR / "pre-upgrade" / rel_to_root)
         backup.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(target, backup)
+        if backed_up is not None:
+            backed_up.append(rel_to_root)
         kit_new.unlink(missing_ok=True)
 
     shutil.copy2(src_file, target)
@@ -788,6 +934,15 @@ def _sync_dir(
         if target.is_file() and overwritten is not None:
             rel_to_root = target.relative_to(root).as_posix()
             recorded = known.get(rel_to_root)
+            # Byte-identical to what is about to be written: nothing to preserve and
+            # nothing to accuse anyone of, whatever the manifest remembers. The same
+            # short-circuit `_replace_kit_file` has, missing here — so after
+            # `configure` filled a slot inside a kit directory, the next upgrade told
+            # the operator it had replaced a file "you had edited by hand" and stashed
+            # a copy identical to the original, with a line about moving project rules
+            # out of kit files. The edit was the kit's own.
+            if recorded is not None and _file_sha256(target) == _file_sha256(src_file):
+                recorded = None
             if recorded is not None and recorded != _file_sha256(target):
                 backup = safe_path(root, root / _STATE_DIR / "overwritten" / rel_to_root)
                 backup.parent.mkdir(parents=True, exist_ok=True)
@@ -881,6 +1036,7 @@ def _write_state(
     ref: str,
     metadata: dict[str, str],
     prune_missing: bool = False,
+    preserved: list[str] | None = None,
 ) -> None:
     """Persist file hashes and operator answers.
 
@@ -891,6 +1047,18 @@ def _write_state(
     Merges over the previous state rather than replacing it — ``--docs-only`` touches a
     narrow scope, and dropping what it did not touch would make the next full upgrade
     forget that e.g. ``AGENTS.md`` is kit-owned, or forget an answer already given.
+
+    *preserved* names the files the upgrade refused to claim — project-authored files
+    found inside kit-owned directories. They must not be recorded, and the reason is
+    the second cycle, not this one. This function walks an installed DIRECTORY with
+    ``rglob``, so a project's own file inside ``.docs/agents/`` was written into the
+    manifest as kit-owned; on the NEXT upgrade ``_sync_dir`` read "the kit wrote this,
+    the hash still matches, the kit no longer ships it" and deleted it — silently, with
+    an empty preserved list — and in between ``remove-agents`` planned the same
+    deletion at confidence 1.0 with ``requires_operator_review: false``. Upgrade one
+    reports it kept the file; upgrade two destroys it. Reproduced by the council's
+    sweep lens. The shell installer skips ``DRIFTED`` here and has the same hole for
+    ``PRESERVED``.
     """
     previous = _read_state(root)
     files: dict[str, str] = dict(_state_files(previous))
@@ -899,13 +1067,21 @@ def _write_state(
         # pre-.docs paths must not survive forever as fake managed files. Narrow
         # documentation refreshes deliberately do not prune outside their scope.
         files = {rel: digest for rel, digest in files.items() if (root / rel).is_file()}
+    unclaimed = set(preserved or ())
     for rel in installed:
         target = safe_path(root, root / rel)
         if target.is_file():
-            files[rel] = _file_sha256(target)
+            if rel not in unclaimed:
+                files[rel] = _file_sha256(target)
         elif target.is_dir():
             for f in sorted(p for p in target.rglob("*") if p.is_file()):
-                files[f.relative_to(root).as_posix()] = _file_sha256(f)
+                rel_to_root = f.relative_to(root).as_posix()
+                if rel_to_root in unclaimed:
+                    # Recording it would answer "who wrote this?" with the wrong name,
+                    # and the only consumer of that answer deletes files.
+                    files.pop(rel_to_root, None)
+                    continue
+                files[rel_to_root] = _file_sha256(f)
 
     merged_meta = {**_state_metadata(previous), **metadata}
     shareable = {
@@ -929,6 +1105,16 @@ def _write_state(
         "context-telemetry.jsonl\n"
         "overwritten/\n"
         "pre-upgrade/\n"
+        # Written by the SHELL installer's content migration, never by this one — and
+        # that is exactly why it belongs here. This file is rewritten wholesale on
+        # every run, so anything the other implementation ignores and this one omits
+        # gets silently un-ignored on the first Python upgrade of a shell-installed
+        # target. What `.gk/pre-migrate/` holds is the project's root contracts as
+        # they stood before migration: the hand-edited AGENTS.md this whole protection
+        # exists for, one `git add -A` away from being committed.
+        "pre-migrate/\n"
+        # Written by `remove-agents apply`; ignored by neither writer before today.
+        "remove-agents-backup/\n"
         # Council records key off a local staged diff, which means nothing to anyone
         # else once the commit lands. The durable record is the prose council.md §4
         # requires in docs/napkin-lessons.md and the active RESUME.md.
@@ -1280,6 +1466,12 @@ def _resolve_track_kit_docs(root: Path, cli_value: bool | None) -> bool:
 
 _PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]+)\}\}")
 
+# A stored answer is text this process did not author: it comes from `.gk/manifest.json`,
+# the half of the state a team shares and commits. Nothing a real slot holds comes close
+# to this (the longest declared one is an e-mail address), so the cap costs nothing and
+# bounds what a hostile or mistaken value can make the render pass allocate.
+_MAX_PLACEHOLDER_VALUE = 4096
+
 # Tokens no longer COLLECTED (they are gone from _PLACEHOLDER_DESCRIPTIONS, so nothing
 # prompts for them) but still SUBSTITUTED when a stored value exists. Without this a
 # target installed before the retirement dead-ends: an upgrade at a ref whose files
@@ -1542,6 +1734,15 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     entries.append(f"{_STATE_DIR}/context-telemetry.jsonl")
     entries.append(f"{_STATE_DIR}/overwritten/")
     entries.append(f"{_STATE_DIR}/pre-upgrade/")
+    entries.append(f"{_STATE_DIR}/pre-migrate/")
+    entries.append(f"{_STATE_DIR}/remove-agents-backup/")
+    # The parked copy of a protected file. It is rendered with the operator's stored
+    # answers — that is what makes it mergeable — which means it carries the very
+    # value `_OPERATOR_PLACEHOLDERS` keeps out of the tracked state. `AGENTS.md`
+    # itself is ignored by the block above; its `.kit-new` sibling was not, so it sat
+    # in `git status` as untracked and one `git add -A` from committing the operator's
+    # name. Introduced by rendering the source, caught by the council's second round.
+    entries.append("*.kit-new")
     entries.extend(SECRET_IGNORE_PATTERNS)
     return entries
 

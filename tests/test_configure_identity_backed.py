@@ -82,3 +82,29 @@ class ConfigureIsBackedByStoredIdentityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConfigurePersistsAnswersTest(unittest.TestCase):
+    """Round 2: the fix for `configure` freezing a protected file was forward-only.
+
+    A target configured before answers were persisted has its files already rendered,
+    so the scan finds no token, `run_configure` returned early, and nothing was ever
+    recorded — leaving the source un-rendered on every future upgrade and the
+    protected file drifted for good. Re-running the command the operator is told to
+    run has to be the way back.
+    """
+
+    def test_an_explicit_set_is_recorded_even_when_no_token_remains(self) -> None:
+        from governancekit.configure import run_configure
+        from governancekit.install_agents import _read_state, _state_metadata
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # Already rendered by the old `configure`: no {{TOKEN}} left anywhere.
+            (root / "AGENTS.md").write_text("# kit Esteban\n", encoding="utf-8")
+
+            run_configure(root, preset={"OPERATOR_NAME": "Esteban"}, interactive=False)
+
+            self.assertEqual(
+                _state_metadata(_read_state(root)).get("OPERATOR_NAME"), "Esteban"
+            )

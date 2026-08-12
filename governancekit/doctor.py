@@ -8,6 +8,13 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .kit_drift import (
+    KitSnapshot,
+    SnapshotError,
+    digest_shared_section,
+    extract_shared_section,
+)
+
 _PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]{2,})\}\}")
 
 
@@ -75,6 +82,7 @@ def run_doctor(root: Path) -> DoctorResult:
         _check_gitignore_secret_coverage(repo_root),
         _check_local_reading_sources(repo_root),
         _check_local_sources_indexed(repo_root),
+        _check_sending_email_contract(repo_root),
         _check_project_config(repo_root),
         _check_agents_integration_contract(repo_root),
         _check_host_identity(repo_root),
@@ -288,13 +296,22 @@ def _check_host_identity(root: Path) -> CheckResult:
     """
     from .identity import IDENTITY_FILENAME, load_identity
 
+    # The remedy names the flags, not the bare command. Off a TTY — CI, an unattended
+    # agent — bare `configure` prompts for nothing, exits 0 and changes nothing, so
+    # `configure && doctor` never terminates: the check stays red and the operator has
+    # been told to run a command that provably cannot clear it. Same defect this
+    # delivery fixed one check over, quieter (exit 0 rather than a traceback). Found by
+    # the council's operator lens.
+    _FLAGS = "--operator-name <name> --host-id <host> --instance-path <path>"
+
     identity = load_identity(root)
     if identity is None:
         return CheckResult(
             "host identity",
             False,
-            f"{IDENTITY_FILENAME} missing or unreadable — run '{_command(root, 'configure')}' to "
-            "collect operator_name, host_id and instance_path",
+            f"{IDENTITY_FILENAME} missing or unreadable — run "
+            f"'{_command(root, 'configure')} {_FLAGS}' (interactively, the flags may be "
+            "omitted) to collect operator_name, host_id and instance_path",
         )
     missing = identity.missing_required()
     if missing:
@@ -302,7 +319,7 @@ def _check_host_identity(root: Path) -> CheckResult:
             "host identity",
             False,
             f"{IDENTITY_FILENAME} incomplete — missing: {', '.join(missing)}; "
-            f"run '{_command(root, 'configure')}' to complete it",
+            f"run '{_command(root, 'configure')} {_FLAGS}' to complete it",
         )
     return CheckResult(
         "host identity",
@@ -593,6 +610,176 @@ def _check_manifest_drift(root: Path) -> CheckResult:
         suffix = "" if len(missing) <= 8 else f" (+{len(missing) - 8} more)"
         return CheckResult("AI-Agents manifest", False, f"{len(missing)} tracked path(s) missing: {shown}{suffix}")
     return CheckResult("AI-Agents manifest", True, "all tracked kit paths present")
+
+
+# ── §Sending Email (issue #7, item 4) ─────────────────────────────────────────
+#
+# The section an agent reads before sending email is the one that, in its old form,
+# prescribed one project's transport as a universal contract — and on 2026-08-04 an
+# agent in a governed project mailed material to the wrong person because of it.
+# Email cannot be recalled, which is why this is the one contract worth auditing by
+# name rather than trusting the upgrade to have landed.
+#
+# It is audited by DIGEST against the pinned release, not by reading the prose for
+# suspicious words. Four textual detectors in this kit have each cost a scope defect
+# — substring vs anchor, file vs diff, path vs citer, markup the author must know —
+# and a fifth would have to answer "does this text prescribe a transport?", which is
+# a judgement, not a match. A digest asks a question with an answer: is this the body
+# the kit ships? `_kit_snapshot.json` records that body's digest as read off the
+# checksum-verified release, and `kit_drift` extracts it from either carrier under
+# one rule, so "the same section" means the same thing here and in the release.
+#
+# Both carriers are read because the section MOVED. Until v1.2.0 it lived in
+# `AGENTS.md`; from v1.2.0 the canonical copy is the workflow file. A target that
+# never upgraded still carries the withdrawn prose in AGENTS.md, and that population
+# is exactly the one this check exists to find.
+_SENDING_EMAIL_CARRIERS: tuple[str, ...] = (
+    ".docs/workflows/sending-email.md",
+    "AGENTS.md",
+)
+
+# Of the two carriers, only this one is protected by the installer, and therefore only
+# this one is ever kept and parked as `<file>.kit-new`. The other lives in a kit
+# directory that an upgrade refreshes wholesale. The remedy differs accordingly, and
+# getting it wrong told an operator to merge a file the command was about to replace.
+# Mirrors `install_agents._PROTECTED_FILES`; the pair is asserted in the tests.
+_PROTECTED_CARRIERS: frozenset[str] = frozenset({"AGENTS.md"})
+
+
+def _upgrade_would_refuse(root: Path) -> bool:
+    """Whether a plain ``--upgrade`` raises instead of running.
+
+    Mirrors the guard in ``install_agents.run_install_agents``. A remedy string that
+    names a command which exits with a traceback is worse than no remedy: the operator
+    followed the instruction and got a stack trace. Kept as a local predicate rather
+    than an import so the doctor never depends on the installer's module import order.
+    """
+    backup_agents = root / _MIGRATION_BACKUP_DIR / "agents"
+    project_rules = root / "docs" / "project-rules.md"
+    project_rules_dir = root / "docs" / "project-rules"
+    return (
+        backup_agents.is_dir()
+        and not project_rules.exists()
+        and not project_rules_dir.is_dir()
+    )
+
+
+def _check_sending_email_contract(root: Path) -> CheckResult:
+    name = "§Sending Email contract"
+    try:
+        canonical = KitSnapshot.load().shared_section_sha256
+    except SnapshotError as exc:
+        # Nothing to compare against is not evidence that the target is wrong.
+        return CheckResult(name, True, f"no kit snapshot to compare against: {exc}", advisory=True)
+
+    canonical_carriers: list[str] = []
+    stale: list[str] = []
+    unreadable: list[str] = []
+    for rel in _SENDING_EMAIL_CARRIERS:
+        path = root / rel
+        try:
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            # Illegible is not absent, and it is not drift either: the check could not
+            # answer. Reported, never blocking.
+            unreadable.append(f"{rel} ({exc.strerror or exc})")
+            continue
+        if not extract_shared_section(text):
+            continue
+        if digest_shared_section(text) == canonical:
+            canonical_carriers.append(rel)
+        else:
+            stale.append(rel)
+
+    if stale:
+        remedies = []
+        for rel in stale:
+            merged = f"{rel}.kit-new"
+            if rel not in _PROTECTED_CARRIERS:
+                # Only a PROTECTED file is kept and parked as `.kit-new`. This carrier
+                # lives in a kit directory the upgrade refreshes wholesale: the kit's
+                # version wins and the project's is stashed. Promising a merge file
+                # here sent the operator to a command that REPLACED the section they
+                # were told to merge — the round-2 lens ran the advice and lost the
+                # text. Say what the command actually does.
+                remedies.append(
+                    f"{rel} — run {_command(root, 'install-agents --upgrade')}; the "
+                    "kit's version replaces it and yours is stashed under "
+                    ".gk/overwritten/ for comparison"
+                )
+            elif (root / merged).is_file():
+                remedies.append(f"{rel} — merge the new version already sitting at {merged}")
+            elif _upgrade_would_refuse(root):
+                # An upgrade refuses to run at all in this state and exits with a
+                # RuntimeError naming the missing flag. Naming the plain command here
+                # sends the operator to a traceback.
+                remedies.append(
+                    f"{rel} — run "
+                    f"{_command(root, 'install-agents --upgrade --migrate-content')}"
+                )
+            else:
+                # This does NOT replace the file — a protected file that differs is
+                # kept, by design. What the upgrade does is put the kit's version
+                # beside it, which is the step that makes the merge possible. Saying
+                # "run the upgrade" alone promised a repair the command does not
+                # perform, and the operator who ran it saw the same failure again.
+                remedies.append(
+                    f"{rel} — run {_command(root, 'install-agents --upgrade')} to place "
+                    f"the kit's version at {merged}, then merge it"
+                )
+        return CheckResult(
+            name,
+            False,
+            "declares a §Sending Email that is not the one this kit ships — agents "
+            "here follow the section as it stands: " + "; ".join(remedies),
+            # Severity mirrors the other implementation of the same contract rather
+            # than inventing a stricter policy for the same state. The shell reports a
+            # kept protected file and exits 0 unless the caller asks for `--strict`;
+            # this runtime has no `--strict`, so a non-advisory verdict made
+            # `validate-governance.sh` abort on a state the installer itself creates
+            # and calls acceptable, with no exit but a merge the operator may be
+            # deferring on purpose.
+            #
+            # An earlier cut blocked when the body still named one of the withdrawn
+            # transports. That was a judgement wearing a match's clothes: a substring
+            # cannot tell "use this helper" from "this helper is FORBIDDEN here", and
+            # the round-2 lens produced a project whose section BANS the withdrawn
+            # path and was blocked for saying so — its only exits being to delete its
+            # own prohibition or to drop it and take the kit's text. The fifth textual
+            # detector in this kit, failing the same way as the four before it, in the
+            # delivery whose design note says why not to write one. What the check
+            # states now is the fact it can prove: this body is not the kit's, and the
+            # project's agents follow it until someone acts.
+            advisory=True,
+        )
+
+    if unreadable:
+        return CheckResult(
+            name, False, f"could not read {', '.join(unreadable)}", advisory=True
+        )
+
+    if canonical_carriers:
+        return CheckResult(
+            name, True, f"canonical in {', '.join(canonical_carriers)}"
+        )
+
+    # No carrier declares the section at all. This used to return an advisory pass on
+    # the grounds that `AI-Agents manifest` reports it — which is false, and two
+    # council lenses reproduced it independently: that check compares the manifest's
+    # paths against disk and never inspects content, so a file that was never
+    # installed has no entry to be missing from, and a target with no manifest gets an
+    # advisory pass of its own. Nothing anywhere named the absent contract. It is
+    # reported here, advisory: an absent section is not a wrong section, and the
+    # project may predate the kit entirely.
+    return CheckResult(
+        name,
+        False,
+        "no carrier declares §Sending Email — this project has no email contract; "
+        f"run {_command(root, 'install-agents --upgrade')}",
+        advisory=True,
+    )
 
 
 def _check_active_issue(root: Path) -> CheckResult:

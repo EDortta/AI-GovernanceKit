@@ -1,5 +1,55 @@
 # Handoff
 
+## [2026-08-12] R2-16' e item 4 da #7 — concílio de duas rodadas, nada empurrado
+
+- branch: `development`, **não empurrada**. `main` intocada. Nenhuma tag, nenhum deploy.
+- RESUME: `docs/issues/011-sending-email-canonico-[review]/RESUME.md`
+
+### Entregue
+
+**R2-16'** — o `_do_upgrade` substituía todo arquivo de topo com um `shutil.copy2` nu.
+Agora aplica a tabela de decisão do instalador shell **e a ordem dela**: a fonte baixada
+é renderizada com as respostas guardadas antes de qualquer comparação. A paridade entre
+as duas listas de arquivos protegidos virou asserção lida do release pinado.
+
+**Item 4 da issue #7** — o `doctor` audita a §Sending Email por **digest** contra o
+release pinado, nos dois portadores, com remédio diferente por portador e severidade
+espelhada na do shell.
+
+### Concílio — duas rodadas, quatro lentes na primeira
+
+**r1: 16 achados + 12 perguntas, 16 sobreviveram ao §2, 15 viraram teste, 1 aceitação de
+risco escrita. r2: 9 achados + 7 perguntas, 9 viraram teste.** Todos reproduzidos; os
+registros legíveis por máquina estão em `.gk/council/`.
+
+Três dos nove achados da rodada 2 eram **regressões das correções da rodada 1**, uma
+delas de segurança (substituição encadeada expondo segredo local a partir da metade
+compartilhada do estado). Nenhum deles existiria sem a primeira rodada — que é o
+argumento para a segunda existir.
+
+**Os fechamentos da rodada 2 não foram auditados**: o §4 proíbe a terceira rodada. Cada
+um tem teste vermelho sem a correção, e a verificação de ponta a ponta foi refeita em
+alvo real (`scripts/verify-elo4.sh`), mas ninguém além de mim olhou para eles.
+
+### Aberto, com dono
+
+- **AI-Agents** — o `write_manifest` do `install-agents-kit.sh` pula os `DRIFTED` e não
+  pula os `PRESERVED`: a perda de dados do SWEEP-1 existe igual do lado shell, em release,
+  e este repositório não pode fechá-la.
+- `_do_fresh --force` continua apagando `AGENTS.md` editado — aceitação de risco escrita,
+  porque os dois instaladores concordam e mudar um lado só recria a divergência.
+
+### Checks
+
+`pytest tests -q` → 457 passed, 6 subtests. `doctor` deste repositório: os mesmos três
+`[FAIL]` de sempre (identidade de host, placeholder e índice), verificados presentes em
+`HEAD` sem estas mudanças.
+
+**Next:** decisão do operador — empurrar `development`, e se os fechamentos da rodada 2
+merecem uma leitura humana antes disso.
+
+---
+
 ## [2026-08-11] release v0.3.0, parque migrado, gate de deriva, 4 achados fechados
 
 - branch: `development`, empurrada. `main` **consolidada e tagueada `v0.3.0`** (48

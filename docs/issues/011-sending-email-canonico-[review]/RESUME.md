@@ -14,10 +14,16 @@ gate de concílio do commit de entrega do R2-16' (ver abaixo) e o item 4 do esco
 
 > As duas linhas que este bloco trazia até 2026-08-12 — "decidir se `development` vai
 > para `main`" e "Restam 5" — estavam vencidas há um dia. `main` recebeu
-> `development` em `2767b4b` e as duas estão empurradas e em dia com `origin`; e
-> `711f853` fechou quatro dos cinco em 2026-08-11 sem passar por aqui. Um RESUME que
+> `development` em `2767b4b`; `origin/main` está nesse commit, e `development` está à
+> frente de `origin/development` pelo trabalho desta sessão, que **não** foi empurrado.
+> E `711f853` fechou quatro dos cinco em 2026-08-11 sem passar por aqui. Um RESUME que
 > lista como aberto o que já foi fechado custa o mesmo que uma contagem inventada:
 > a próxima sessão planeja a partir dele. Corrigido, com o histórico à vista.
+>
+> A primeira redação desta correção dizia que as duas branches estavam "empurradas e em
+> dia com `origin`" — escrito no commit que as deixava divergentes. O claim auditor do
+> concílio pegou. Um parágrafo cuja tese é "não afirme estado sem olhar" afirmou estado
+> sem olhar.
 
 Fechados desde a última escrita deste arquivo:
 
@@ -25,8 +31,11 @@ Fechados desde a última escrita deste arquivo:
   derivado do tarball verificado e asserções offline, cada direção verificada por
   mutação. Ver `docs/issues/013-kit-drift-gate-[finished]/`.
 - **R2-2, R2-15, R2-16 (`configure`) e R2-11** em 2026-08-11 (`711f853`). **R2-17** foi
-  reportado como NÃO reproduzível — o único caller de `_is_kit_owned` já normaliza com
-  `as_posix()` (`doctor.py:1125`) — e não "consertado".
+  reportado como NÃO reproduzível e não "consertado": os três callers de `_is_kit_owned`
+  consomem o mesmo dicionário `cited_by`, cujas chaves são construídas com `.as_posix()`
+  em `doctor.py:1222`. (A redação anterior dizia "o único caller … `doctor.py:1125`";
+  são três callers e aquela linha é outra coisa. A substância se sustenta, a citação
+  não — corrigido depois do concílio, que conferiu a citação em vez de acreditar nela.)
 - **R2-16'** em 2026-08-12: o `_do_upgrade` deste runtime substituía todo arquivo de
   topo com um `shutil.copy2` nu — sem hash-check, sem stash, sem cópia de segurança —
   enquanto o instalador **shell**, que é a outra implementação do mesmo contrato e a
@@ -36,6 +45,107 @@ Fechados desde a última escrita deste arquivo:
   não comentário. Verificado no elo 4: alvo real, `AGENTS.md` com regra de projeto,
   **dois** ciclos de `--upgrade` — o arquivo sobrevive aos dois e o manifesto nunca
   aprende o hash da versão do projeto, que é a poison que só aparece no segundo.
+  Transcrição em `elo4-verificacao.md`, ao lado deste arquivo — a rodada anterior
+  afirmou "verificado no elo 4" e não deixou artefato nenhum, e o concílio cobrou.
+
+## Concílio — 2026-08-12, quatro lentes
+
+**Levantados: 16 achados distintos + 12 perguntas. Sobreviveram ao §2: 16. Viraram
+teste: 15. Aceitação de risco escrita: 1. Perguntas em aberto: 12.**
+
+Lentes, selecionadas pelo §5 contra o *Target Project Checklist*: as três padrão
+(*sweep skeptic*, *claim auditor*, *second caller*) mais **the migrator**, porque a
+pergunta "cliente e servidor podem subir em qualquer ordem? há passo humano?" tem duas
+respostas sim — o parque atualiza quando quer, e o merge do `.kit-new` é manual.
+
+Todos os 16 foram **reproduzidos**, nenhum sobreviveu por concordância. O que a rodada
+mostrou, em uma frase: **portei a tabela de decisão do instalador shell e não portei a
+ordem em que ele a executa.**
+
+| achado | o que era |
+|---|---|
+| SWEEP-2 / CALLER-3 / MIGR-1 / MIGR-5 | o alvo é comparado renderizado contra uma fonte crua. Alvo sem entrada no manifesto virava deriva falsa **permanente**; `configure` congelava o `AGENTS.md` para sempre; e o `.kit-new` que a mensagem manda mesclar saía com `{{OPERATOR_NAME}}` cru — segui-la reprovava o `doctor` |
+| SWEEP-1 | a regra "arquivo mantido fica fora do manifesto" valia para arquivo de topo e não para arquivo de projeto dentro de pasta do kit: upgrade #1 preservava e anunciava, `_write_state` gravava no manifesto **rastreado**, upgrade #2 apagava em silêncio |
+| SWEEP-3 | o `.kit-new` sobrevivia à de-adoção e, sendo cópia fiel de um contrato do kit, virava "citador" de todo caminho do kit — cada um passava de `remove` a `preserve` com a evidência falsa "hash difere do registrado" |
+| CALLER-1 / MIGR-2 | o `.gk/.gitignore` é reescrito inteiro a cada run e perdia o `pre-migrate/` do shell — o backup dos contratos do projeto ficava a um `git add -A` de ser commitado |
+| CALLER-2 / MIGR-4 | o `.gk/pre-upgrade/` nunca era limpo (o shell limpa a cada upgrade) nem anunciado: seguro que ninguém sabe que existe, e que o segundo upgrade sobrescreve |
+| CALLER-4 / CLAIM-2 | o comentário que justificava o silêncio no caso "nenhum portador" era **falso** — o `AI-Agents manifest` só confere presença; ninguém reportava |
+| CALLER-5 / MIGR-3 / MIGR-7 | severidade e remédio: o check era STOP incondicional onde o shell é opt-in (`--strict`); mandava rodar `--upgrade` prometendo um reparo que ele não faz; e, em alvo com migração pendente, nomeava um comando que estoura com `RuntimeError` |
+| MIGR-6 | o shell avisa que o arquivo mantido ainda prescreve o transporte **retirado**; a CLI Python dizia só "o projeto mantém o contrato antigo" |
+| CLAIM-1 | nenhum dos testes do item 4 passava pelo `run_doctor`: desregistrar o check deixava a suíte verde |
+| CLAIM-3 / CLAIM-4 | duas afirmações minhas neste RESUME sem artefato: o estado de `origin` e a citação do R2-17 |
+
+### Aceitação de risco escrita — SWEEP-4
+
+`_do_fresh --force` continua apagando um `AGENTS.md` editado, sem `.kit-new`, sem cópia
+em `.gk/pre-upgrade/` e sem aviso. **Não corrigido, deliberadamente:** `--force` é
+documentado como "overwrite existing kit files", é o modo que o operador escolhe quando
+quer reinstalar em vez de atualizar, e o instalador shell faz `rm -rf` no mesmo caso —
+mudar um lado só recriaria a divergência que esta entrega existe para fechar. O
+comentário do `_PROTECTED_FILES`, que afirmava a proteção sem qualificar o modo, foi
+estreitado para `--upgrade`. Fechar isto de verdade é uma entrega nos **dois**
+repositórios, com release do AI-Agents, e é decisão do operador.
+
+## Concílio — rodada 2, duas lentes
+
+**Levantados: 9. Sobreviveram ao §2: 9. Viraram teste: 9 (todos verificados por
+mutação). Perguntas em aberto: 7.** Dez fechamentos da rodada 1 foram confirmados por
+execução, não por leitura.
+
+**Três dos nove eram regressões das minhas próprias correções**, e é o argumento inteiro
+para a segunda rodada existir:
+
+- **R2U-1 (segurança).** O `_prerender_source` montava a tabela de tokens com **toda**
+  chave do estado, sem filtro, e substituía em sequência no mesmo buffer. Um valor
+  guardado que *contém* um token era expandido pela passada seguinte: com
+  `ORG_NAME = "{{PIX_PAYLOAD}}"` no `manifest.json` — a metade que a equipe **compartilha
+  e commita** — o segredo local da vítima entrava num arquivo do kit e, com `--track`,
+  ficava a um `git add` do repositório. Agora é uma varredura única de regex, filtrada
+  aos placeholders declarados, com teto de tamanho. Não era alcançável no release
+  pinado; estava a um placeholder compartilhável de ser.
+- **R2F-1.** Renderizar a fonte fez o `.kit-new` passar a carregar o nome do operador,
+  e ele não estava no `.gitignore`: o valor que o `_OPERATOR_PLACEHOLDERS` existe para
+  manter fora do git ficava visível no `git status`. Antes da correção o arquivo saía
+  com o placeholder e não vazava nada.
+- **R2F-2.** Pus o `rmtree` do `.gk/pre-upgrade/` no topo do `_do_upgrade`, que serve os
+  dois modos, então um `--docs-only` apagava os backups que um `--upgrade` completo
+  acabara de fazer dos contratos de raiz — que ele nunca toca.
+
+E três correções de julgamento:
+
+- **R2F-3.** Eu tinha carvado uma exceção de severidade decidida por *substring*: bloqueia
+  se o corpo "ainda prescreve" um transporte retirado. Substring não distingue prescrever
+  de **proibir** — a lente produziu um projeto cuja seção BANE o helper retirado e que era
+  bloqueado por dizer isso, com saída nenhuma além de apagar a própria proibição. É o
+  quinto detector textual deste kit falhando como os quatro anteriores, na entrega cuja
+  nota de design explica por que não escrever um. O check agora afirma só o que prova.
+- **R2F-4.** O remédio prometia um `.kit-new` para o portador `.docs/workflows/sending-email.md`,
+  que **não** é protegido: quem seguisse a instrução perdia a seção (o upgrade substitui e
+  guarda a versão do projeto em `.gk/overwritten/`). A lente rodou o conselho e mediu a perda.
+- **R2F-5.** A correção do `configure` era só para a frente: a população já configurada
+  pelo `configure` antigo tem os arquivos renderizados, o scan não acha token nenhum, e
+  nada era gravado. Agora um `--set` explícito é registrado mesmo sem token na árvore, que
+  é o caminho de volta para essa população.
+
+Mais **R2U-2** (o `_sync_dir` não tinha o short-circuit de identidade do `_replace_kit_file`,
+então acusava o operador de ter editado à mão um arquivo que o próprio `configure` mudou, e
+guardava um stash idêntico ao original), **R2U-3** (o `verify-elo4.sh` que eu entreguei
+filtrava a saída de um jeito que mostrava um arquivo substituído sob o cabeçalho
+"Preserved") e **R2U-4** (o remédio do check `host identity` nomeia um comando que, sem
+TTY, sai 0 sem fazer nada — `configure && doctor` nunca terminava; agora nomeia as flags).
+
+> **Os fechamentos da rodada 2 não foram auditados por concílio.** O §4 é explícito:
+> duas rodadas, depois o operador, e não se roda uma terceira. Cada um tem teste
+> vermelho sem a correção, e a verificação de ponta a ponta foi refeita no alvo real —
+> mas ninguém além de mim olhou para eles.
+
+### Aberto, com dono — e não é neste repositório
+
+O `write_manifest` do `scripts/install-agents-kit.sh` pula os `DRIFTED` e **não** pula os
+`PRESERVED`: o SWEEP-1 existe igual do lado shell, em release, e este repositório não
+pode fechá-lo. É o espelho exato da lição de 2026-08-06 (a issue lida como fechada na
+fonte enquanto o parque segue quebrado), então fica escrito aqui com o dono nomeado:
+**AI-Agents**, e o elo é o `write_manifest`.
 
 ### Verificado no elo 4, não na fonte
 
@@ -196,3 +306,9 @@ então alvo novo ainda recebe o `handoff.md` e o índice do próprio kit. **R2-1
 Sem saída no remédio do `_WITHDRAWN_CITATIONS`: `.kit-new` **nunca** é escrito por este
 instalador (só pelo shell), o `--upgrade` reinstala o contrato retirado porque nenhum
 ref lançado tem a correção, e editar o `AGENTS.md` à mão é sobrescrito sem stash.
+
+> **Superado em 2026-08-12** (o parágrafo acima é o registro da rodada 2 de 10/08 e fica
+> como está). Este instalador **escreve** `.kit-new` desde o R2-16', editar o `AGENTS.md`
+> à mão deixou de ser sobrescrito, e o remédio tem saída — nomeada pelo `doctor` e
+> diferente por portador. O concílio de hoje cobrou a linha: um documento ativo que
+> descreve o produto no passado é lido como se fosse o presente.

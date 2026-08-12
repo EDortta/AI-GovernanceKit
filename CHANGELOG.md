@@ -25,7 +25,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   R2-15, and it shipped across three releases. The snapshot now records which seeds the
   release actually carries.
 
+### Security
+
+- **A stored placeholder value can no longer smuggle another token into the render.**
+  `.gk/manifest.json` is the half of the state a team shares and commits. Substitution
+  ran sequentially over one buffer and used every key in state, so a shareable answer
+  whose value was itself a token (`ORG_NAME` = `{{PIX_PAYLOAD}}`) made the next pass
+  expand the victim's *local* secret into the text just injected, write it into a kit
+  file and record its hash — and under `--track` that file is git-tracked. Substitution
+  is now a single regex sweep over declared placeholders only, with a length cap. Not
+  reachable at the pinned release, which ships no shareable token; one release away
+  from being reachable.
+
 ### Fixed
+
+- **The incoming source is rendered with the project's stored answers before anything
+  is compared.** The upgrade judged a target the kit had already rendered (`Esteban`)
+  against a source it had not (`{{OPERATOR_NAME}}`), so the kit's own substitution read
+  as operator intent. Three consequences, each reproduced: a target with no manifest
+  entry for `AGENTS.md` — a pre-`.gk` install, or a shell install whose manifest pass
+  bailed — became permanently drifted and never received another contract; `configure`
+  froze the file the same way, and now records what it filled so the answer survives;
+  and the `.kit-new` handed over for merging carried raw placeholders, so following the
+  instruction turned `doctor` red. The shell installer has rendered first since it grew
+  the protection.
+
+- **A project-authored file inside a kit directory is no longer claimed by the
+  manifest.** Upgrade #1 preserved it and said so; `_write_state` then recorded it as
+  kit-owned, and upgrade #2 deleted it in silence. The rule that keeps a drifted
+  top-level file out of the manifest now covers preserved directory members too.
+
+- **The parked `<file>.kit-new` no longer distorts `remove-agents`.** It was invisible
+  to the planner — surviving de-adoption in the project root — and, being a verbatim
+  kit contract, it counted as a citation of every kit path it names, flipping each from
+  `remove` to `preserve` with the evidence line "current hash differs from recorded
+  install hash" about files whose hash matched.
+
+- **`.gk/pre-upgrade/` is cleared per upgrade and reported.** It accumulated, so after
+  two upgrades it held the state before the *first* one, and nothing in the CLI ever
+  named the directory. `.gk/.gitignore` also regained the shell's `pre-migrate/` entry,
+  which this file's wholesale rewrite had been dropping on shell-installed targets, and
+  gained `remove-agents-backup/`.
+
+- **The §Sending Email check reports what it can actually see, and asks for what
+  actually helps.** It claimed the "no carrier" case was already reported by
+  `AI-Agents manifest`; that check compares paths against disk and never reads content,
+  so nothing reported it. Its remedy promised a repair `--upgrade` does not perform (a
+  protected file is *kept*; the upgrade parks the new version for a merge), and named a
+  command that exits with a traceback on a target with a pending content migration. Its
+  severity now mirrors the shell's: a kept file awaiting merge is reported, not a STOP —
+  except when the kept body still prescribes the withdrawn transport, which blocks and
+  is called out by name, as the shell has always done.
 
 - **An upgrade no longer replaces a hand-edited root file without a word (R2-16').**
   `_do_upgrade` judged directories against the manifest — stashing kit files the

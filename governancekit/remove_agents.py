@@ -53,6 +53,11 @@ PLAN_RELATIVE_PATH = ".gk/remove-agents-plan.json"
 PLAN_VERSION = 2
 _ROOT_RULE_FILES = ("AGENTS.md", ".cursorrules", "CLAUDE.md", ".windsurfrules", "GEMINI.md")
 
+# The suffix an upgrade uses when it refuses to overwrite a protected file. Defined
+# here as well as in `install_agents` because this module must recognise the artifact
+# without importing the installer.
+_KIT_NEW_SUFFIX = ".kit-new"
+
 
 @dataclass(frozen=True)
 class RemovalItem:
@@ -111,6 +116,14 @@ def _candidate_paths(root: Path, manifest: dict[str, str]) -> list[str]:
     for name in _ROOT_RULE_FILES:
         if (root / name).exists():
             candidates.add(name)
+        # An upgrade that kept a protected file leaves the kit's version beside it as
+        # `<file>.kit-new`, and it is in no manifest by construction — the whole point
+        # is that the kit did not write it into place. Without this it survived
+        # de-adoption: a verbatim copy of the kit's AGENTS.md left in the project root,
+        # un-inventoried and unreported by the command whose job is to leave nothing
+        # behind. Found by the council's sweep lens.
+        if (root / f"{name}{_KIT_NEW_SUFFIX}").is_file():
+            candidates.add(f"{name}{_KIT_NEW_SUFFIX}")
     for directory in (".docs", ".amazonq/rules", ".github/copilot-instructions.md", "scripts"):
         target = root / directory
         if target.is_file():
@@ -127,10 +140,19 @@ def _referenced(root: Path, rel: str) -> bool:
 
     We look for a path literal in ordinary text files; binary files, symlinks and
     the candidate itself are never read.  A hit only prevents automatic deletion.
+
+    A ``.kit-new`` is not a citer. It is a verbatim copy of a kit contract, parked by
+    an upgrade for a human to merge, so it cites every kit path the original cites —
+    which turned every one of them from ``remove`` into ``preserve``/
+    ``kit-owned-modified``, carrying the evidence line "current hash differs from
+    recorded install hash" about files whose hash matched exactly. The kit quoting
+    itself is not the project depending on it.
     """
     needle = rel.encode("utf-8")
     for path in root.rglob("*"):
         if path.is_dir() or path.is_symlink() or path.relative_to(root).as_posix() == rel:
+            continue
+        if path.name.endswith(_KIT_NEW_SUFFIX):
             continue
         relative_parts = path.relative_to(root).parts
         if ".git" in relative_parts or ".gk" in relative_parts or not safe_regular_file(root, path):

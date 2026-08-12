@@ -22,6 +22,7 @@ from .install_agents import (
     _PLACEHOLDER_RE,
     _PROJECT_SEED_PATHS,
     _dest_rel,
+    persist_placeholder_values,
 )
 from .path_safety import UnsafePathError, safe_path, safe_regular_file
 
@@ -214,6 +215,13 @@ def run_configure(
     result = ConfigureResult(root=root, found_tokens=sorted(found))
 
     if not found:
+        # Nothing left to fill, but an explicit `--set` is still an answer worth
+        # recording — and this is the ONLY path back for every target configured
+        # before answers were persisted: its files are already rendered, so the scan
+        # finds nothing, and without this the state stays empty, the source is never
+        # pre-rendered, and the protected file reads as drifted forever. The fix would
+        # otherwise have been forward-only, which round 2 measured.
+        persist_placeholder_values(root, {t: v for t, v in preset.items() if v})
         return result
 
     if interactive is None:
@@ -259,4 +267,9 @@ def run_configure(
             result.changed_files.append(str(path.relative_to(root)))
 
     result.changed_files.sort()
+    # Remember what was answered. Filling the files and recording nothing is what made
+    # `configure` freeze a protected file: the next upgrade compared a rendered target
+    # against a raw source, called the kit's own substitution operator intent, and kept
+    # the file for good. Verified against a real target, not only in unit tests.
+    persist_placeholder_values(root, values)
     return result

@@ -5,6 +5,7 @@ import io
 import shutil
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from governancekit import install_agents as ia
@@ -737,6 +738,272 @@ class SendingEmailRetirementTests(unittest.TestCase):
         self.assertIn((ia.REPO, ia.DEFAULT_REF), ia.KNOWN_TARBALL_SHA256)
         digest = ia.KNOWN_TARBALL_SHA256[(ia.REPO, ia.DEFAULT_REF)]
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
+
+
+class CouncilRoundOneTest(unittest.TestCase):
+    """The findings four adversarial lenses reproduced against the first cut.
+
+    Each of these went red before its fix. They are grouped because they share one
+    root: the decision table was ported from the shell installer without the ordering
+    and the bookkeeping that make it safe.
+    """
+
+    def test_a_configured_file_reads_as_identical_to_the_kit_not_as_drift(self) -> None:
+        # THE root cause. The target holds `Esteban` where the download still holds
+        # `{{OPERATOR_NAME}}`, so the byte-identity short-circuit could never fire for
+        # the one file the protection is about. Reproduced three ways by the council:
+        # a target whose manifest entry was lost became permanently drifted and never
+        # received another AGENTS.md; `configure` (which rewrites the file and does not
+        # update the manifest) froze it the same way; and the `.kit-new` handed over
+        # for merging carried raw placeholders, so following the instruction turned
+        # `doctor` red.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            (src / "AGENTS.md").write_text("# kit {{OPERATOR_NAME}}\n", encoding="utf-8")
+            (dst / "AGENTS.md").write_text("# kit Esteban\n", encoding="utf-8")
+
+            ia._prerender_source(src, {"OPERATOR_NAME": "Esteban"})
+            drifted: list[str] = []
+            # No manifest at all: the pre-`.gk` population, which fails closed.
+            installed = ia._do_upgrade(
+                src, dst, paths=["AGENTS.md"], manifest={}, drifted=drifted
+            )
+
+            self.assertEqual(drifted, [], "the kit's own substitution is not drift")
+            self.assertEqual(installed, ["AGENTS.md"])
+            self.assertFalse((dst / "AGENTS.md.kit-new").exists())
+
+    def test_the_kit_new_handed_over_for_merging_is_rendered(self) -> None:
+        # The operator is told to merge this file. If it carries raw placeholders,
+        # following the instruction fails the non-advisory `unfilled placeholders`
+        # check, whose remedy is `configure`, which re-creates the drift.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            (src / "AGENTS.md").write_text(
+                "# kit v2 {{OPERATOR_NAME}}\n", encoding="utf-8"
+            )
+            (dst / "AGENTS.md").write_text("# our rules\n", encoding="utf-8")
+
+            ia._prerender_source(src, {"OPERATOR_NAME": "Esteban"})
+            ia._do_upgrade(src, dst, paths=["AGENTS.md"], manifest={}, drifted=[])
+
+            self.assertEqual((dst / "AGENTS.md.kit-new").read_text(), "# kit v2 Esteban\n")
+
+    def test_a_real_upgrade_run_renders_the_source_before_judging_it(self) -> None:
+        # The lesson the claim auditor taught one level up: a function proven in
+        # isolation is not a function that runs. Removing the call from
+        # `run_install_agents` left every unit test above green, so this one goes
+        # through the real entry point with only the download replaced.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            (src / "AGENTS.md").write_text("# kit {{OPERATOR_NAME}}\n", encoding="utf-8")
+            (dst / "AGENTS.md").write_text("# kit Esteban\n", encoding="utf-8")
+            # The population that has the answer stored but no manifest entry for the
+            # file — a pre-`.gk` install, or a shell install whose manifest pass bailed.
+            (dst / ia._STATE_DIR).mkdir(parents=True, exist_ok=True)
+            (dst / ia._OPERATOR_FILE).write_text(
+                '{"state_version": 1, "metadata": {"OPERATOR_NAME": "Esteban"}}',
+                encoding="utf-8",
+            )
+
+            with unittest.mock.patch.object(ia, "_download", return_value=src):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    result = ia.run_install_agents(dst, upgrade=True, track=False)
+
+            self.assertEqual(result.drifted_paths, [], "the kit's own substitution is not drift")
+            self.assertGreater(result.substitutions_prerendered, 0)
+            self.assertFalse((dst / "AGENTS.md.kit-new").exists())
+
+    def test_prerendering_never_rewrites_a_binary(self) -> None:
+        # `.docs/icons` ships binaries. The shell's pass skips what it cannot decode;
+        # a port that read bytes and wrote text back would corrupt them silently.
+        with tempfile.TemporaryDirectory() as s:
+            src = Path(s)
+            icon = src / "icon.png"
+            icon.write_bytes(b"\x89PNG\r\n\x1a\n{{OPERATOR_NAME}}\xff\xfe")
+
+            ia._prerender_source(src, {"OPERATOR_NAME": "Esteban"})
+
+            self.assertEqual(icon.read_bytes(), b"\x89PNG\r\n\x1a\n{{OPERATOR_NAME}}\xff\xfe")
+
+    def test_a_preserved_project_file_survives_a_SECOND_upgrade(self) -> None:
+        # Upgrade #1 preserves a project file inside a kit directory and says so;
+        # `_write_state` then rglobbed it into the TRACKED manifest as kit-owned, and
+        # upgrade #2 deleted it in silence at confidence 1.0. The report said "kept"
+        # and the next run destroyed it.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            ours = dst / ".docs" / "agents" / "our-reviewer.md"
+            ours.parent.mkdir(parents=True)
+            ours.write_text("PROJECT RULE\n", encoding="utf-8")
+
+            for _ in range(2):
+                preserved: list[str] = []
+                installed = ia._do_upgrade(
+                    src, dst, paths=ia._KIT_DOC_PATHS,
+                    manifest=ia._state_files(ia._read_state(dst)), preserved=preserved,
+                )
+                ia._write_state(
+                    dst, installed, repo="r", ref="v1", metadata={},
+                    prune_missing=True, preserved=preserved,
+                )
+                self.assertIn(".docs/agents/our-reviewer.md", preserved)
+
+            self.assertTrue(ours.is_file(), "upgrade #2 deleted what upgrade #1 kept")
+            self.assertNotIn(
+                ".docs/agents/our-reviewer.md",
+                ia._state_files(ia._read_state(dst)),
+                "a file the kit did not write must not be claimed by the manifest",
+            )
+
+    def test_the_pre_upgrade_backup_holds_the_state_before_THIS_upgrade(self) -> None:
+        # Accumulating runs make the name mean nothing in particular: a file backed up
+        # by an earlier upgrade and not touched by this one would still sit there, and
+        # the operator restoring it would roll back a version they never asked to lose.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            for rel in ("CLAUDE.md", "GEMINI.md"):
+                (src / rel).write_text("kit v2\n", encoding="utf-8")
+                (dst / rel).write_text("kit v1\n", encoding="utf-8")
+            manifest = {rel: ia._file_sha256(dst / rel) for rel in ("CLAUDE.md", "GEMINI.md")}
+
+            first: list[str] = []
+            ia._do_upgrade(
+                src, dst, paths=["CLAUDE.md", "GEMINI.md"], manifest=manifest,
+                backed_up=first,
+            )
+            self.assertEqual(sorted(first), ["CLAUDE.md", "GEMINI.md"])
+
+            # A narrower second run: it replaces CLAUDE.md and never looks at GEMINI.md.
+            (src / "CLAUDE.md").write_text("kit v3\n", encoding="utf-8")
+            second: list[str] = []
+            ia._do_upgrade(
+                src, dst, paths=["CLAUDE.md"],
+                manifest={"CLAUDE.md": ia._file_sha256(dst / "CLAUDE.md")},
+                backed_up=second,
+            )
+
+            backups = dst / ia._STATE_DIR / "pre-upgrade"
+            self.assertEqual((backups / "CLAUDE.md").read_text(), "kit v2\n")
+            self.assertFalse(
+                (backups / "GEMINI.md").exists(),
+                "a backup from an earlier run makes `pre-upgrade` mean nothing",
+            )
+            self.assertEqual(second, ["CLAUDE.md"])
+
+    def test_the_state_gitignore_covers_what_the_other_installer_writes(self) -> None:
+        # `.gk/.gitignore` is rewritten wholesale on every run, so anything the shell
+        # ignores and this one omits gets un-ignored on the first Python upgrade of a
+        # shell-installed target. `.gk/pre-migrate/` holds that target's root
+        # contracts as they stood before migration — the hand-edited AGENTS.md itself.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ia._write_state(root, [], repo="r", ref="v1", metadata={})
+            ignored = (root / ia._STATE_DIR / ".gitignore").read_text()
+            for entry in ("overwritten/", "pre-upgrade/", "pre-migrate/", "council/"):
+                self.assertIn(entry, ignored)
+
+
+class CouncilRoundTwoTest(unittest.TestCase):
+    """What round 2 found in round 1's fixes. Three of the five were regressions the
+    fixes themselves introduced, which is the argument for the second round."""
+
+    def test_a_stored_value_cannot_smuggle_another_token_into_the_render(self) -> None:
+        # `.gk/manifest.json` is the half a team SHARES and commits. A value that is
+        # itself a token used to be expanded by the next sequential pass, so a
+        # shareable answer could pull a local secret into a kit file — and, under
+        # --track, into git. One regex sweep cannot re-substitute its own output.
+        with tempfile.TemporaryDirectory() as s:
+            src = Path(s)
+            (src / "doc.md").write_text("owner: {{ORG_NAME}}\n", encoding="utf-8")
+
+            ia._prerender_source(
+                src, {"ORG_NAME": "{{SMTP_ACCOUNT}}", "SMTP_ACCOUNT": "SECRET"}
+            )
+
+            self.assertEqual((src / "doc.md").read_text(), "owner: {{SMTP_ACCOUNT}}\n")
+            self.assertNotIn("SECRET", (src / "doc.md").read_text())
+
+    def test_only_declared_placeholders_are_rendered(self) -> None:
+        # Without the filter the kit did not even need to ship the token: injected
+        # text supplied it. `_fill_placeholders` has always filtered this way.
+        with tempfile.TemporaryDirectory() as s:
+            src = Path(s)
+            (src / "doc.md").write_text("{{MADE_UP_TOKEN}}\n", encoding="utf-8")
+
+            count = ia._prerender_source(src, {"MADE_UP_TOKEN": "anything"})
+
+            self.assertEqual(count, 0)
+            self.assertEqual((src / "doc.md").read_text(), "{{MADE_UP_TOKEN}}\n")
+
+    def test_an_absurdly_long_stored_value_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as s:
+            src = Path(s)
+            (src / "doc.md").write_text("{{OPERATOR_NAME}}\n", encoding="utf-8")
+
+            count = ia._prerender_source(
+                src, {"OPERATOR_NAME": "x" * (ia._MAX_PLACEHOLDER_VALUE + 1)}
+            )
+
+            self.assertEqual(count, 0)
+
+    def test_the_parked_copy_is_ignored_by_git(self) -> None:
+        # It is rendered — that is what makes it mergeable — so it carries the
+        # operator's name, the value the tracked state deliberately never holds.
+        # `AGENTS.md` was ignored and its `.kit-new` sibling was not.
+        entries = ia._gitignore_entries(ia._FRESH_PATHS, track_kit_docs=False)
+        self.assertIn("*.kit-new", entries)
+
+    def test_docs_only_does_not_destroy_the_backups_of_a_full_upgrade(self) -> None:
+        # A narrower run must not clear the wider run's insurance: `--docs-only` never
+        # touches the root contracts whose only copy that directory holds.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            (src / "CLAUDE.md").write_text("kit v2\n", encoding="utf-8")
+            (dst / "CLAUDE.md").write_text("kit v1\n", encoding="utf-8")
+
+            ia._do_upgrade(
+                src, dst, paths=["CLAUDE.md"],
+                manifest={"CLAUDE.md": ia._file_sha256(dst / "CLAUDE.md")},
+                backed_up=[],
+            )
+            ia._do_upgrade(
+                src, dst, paths=ia._KIT_DOC_PATHS, manifest={}, preserved=[],
+                clear_backups=False,
+            )
+
+            self.assertTrue((dst / ia._STATE_DIR / "pre-upgrade" / "CLAUDE.md").is_file())
+
+    def test_the_kits_own_substitution_is_not_reported_as_a_hand_edit(self) -> None:
+        # `configure` fills a slot inside a kit directory; the manifest hash goes
+        # stale. `_sync_dir` judged by hash alone, so the next upgrade announced it had
+        # replaced a file "you had edited by hand", stashed a byte-identical copy, and
+        # told the operator to move their project rules out of kit files. The edit was
+        # the kit's own. `_replace_kit_file` already short-circuited on identity.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, dst = Path(s), Path(d)
+            _make_source(src)
+            target = dst / ".docs" / "agents" / "programmer.md"
+            target.parent.mkdir(parents=True)
+            target.write_text("v2\n", encoding="utf-8")  # identical to the source
+
+            overwritten: list[str] = []
+            ia._do_upgrade(
+                src, dst, paths=ia._KIT_DOC_PATHS,
+                manifest={".docs/agents/programmer.md": "a-stale-hash"},
+                preserved=[], overwritten=overwritten,
+            )
+
+            self.assertEqual(overwritten, [])
+            self.assertFalse(
+                (dst / ia._STATE_DIR / "overwritten" / ".docs/agents/programmer.md").exists()
+            )
 
 
 class UpgradeReplacesFilesTest(unittest.TestCase):

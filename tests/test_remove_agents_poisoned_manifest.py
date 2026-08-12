@@ -81,3 +81,46 @@ class PoisonedManifestEntryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KitNewArtifactTest(unittest.TestCase):
+    """The artifact R2-16' introduced, seen by the command that de-adopts the kit.
+
+    An upgrade that keeps a drifted protected file parks the kit's version beside it
+    as `<file>.kit-new`. It is in no manifest by construction — the kit did not write
+    it into place — and the council's sweep lens found both consequences.
+    """
+
+    def test_a_leftover_kit_new_does_not_speak_for_the_project(self) -> None:
+        # `_referenced` reads every text file looking for a path literal. The parked
+        # copy is the kit's own contract, so it cites the kit's own doc paths: every
+        # one of them flipped from `remove` to `preserve`/`kit-owned-modified`,
+        # carrying the evidence line "current hash differs from recorded install hash"
+        # about files whose hash matched exactly. The kit quoting itself is not the
+        # project depending on it.
+        body = "# kit-owned contract\n"
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _seed(root, ".docs/agents/programmer.md", body)
+            _seed(root, "AGENTS.md", "# our own AGENTS\n")
+            _seed(root, "AGENTS.md.kit-new", "see .docs/agents/programmer.md\n")
+            _manifest(root, {".docs/agents/programmer.md": _sha(body)})
+
+            plan = build_removal_plan(root)
+
+        item = next(i for i in plan.items if i.path == ".docs/agents/programmer.md")
+        self.assertEqual(item.action, "remove", item.evidence)
+        self.assertFalse(item.referenced)
+
+    def test_the_parked_copy_is_inventoried_instead_of_being_left_behind(self) -> None:
+        # Without this it survived de-adoption: a verbatim copy of the kit's AGENTS.md
+        # left in the project root by the command whose job is to leave nothing.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _seed(root, "AGENTS.md", "# our own AGENTS\n")
+            _seed(root, "AGENTS.md.kit-new", "# the kit's version, unmerged\n")
+            _manifest(root, {})
+
+            plan = build_removal_plan(root)
+
+        self.assertIn("AGENTS.md.kit-new", [i.path for i in plan.items])

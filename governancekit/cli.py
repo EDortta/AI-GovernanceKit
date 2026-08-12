@@ -658,7 +658,14 @@ def _run_install_agents(args) -> int:
             "  Kit files are kit-owned. Move lasting project rules into your own "
             "files so they are preserved instead of stashed."
         )
+    if result.backed_up:
+        print(
+            f"Backed up {len(result.backed_up)} replaced file(s) under "
+            ".gk/pre-upgrade/ — cleared at the start of the next upgrade."
+        )
     if result.drifted_paths:
+        from .doctor import _WITHDRAWN_CITATIONS
+
         print(
             f"Kept {len(result.drifted_paths)} protected file(s) that differ from what "
             "this kit installed — the new version is beside them, unmerged:"
@@ -669,6 +676,23 @@ def _run_install_agents(args) -> int:
             "  Merge what you want, then delete the .kit-new file. Until then this "
             "project keeps the older contract."
         )
+        # "The older contract" is too mild for one specific body. A kept file that
+        # still prescribes one operator's email transport is the rule that mis-sent
+        # real material on 2026-08-04, and precedence means live agents follow the
+        # kept file, not the .kit-new nobody merged. The shell installer says this;
+        # the port said only the generic line, so the same target heard the danger
+        # from one installer and not from the other.
+        for p in result.drifted_paths:
+            try:
+                kept = (result.target / p).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if any(path in kept for path in _WITHDRAWN_CITATIONS):
+                print(
+                    f"  WARNING: the kept {p} still prescribes one operator's email "
+                    "transport. That rule was WITHDRAWN (AI-Agents#5) — agents here "
+                    "follow the withdrawn rule until you merge."
+                )
     if result.upgraded and not result.had_state:
         print(
             "Note: no kit state existed before this run, so nothing was deleted. "
