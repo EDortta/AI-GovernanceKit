@@ -1,5 +1,46 @@
 # Handoff
 
+## [2026-08-14] Fase 0 do WK-20260813-council-audit-of-r2-closures — commitada; execução noturna achada quebrada
+
+- branch: `development`, commits `74bfefa` (conteúdo) e `3effe89` (0.3.1→0.3.2). Não
+  empurrado. `main` intocada.
+- RESUME: `docs/issues/014-council-audit-of-r2-closures-[draft]/RESUME.md`
+- work_id: `WK-20260813-council-audit-of-r2-closures`
+
+### Entregue
+
+Fase 0 do `PLANO-UNIFICADO.md`, três grupos, cada um com concílio de quatro lentes
+passado na sessão interativa de 2026-08-13 (não pela execução noturna — ver abaixo):
+
+- **AC-1** (render gate) — a fonte é renderizada com as respostas guardadas do projeto
+  antes de ser comparada contra o alvo. 5 rodadas, 63 testes novos, suíte 508 → 571.
+- **AC-2/AC-3/AC-4/AC-5** (remove-agents) — evidência "byte a byte" passa a comparar
+  bytes de verdade, contra `_kit_snapshot.json` derivado do tarball checksum-verificado
+  do release pinado. 3 rodadas, 19 mutações, suíte 576 → 595.
+- **AC-25 + AC-28** — fecha exfiltração da chave do operador por manifesto envenenado
+  (achado mais grave da lente LGPD) e a emenda do SMTP guiado (`mailbox.py` novo).
+
+Versão: `0.3.1 → 0.3.2` (um sub-versão por fase concluída, regra do próprio
+`PLANO-UNIFICADO.md`, confirmada pelo operador nesta sessão). `pytest`: 636 passed.
+Reinstalado localmente via `pip install --user --force-reinstall --no-deps .`.
+
+### Achado — execução noturna sem PASS nenhum
+
+`scripts/run_plan.py` rodou de 2026-08-13T21:17 a 2026-08-14T11:37+ tentando a Fase 1
+(`CONFIRM-TREE`, `AC-13`, `AC-20`, `AC-21`, `AC-22`, `AC-28-emenda`, `AC-29`) e voltou
+**0 PASS em 200 veredictos de concílio**, sem erro/traceback registrado, e sem
+modificar um único arquivo em 13+ horas (mtimes confirmam: tudo no working tree é de
+antes de 21:17). Mais consistente com `claude -p` falhando silenciosamente no
+ambiente de cron (`@reboot`, sem TTY/auth) do que com 200 rejeições reais. Crontab já
+desarmado pelo operador. Detalhe e próximo passo: seção "Sessão encerrada 2026-08-14"
+no RESUME da épica.
+
+### Aberto, com dono
+
+- **Fase 1** (`manifest.override.json`, `AC-13/20/21/22/28-emenda/29`) — sem código
+  implementado. Bloqueada em diagnosticar o `claude -p` de cron antes de reimplementar
+  ou rearmar a execução noturna.
+
 ## [2026-08-12] R2-16' e item 4 da #7 — concílio de duas rodadas, nada empurrado
 
 - branch: `development`, **não empurrada**. `main` intocada. Nenhuma tag, nenhum deploy.

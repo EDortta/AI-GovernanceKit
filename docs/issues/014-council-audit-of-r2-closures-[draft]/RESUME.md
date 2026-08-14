@@ -2,7 +2,10 @@
 
 - work_id: WK-20260813-council-audit-of-r2-closures
 - date: 2026-08-13
-- status: `[draft]` — 28 issues, 7 fechadas com concílio verde; execução noturna armada
+- status: `[draft]` — Fase 0 (AC-1, AC-2/3/4/5, AC-25, AC-28) commitada em `development`
+  (`74bfefa`, `3effe89`, 0.3.1→0.3.2, 2026-08-14). Execução noturna **desarmada pelo
+  operador** — ver seção abaixo. Fase 1 (`CONFIRM-TREE`, AC-13/20/21/22/28-emenda/29,
+  o `manifest.override.json`) sem código implementado.
 - origem: pedido do operador, 2026-08-13 — `council.md` §4 `[DEFAULT] Whenever the operator asks`
 
 ## O que aconteceu
@@ -300,3 +303,35 @@ a reboot (`@reboot` no crontab), desarma-se ao terminar.
 
 **Next:** ler o `report.md` pela manhã. Um `needs_operator` é o script sendo honesto; um
 `done` merece a mesma desconfiança que qualquer outro verde.
+
+---
+
+## Sessão encerrada 2026-08-14 — Fase 0 commitada, execução noturna achada quebrada
+
+O operador leu o `report.md` e autorizou o conteúdo da árvore de trabalho ("isso é
+trabalho que pode ir para a development"). Fase 0 (`AC-1`, `AC-2/3/4/5`, `AC-25`,
+`AC-28`) foi commitada em `development`: `74bfefa` (o conteúdo) e `3effe89` (bump
+0.3.1 → 0.3.2, um sub-versão por fase concluída — regra desta épica, confirmada pelo
+operador). `pytest`: 636 passed antes e depois dos dois commits.
+
+**Achado antes de commitar, relevante para retomar a execução noturna**: o
+`plan-run.log` mostra **0 PASS em 200 veredictos** de concílio entre
+2026-08-13T21:17 e 2026-08-14T11:37+, sem nenhum traceback/erro registrado, e os
+mtimes de todo arquivo no working tree são de ANTES do início da execução (17:58–
+18:16 do dia 13, contra início às 21:17). Ou seja: em 13+ horas rodando, o script não
+produziu uma única mudança de arquivo nem um único PASS — nas seis issues que
+tentou (`CONFIRM-TREE`, `AC-13`, `AC-20`, `AC-21`, `AC-22`, `AC-28-emenda`, `AC-29`),
+não apenas nas difíceis. Isso não é o padrão desta épica (a sessão interativa que
+fechou a Fase 0 teve PASS reais, com números — ver acima); é mais consistente com o
+`claude -p` falhando de forma silenciosa no ambiente de cron/`@reboot` (auth ou env
+ausente após reboot) do que com 200 rejeições de código genuínas.
+
+O operador já desarmou o crontab (`#PARADO-20260814-operador#`). **Antes de rearmar**:
+diagnosticar por que `claude()` (linha ~109 de `scripts/run_plan.py`) nunca retornou
+texto começando com `PASS` — rodar `claude -p` manualmente no MESMO ambiente que o
+cron usaria (sem TTY, sem o shell de login) é o primeiro passo, não assumir que o
+código da Fase 1 está ruim.
+
+**Next (DO THIS FIRST):** diagnosticar o `claude -p` em contexto de cron antes de
+rearmar; só depois voltar a implementar `CONFIRM-TREE`/`AC-13`/`AC-20..22`/
+`AC-28-emenda`/`AC-29` (o `manifest.override.json`, Fase 1 do `PLANO-UNIFICADO.md`).
