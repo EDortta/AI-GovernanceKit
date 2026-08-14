@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-14
+
+### Fixed
+
+- **The incoming source is rendered with the project's stored answers before it is
+  compared against the target (AC-1).** Without this, a target with no manifest entry
+  for `AGENTS.md` drifted permanently, `configure` froze the same file, and the
+  `.kit-new` parked for merge carried raw placeholder syntax. 5 council rounds, 63 new
+  tests with red mutation, suite 508 -> 571.
+- **`--force`/`remove-agents` byte-identity evidence now compares actual bytes (AC-2,
+  AC-3, AC-4, AC-5)**, against digests derived from the checksum-verified pinned-kit
+  tarball — never a hash of `.credentials/`. Closes the misclassification in `apply`,
+  the dead assertion outside its own `with` block, and the legacy `seeded_credentials`
+  backfill (dissolved: byte identity is already stronger evidence than a name list).
+  3 rounds, 19 red mutations, suite 576 -> 595.
+- **A poisoned manifest can no longer exfiltrate the operator's key to a provider
+  (AC-25)** — the finding the LGPD council lens called the most serious of the audit.
+- **SMTP guidance amendment (AC-28)**: `OPERATOR_EMAIL` in `identity.json`, not the
+  `SMTP_ACCOUNT` slot the original issue described.
+
+### Added
+
+- `governancekit/mailbox.py` and its guided instructions in
+  `docs/advanced-usage*.html` (three locales).
+
 ## [0.3.1] - 2026-08-14
 
 ### Changed
