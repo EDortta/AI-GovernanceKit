@@ -15,10 +15,11 @@ import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
 from .agent_scope import _urlopen, validate_provider_url
+from .kit_drift import KitSnapshot, SnapshotError
 
 
 def _is_kit_installable(relative_path: str) -> bool:
@@ -39,6 +40,13 @@ def _is_kit_installable(relative_path: str) -> bool:
     """
     from .install_agents import _FRESH_PATHS, _UPGRADE_PATHS
 
+    # `.credentials/` is in `_FRESH_PATHS` because the installer SEEDS it, so this guard
+    # used to answer "yes, plausible" for the operator's private key directory — the one
+    # place a false yes is not cheap. Kit authorship there is proved by bytes against the
+    # snapshot (`_kit_seeded_credentials`), never by a path claim.
+    if _under_credentials(relative_path):
+        return False
+
     for owned in (*_FRESH_PATHS, *_UPGRADE_PATHS):
         forms = {owned}
         if owned.startswith("docs/"):
@@ -50,7 +58,14 @@ def _is_kit_installable(relative_path: str) -> bool:
 from .path_safety import UnsafePathError, safe_path, safe_regular_file
 
 PLAN_RELATIVE_PATH = ".gk/remove-agents-plan.json"
-PLAN_VERSION = 2
+# Bumped to 3 when `apply` began acting on `action` instead of `classification`
+# (AC-2) and the seeded branch began proving byte-identity (AC-3). A plan written
+# before both records the old branch's verdict — including the evidence string
+# `matches the file this kit seeds, byte for byte` for a file nobody compared — and
+# `apply` used to trust it verbatim. Under the old code that plan was a no-op; under
+# the new one it deletes. Changing what a persisted artefact MEANS without versioning
+# it is the defect AC-12 names, and this is the same mistake in a second file.
+PLAN_VERSION = 3
 _ROOT_RULE_FILES = ("AGENTS.md", ".cursorrules", "CLAUDE.md", ".windsurfrules", "GEMINI.md")
 
 # The suffix an upgrade uses when it refuses to overwrite a protected file. Defined
@@ -59,20 +74,90 @@ _ROOT_RULE_FILES = ("AGENTS.md", ".cursorrules", "CLAUDE.md", ".windsurfrules", 
 _KIT_NEW_SUFFIX = ".kit-new"
 
 _CREDENTIALS_DIR = ".credentials"
-# Exactly what the kit seeds into the project's credential directory: its own
-# documentation and examples, never a real credential. Named literally, because the
-# manifest no longer carries these paths and a pattern like `*.example` would let the
-# planner reach for a file the operator created.
-_CREDENTIALS_SCAFFOLDING: tuple[str, ...] = (
-    ".gitignore",
-    "README.md",
-    "README-ptbr.md",
-    "README-es.md",
-    "identity.json.example",
-    "jira.json.example",
-    "programmer.token.example",
-    "reviewer.token.example",
-)
+
+# Seeded by the kit, and still doing a job after the kit leaves. De-adoption may name
+# them, must not delete them without a human, and must never call it cleanup.
+_SEEDED_BUT_LOAD_BEARING: frozenset[str] = frozenset({".gitignore"})
+
+
+def _under_credentials(rel: str, root: Path | None = None) -> bool:
+    """True when *rel* names anything inside `.credentials/`, however it is spelled.
+
+    The first cut of this rule compared the RAW manifest string with `startswith`, in
+    two places — and the filesystem normalises what the string does not. A council
+    walked through it with two extra characters: `./.credentials/llm/openrouter.key`
+    is the same file and does not start with `.credentials/`, so both guards missed it
+    together, because they were the same comparison written twice. An absolute entry
+    did the same.
+
+    So: ONE function, and it decides by normalisation rather than by spelling.
+
+    * string normalisation catches `./`, `a/../`, doubled separators, backslashes and
+      a bare `.credentials`;
+    * resolution against *root*, when there is one, catches whatever the filesystem
+      considers the same file — including an absolute entry that points back inside.
+
+    An unresolvable path answers **True**: this is the guard on the operator's private
+    key directory, and "I cannot tell" is not a reason to let it through.
+    """
+    normalised = PurePosixPath(os.path.normpath(rel.replace("\\", "/")))
+    if normalised.parts and normalised.parts[0] == _CREDENTIALS_DIR:
+        return True
+    if root is None:
+        return False
+    try:
+        target = (root / rel).resolve()
+        guarded = (root / _CREDENTIALS_DIR).resolve()
+    except (OSError, ValueError, RuntimeError):
+        return True
+    try:
+        target.relative_to(guarded)
+    except ValueError:
+        return False
+    return True
+
+
+def _seeded_credential_digests() -> dict[str, tuple[str, ...]]:
+    """What the pinned release seeds into `.credentials/`: name -> sha256.
+
+    This was eight names written by hand, with a comment explaining why a pattern like
+    `*.example` would be unsafe — and nothing at all keeping the eight in step with the
+    release. It is the same shape as `_TEMPLATE_SEEDS` and `_PROTECTED_FILES`, which
+    this repository already moved into the snapshot after measuring the drift.
+
+    Read from the kit's own package, never from the target's state: a digest of the
+    kit's scaffolding is identical in every project and derivable by anyone who
+    downloads the release, so it is not a secret — while a digest of anything else in
+    that directory is exactly the confirmation oracle the manifest refuses to carry.
+
+    An unreadable snapshot returns nothing. Fail-closed then falls out of the shape of
+    the callers rather than out of a guard: with no digests there is nothing to compare
+    against, so `_kit_seeded_credentials` finds nothing and `_candidate_paths` does not
+    even offer the directory. Said plainly because the early return further down READS
+    like the mechanism and is only an IO short-circuit — a mutation proved it: deleting
+    it changes no behaviour, because an empty table already yields an empty loop.
+    """
+    try:
+        return KitSnapshot.load().seeded_credentials
+    except SnapshotError:
+        return {}
+
+
+def _report_missing_credential_digests() -> None:
+    """Say, ONCE per run, that `.credentials/` cannot be judged.
+
+    The warning lived inside `_seeded_credential_digests`, which is called once per
+    candidate — 75 identical blocks and 17 KB of output on a realistic target, before
+    the plan the operator ran the command to read. Two lenses measured it separately,
+    and it is the exact noise this delivery has already named twice in writing.
+
+    It also tests the TABLE, not an exception. Making `_credential_table` tolerant so
+    an old snapshot still loads meant `SnapshotError` stopped firing for the case the
+    warning was written for: the two changes were made for opposite reasons and
+    cancelled. Empty is the condition that matters, however it arose.
+    """
+    print("\nWarning: no kit snapshot digests to compare .credentials/ against.")
+    print("  De-adoption will leave the kit's own scaffolding in place.")
 
 
 @dataclass(frozen=True)
@@ -124,38 +209,145 @@ def _manifest_files(root: Path) -> dict[str, str]:
     except (OSError, json.JSONDecodeError):
         return {}
     files = data.get("files", {})
-    return {str(key): str(value) for key, value in files.items() if isinstance(value, str)}
+    # `.credentials/` claims are dropped HERE, not at each consumer. Filtering only the
+    # candidate set left the claim alive in this dict, and the loop reads
+    # `expected = manifest.get(rel)` off it — so a claim the selection had just refused
+    # was still honoured for CLASSIFICATION. Three lenses measured the same consequence
+    # from different directions:
+    #
+    #   * a legacy target — every fresh install up to `c7b2838`, where `_write_state`
+    #     hashed this directory into `files` before the writer learned not to — went
+    #     from `remove` to `preserve`, told that the installer's OWN genuine record was
+    #     "a stale or poisoned claim". False, and it is AC-3's rule broken in AC-3's
+    #     module;
+    #   * a planted CANONICAL entry with the shipped file's public digest made the kit's
+    #     scaffolding permanently un-removable — denial through the very channel this
+    #     issue exists to declare untrusted;
+    #   * and the tell: the non-canonical spelling was ignored everywhere and the file
+    #     WAS removed. The guard was strongest where the attacker was sloppiest.
+    #
+    # Dropping the claim restores the byte-identity door for the legacy population,
+    # because that branch is gated on `expected is None`.
+    return {
+        str(key): str(value)
+        for key, value in files.items()
+        if isinstance(value, str) and not _under_credentials(str(key), root)
+    }
 
 
-def _kit_seeded_credentials(root: Path) -> dict[str, str]:
-    """`.credentials/` files this installer recorded having seeded into THIS project.
+def _recorded_seeded_names(root: Path) -> set[str] | None:
+    """Names the installer recorded seeding here, or None when it recorded nothing.
 
-    The manifest deliberately carries no digest for that directory, so the evidence of
-    kit authorship is the installer's own record of what it put there — names only.
-    A file the operator wrote is never in that list, whatever it is called.
+    None is not the empty set, and conflating the two is what made the previous fix
+    forward-only: a target adopted before this key existed reads as "the kit seeded
+    nothing", so de-adoption walked away from the kit's own files — the very symptom
+    the fix was written to remove, left in place for the entire installed base.
     """
     try:
         data = json.loads((root / ".gk/manifest.json").read_text(encoding="utf-8"))
-        recorded = data.get("seeded_credentials", [])
     except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    recorded = data.get("seeded_credentials")
+    if not isinstance(recorded, list) or not recorded:
+        # An EMPTY list is not a record that the kit seeded nothing — it is what
+        # `_write_state` stamps on every target that has no seeding to report, which
+        # is every legacy target the moment it runs `configure` or `--upgrade`. The
+        # reader honouring "absent ≠ empty" while the writer stamps `[]` one command
+        # later made the repair survive exactly until the next ordinary command, and
+        # then fail permanently. Measured by a council against the real CLI.
+        #
+        # It also carries no information even when honest: a fresh install seeds all
+        # eight, and a target where the kit truly seeded nothing has no byte-identical
+        # files to match anyway. Nothing is lost by treating it as no record.
+        return None
+    return {str(name) for name in recorded}
+
+
+def _kit_seeded_credentials(
+    root: Path, expected: dict[str, tuple[str, ...]]
+) -> dict[str, str]:  # rel -> name; the TABLE is name -> history of digests
+    """`.credentials/` files that are byte-for-byte what this kit seeds.
+
+    The planner used to print "matches the file this kit seeds, byte for byte" while
+    comparing no bytes: the only test was that a name appeared in the installer's
+    record. It then set `confidence=1.0` and `requires_operator_review=False` on that,
+    which is the field that decides whether a human looks before a file is deleted.
+
+    Two questions now, and both must answer yes:
+
+      1. **is this a file the kit seeds at all?** — from the snapshot, so a hand-edited
+         state cannot point the planner at a file the operator wrote;
+      2. **is it still byte-identical to what the kit wrote?** — the digest, which is
+         the evidence the message was already claiming.
+
+    The installer's record narrows (2) further when it exists, but is no longer
+    REQUIRED, and that is what reaches the legacy population: byte-identity is
+    strictly stronger evidence than a name in a list, and a target adopted before the
+    record existed has the files on disk to prove it. A file the operator wrote that
+    happens to be byte-identical to the template is indistinguishable from the
+    template by construction — and is, for this purpose, the same file.
+    """
+    # `expected` is REQUIRED, and the convenience default that used to be here is
+    # gone on purpose. It fell back to loading the snapshot per call, which is the
+    # shape this round just corrected: a future caller writing
+    # `_kit_seeded_credentials(root)` would have reintroduced 40 file reads and the
+    # once-per-candidate warning with nothing going red. A default that resurrects a
+    # fixed defect is a defect with a timer.
+    if not expected:
+        # A short-circuit AND a guard: the loop below is already empty without it, so
+        # deleting it changes nothing REACHABLE — but it also stops `_recorded_seeded_names`
+        # from being called, and that function shares `_manifest_files`' unguarded
+        # `data.get`. A council measured the difference on a manifest whose top-level
+        # JSON is not an object. Unreachable only because `_manifest_files` fails first.
         return {}
-    if not isinstance(recorded, list):
-        return {}
+    recorded = _recorded_seeded_names(root)
     seeded: dict[str, str] = {}
-    for name in recorded:
-        name = str(name)
-        # Only names this kit actually seeds, so a hand-edited state cannot point the
-        # planner at an operator's file.
-        if name not in _CREDENTIALS_SCAFFOLDING:
+    for name, digests in expected.items():
+        if recorded is not None and name not in recorded:
             continue
         target = root / _CREDENTIALS_DIR / name
-        if target.is_file() and not target.is_symlink():
-            seeded[f"{_CREDENTIALS_DIR}/{name}"] = name
+        if not target.is_file() or target.is_symlink():
+            continue
+        # ANY release this kit has pinned, not just the current one. A target keeps the
+        # bytes it was seeded with for ever — `_seed_dir_missing` never replaces an
+        # existing file and the upgrade branch never seeds — so a project adopted
+        # before `identity.json.example` changed on 2026-08-10 holds the older bytes
+        # permanently. Matching only the pinned release left that population with the
+        # kit's own file on disk after de-adoption: the exact symptom, measured.
+        if isinstance(digests, str) or _sha256(target) not in digests:
+            # `isinstance` first: `"a" in "abc"` is substring matching, so a table
+            # whose values are strings instead of tuples would match a PREFIX of a
+            # digest and read as proof. Caught in review of this very change, where
+            # the tests mocked strings and passed for the wrong reason.
+            continue
+        seeded[f"{_CREDENTIALS_DIR}/{name}"] = name
     return seeded
 
 
-def _candidate_paths(root: Path, manifest: dict[str, str]) -> list[str]:
-    candidates = set(manifest)
+def _candidate_paths(
+    root: Path, manifest: dict[str, str], seeded: dict[str, tuple[str, ...]]
+) -> list[str]:
+    # `.credentials/` is NEVER reachable by a manifest claim. `_candidate_paths` used to
+    # start at `set(manifest)`, and the manifest is the SHARED, committed half of the
+    # state: an entry planted by a teammate, a merged pull request or an old kit made
+    # the operator's private key directory a candidate. With `--with-llm` the planner
+    # then read the file and handed its CONTENT to the extractor, which sent it to the
+    # provider — the same provider whose key was being read. Measured: a real token and
+    # a CPF in the payload.
+    #
+    # `_configured_llm`'s docstring says "never its secret"; the code avoided leaking the
+    # secret as a CREDENTIAL and shipped it as CONTENT. `_write_state` already refuses to
+    # WRITE anything from that directory into the tracked manifest; this is the same rule
+    # applied to READING it back. The only door to `.credentials/` is the snapshot table
+    # below, which names the eight scaffolding files and nothing else.
+    #
+    # Third time the shared half has been trusted as input: `ade371f5#0` through
+    # substitution, `AC-20` through the asymmetric `_read_state` filter, and this.
+    # `manifest` arrives already filtered by `_manifest_files`; this is the same rule
+    # at the second moment, kept because selection and consumption drifted apart once.
+    candidates = {rel for rel in manifest if not _under_credentials(rel, root)}
     for name in _ROOT_RULE_FILES:
         if (root / name).exists():
             candidates.add(name)
@@ -173,7 +365,7 @@ def _candidate_paths(root: Path, manifest: dict[str, str]) -> list[str]:
     # a command whose job is to leave nothing behind. Only the shipped documentation and
     # examples are named; the operator's own files carry no kit fingerprint and stay out
     # of the plan, which is the same answer the manifest used to give.
-    for name in _CREDENTIALS_SCAFFOLDING:
+    for name in seeded:
         candidate = root / _CREDENTIALS_DIR / name
         if candidate.is_file() and not candidate.is_symlink():
             candidates.add(f"{_CREDENTIALS_DIR}/{name}")
@@ -283,9 +475,16 @@ def _llm_extract(root: Path, rel: str, content: str, provider: dict[str, str]) -
 def build_removal_plan(root: Path, *, with_llm: bool = False, extractor: Callable[[Path, str, str, dict[str, str]], tuple[str, str, float]] = _llm_extract) -> RemovalPlan:
     root = root.resolve()
     manifest = _manifest_files(root)
+    # Read once per run, not once per candidate. The per-candidate shape cost a file
+    # read and a JSON parse for every path examined, and made the fail-closed warning
+    # print as many times as there were candidates.
+    seeded_digests = _seeded_credential_digests()
+    if not seeded_digests:
+        _report_missing_credential_digests()
+    seeded_here = _kit_seeded_credentials(root, seeded_digests)
     items: list[RemovalItem] = []
     provider = _configured_llm(root) if with_llm else None
-    for rel in _candidate_paths(root, manifest):
+    for rel in _candidate_paths(root, manifest, seeded_digests):
         path = root / rel
         if not safe_regular_file(root, path):
             # Symlinks and directories are always preserved, including malformed
@@ -294,7 +493,7 @@ def build_removal_plan(root: Path, *, with_llm: bool = False, extractor: Callabl
             continue
         referenced = _referenced(root, rel)
         expected = manifest.get(rel)
-        if expected is None and rel in _kit_seeded_credentials(root):
+        if expected is None and rel in seeded_here:
             # Seeded by the installer, deliberately absent from the manifest (a digest
             # of anything in that directory has no place in a tracked file), and
             # therefore invisible to every branch below — so de-adoption walked away
@@ -302,9 +501,46 @@ def build_removal_plan(root: Path, *, with_llm: bool = False, extractor: Callabl
             # the shipped copy is the evidence the manifest used to carry. Anything
             # else there, including a file of the same name the operator wrote, has no
             # such proof and never reaches this branch.
+            evidence = ["matches the file this kit seeds, byte for byte"]
+            if Path(rel).name in _SEEDED_BUT_LOAD_BEARING:
+                # The named exclusion AC-2's own Escopo asked for: "se alguma classe
+                # precisa mesmo ser excluída do `apply`, a exclusão é explícita e
+                # nomeada, não implícita por omissão de uma string".
+                #
+                # `.credentials/.gitignore` is not documentation. It is the rule that
+                # keeps `*.token`, `jira.json` and `identity.json` out of git, and the
+                # `apply` deleted it at confidence 1.0 with review dispensed, which
+                # AC-2 made real where it had been a no-op. The operator's secrets
+                # survived only because the managed block in the ROOT `.gitignore` is
+                # still there — and de-adoption leaves that block by omission, not by
+                # decision, so nothing records that it became load-bearing.
+                items.append(RemovalItem(
+                    rel, "kit-seeded-access-control", 1.0, "preserve",
+                    evidence + [
+                        "this is the ignore rule that keeps the operator's real "
+                        "credentials out of git — removing it is a decision, not cleanup"
+                    ],
+                    True, referenced,
+                ))
+                continue
+            if referenced:
+                # The branch already computed this and used to drop it on the floor:
+                # it emitted `remove` at confidence 1.0 with review dispensed, while
+                # the field said the project points at the file. Its twin below is
+                # gated on `and not referenced`, and `_referenced`'s own docstring
+                # states the contract — "A hit only prevents automatic deletion."
+                #
+                # Same defect the issue was opened for, one column over: the evidence
+                # used to claim a check that never ran; then it omitted a check that
+                # did, and dispensed the human on the strength of the omission.
+                items.append(RemovalItem(
+                    rel, "kit-seeded-but-referenced", 1.0, "preserve",
+                    evidence + ["path is referenced elsewhere in the project"],
+                    True, referenced,
+                ))
+                continue
             items.append(RemovalItem(
-                rel, "kit-seeded-unchanged", 1.0, "remove",
-                ["matches the file this kit seeds, byte for byte"], False, referenced,
+                rel, "kit-seeded-unchanged", 1.0, "remove", evidence, False, referenced,
             ))
             continue
         if expected and _sha256(path) == expected and not referenced:
@@ -333,14 +569,38 @@ def build_removal_plan(root: Path, *, with_llm: bool = False, extractor: Callabl
                     True,
                 ))
         elif expected:
-            evidence = ["manifest records this path", "current hash differs from recorded install hash"]
+            # Two ways to arrive here, and one line used to describe both. The guard
+            # above is `expected and hash matches and NOT referenced`, so a file whose
+            # hash matches EXACTLY falls through the moment the project mentions it —
+            # and was then told its "current hash differs from recorded install hash".
+            # `_referenced`'s docstring three functions up already named this string
+            # and this mistake. The cause was fixed; the sentence was left lying.
+            #
+            # This is the sweep AC-3 asked for in as many words — "nenhuma outra string
+            # de evidência do módulo afirma verificação não feita" — and not doing it
+            # is how the issue's own general rule failed in the issue's own module.
+            matches = _sha256(path) == expected
+            evidence = ["manifest records this path"]
+            evidence.append(
+                "current file still matches the recorded install hash"
+                if matches else
+                "current hash differs from recorded install hash"
+            )
             if referenced:
                 evidence.append("path is referenced elsewhere in the project")
-            if provider and not referenced:
+            if provider and not referenced and not _under_credentials(rel, root):
+                # Guarded at the point of READING as well as at selection. The first
+                # layer already keeps that directory out of the candidate set; this one
+                # exists because the first layer failed once and the cost of it failing
+                # again is the operator's API key leaving the machine.
                 project_content, kit_content, confidence = extractor(root, rel, path.read_text(encoding="utf-8", errors="replace"), provider)
                 items.append(RemovalItem(rel, "mixed-content", confidence, "extract-project-content", evidence + ["LLM proposed a reviewable content split"], True, False, project_content, kit_content, _destination_for(rel)))
             else:
-                items.append(RemovalItem(rel, "kit-owned-modified", 1.0, "preserve", evidence, True, referenced))
+                items.append(RemovalItem(
+                    rel,
+                    "kit-owned-modified" if not matches else "kit-owned-but-referenced",
+                    1.0, "preserve", evidence, True, referenced,
+                ))
         else:
             evidence = ["not present in trusted installation manifest"]
             if referenced:
@@ -368,7 +628,19 @@ def load_removal_plan(root: Path, plan_path: Path | None = None) -> RemovalPlan:
     root = root.resolve()
     path = safe_path(root, plan_path or root / PLAN_RELATIVE_PATH)
     data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schema_version") != PLAN_VERSION or Path(data.get("root", "")).resolve() != root:
+    found = data.get("schema_version")
+    if found != PLAN_VERSION:
+        # Named separately from the root mismatch: the old message blamed the project
+        # root for a version problem, and a plan written by an older kit is exactly
+        # the case that matters — its verdicts were reached by branches this version
+        # has since corrected, and applying it runs the OLD decisions with the NEW
+        # consequences. Re-plan; do not translate.
+        raise ValueError(
+            f"this plan was written by another version of the kit (schema {found}, "
+            f"this kit writes {PLAN_VERSION}) — run `remove-agents plan` again. Its "
+            "verdicts were reached by branches this version has changed."
+        )
+    if Path(data.get("root", "")).resolve() != root:
         raise ValueError("plan is not compatible with this project root")
     items = [RemovalItem(**item) for item in data.get("items", [])]
     return RemovalPlan(data["schema_version"], data["root"], data["created_at"], items, data.get("provider", {}))
@@ -377,7 +649,13 @@ def load_removal_plan(root: Path, plan_path: Path | None = None) -> RemovalPlan:
 def apply_removal_plan(root: Path, plan: RemovalPlan, *, accept_project_extractions: bool = False) -> ApplyResult:
     root = root.resolve()
     backup_dir = root / ".gk/remove-agents-backup" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    removable = [item for item in plan.items if item.classification == "kit-owned-unchanged" and item.action == "remove"]
+    # By ACTION, not by classification. `action` IS the decision the plan reached;
+    # `classification` is the explanation it printed. Re-deciding here from the
+    # explanation is the second source of truth that produced the defect: the plan
+    # grew a new class, `kit-seeded-unchanged`, this filter did not, and `apply`
+    # silently removed nothing while printing `remove:` for eight paths. The operator
+    # read the plan, ran the apply, and the files were still there.
+    removable = [item for item in plan.items if item.action == "remove"]
     extractions = [item for item in plan.items if item.action == "extract-project-content"]
     if extractions and not accept_project_extractions:
         raise ValueError("plan contains LLM-proposed project extractions; rerun apply with --accept-project-extractions after review")

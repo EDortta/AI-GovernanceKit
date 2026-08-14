@@ -317,28 +317,39 @@ class InstallAgentsTests(unittest.TestCase):
                 metadata={
                     "OPERATOR_NAME": "Esteban",
                     "SMTP_ACCOUNT": "a@b.c",
-                    "PIX_KEY_UUID": "uuid-123",
+                    "GITHUB_OWNER": "uuid-123",
                 },
             )
             manifest = ia._read_json(root / ia._STATE_FILE)
             operator = ia._read_json(root / ia._OPERATOR_FILE)
             secrets = ia._read_json(root / ia._SECRETS_FILE)
 
-            self.assertEqual(manifest["metadata"], {})
+            # `GITHUB_OWNER` is SHAREABLE: it identifies the repository, not a person,
+            # so it belongs in the tracked half.
+            self.assertEqual(manifest["metadata"], {"GITHUB_OWNER": "uuid-123"})
             self.assertEqual(
                 operator["metadata"],
                 {"OPERATOR_NAME": "Esteban", "SMTP_ACCOUNT": "a@b.c"},
             )
-            self.assertEqual(secrets["metadata"], {"PIX_KEY_UUID": "uuid-123"})
+            # Empty by decision, 2026-08-13: every name that routed here was a donation
+            # slot, and all six were removed — measured first, and none was used by any
+            # shipped file or answered in any governed project. The split stays
+            # three-way because the third destination is a policy, not an accident: the
+            # next value that must never reach a tracked file has somewhere to go.
+            # Not created at all, rather than created empty — which is the better
+            # answer: a file that exists says "there is local state here" to every
+            # reader, and after the removal there is none.
+            self.assertEqual(secrets, {})
+            self.assertFalse((root / ia._SECRETS_FILE).exists())
+            self.assertEqual(ia._SENSITIVE_PLACEHOLDERS, frozenset())
             self.assertEqual((root / ia._OPERATOR_FILE).stat().st_mode & 0o777, 0o600)
-            self.assertEqual((root / ia._SECRETS_FILE).stat().st_mode & 0o777, 0o600)
             # Callers still see one logical state.
             self.assertEqual(
                 ia._state_metadata(ia._read_state(root)),
                 {
                     "OPERATOR_NAME": "Esteban",
                     "SMTP_ACCOUNT": "a@b.c",
-                    "PIX_KEY_UUID": "uuid-123",
+                    "GITHUB_OWNER": "uuid-123",
                 },
             )
 
@@ -1048,16 +1059,24 @@ class CouncilRoundTwoTest(unittest.TestCase):
         # `.gk/manifest.json` is the half a team SHARES and commits. A value that is
         # itself a token used to be expanded by the next sequential pass, so a
         # shareable answer could pull a local secret into a kit file — and, under
-        # --track, into git. One regex sweep cannot re-substitute its own output.
+        # --track, into git.
+        #
+        # This test's expectation CHANGED with AC-1, and the reason matters. It used to
+        # assert the injected token was written out literally — which is what a single
+        # regex sweep does, and it was believed to be enough. It is not: the literal
+        # token is then real text in the file, and the NEXT stage fills it. Measured,
+        # with a single sweep on both stages: 'Owner: STORED-SECRET-DO-NOT-COMMIT'. The
+        # value is now refused at the gate, so nothing is written at all.
         with tempfile.TemporaryDirectory() as s:
             src = Path(s)
             (src / "doc.md").write_text("owner: {{ORG_NAME}}\n", encoding="utf-8")
 
-            ia._prerender_source(
-                src, {"ORG_NAME": "{{SMTP_ACCOUNT}}", "SMTP_ACCOUNT": "SECRET"}
-            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                ia._prerender_source(
+                    src, {"ORG_NAME": "{{SMTP_ACCOUNT}}", "SMTP_ACCOUNT": "SECRET"}
+                )
 
-            self.assertEqual((src / "doc.md").read_text(), "owner: {{SMTP_ACCOUNT}}\n")
+            self.assertEqual((src / "doc.md").read_text(), "owner: {{ORG_NAME}}\n")
             self.assertNotIn("SECRET", (src / "doc.md").read_text())
 
     def test_only_declared_placeholders_are_rendered(self) -> None:
@@ -1356,3 +1375,598 @@ class CouncilRoundOnAdoptionTest(unittest.TestCase):
                 "- project_context_ready: no",
                 (dst / "docs" / "software-overview.md").read_text(),
             )
+
+
+class RenderGateTest(unittest.TestCase):
+    """AC-1 — the render gate every writer shares.
+
+    Round 2 hardened `_prerender_source` and left `_fill_placeholders` and
+    `configure.run_configure` with their own sequential `str.replace`. The audit of
+    that closure found the hardening had stopped in the middle of the pipeline, and
+    then found something worse: the property round 2 chose does not close the chain
+    on its own. Both facts are tested here.
+    """
+
+    def test_the_two_stage_chain_cannot_carry_a_local_secret_into_a_kit_file(self) -> None:
+        # THE test for AC-1, and the one that would have caught the original gap.
+        # It exercises the pipeline as `run_install_agents` orders it: render the
+        # downloaded source, copy, then fill the installed target. Stage 1 alone is
+        # not the mechanism; the pair is.
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, root = Path(s), Path(d)
+            (src / "donations.md").write_text("Owner: {{ORG_NAME}}\n", encoding="utf-8")
+            # ORG_NAME lives in the SHARED half of the state (a teammate, or a merged
+            # pull request, can set it). PROJECT_SLUG is the victim's LOCAL secret.
+            poisoned = {
+                "ORG_NAME": "{{PROJECT_SLUG}}",
+                "PROJECT_SLUG": "STORED-SECRET-DO-NOT-COMMIT",
+            }
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                ia._prerender_source(src, poisoned)
+                (root / "donations.md").write_text(
+                    (src / "donations.md").read_text(), encoding="utf-8"
+                )
+                ia._fill_placeholders(root, ["donations.md"], known=poisoned)
+
+            self.assertNotIn("STORED-SECRET-DO-NOT-COMMIT", (root / "donations.md").read_text())
+
+    def test_a_single_sweep_alone_would_not_have_closed_the_chain(self) -> None:
+        # The measurement that corrected AC-1's own diagnosis, kept as a test so the
+        # next person to "simplify" the gate back to one-pass-only sees it fail. By
+        # the time stage 2 runs, the injected token is ordinary text in the file: a
+        # single sweep substitutes it exactly as a sequential one would.
+        table = {"PROJECT_SLUG": "STORED-SECRET-DO-NOT-COMMIT"}
+        rendered, _, _ = ia._render_text("Owner: {{PROJECT_SLUG}}\n", table)
+
+        self.assertIn("STORED-SECRET-DO-NOT-COMMIT", rendered)
+
+    def test_a_value_carrying_placeholder_syntax_is_refused_by_name(self) -> None:
+        # Refusing in silence is how this same delivery turned a traceback into an
+        # empty provider list. The operator has to be told which value was dropped.
+        table, refused = ia._render_table({"ORG_NAME": "{{PROJECT_SLUG}}"})
+
+        self.assertEqual(table, {})
+        self.assertEqual([t for t, _ in refused], ["ORG_NAME"])
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            ia._report_refused_values(refused)
+
+        self.assertIn("ORG_NAME", buffer.getvalue())
+        self.assertIn("placeholder syntax", buffer.getvalue())
+
+    def test_an_oversized_value_is_refused_by_name_and_not_dropped_in_silence(self) -> None:
+        table, refused = ia._render_table(
+            {"OPERATOR_NAME": "x" * (ia._MAX_PLACEHOLDER_VALUE + 1)}
+        )
+
+        self.assertEqual(table, {})
+        self.assertEqual([t for t, _ in refused], ["OPERATOR_NAME"])
+
+    def test_an_undeclared_key_is_dropped_without_a_word(self) -> None:
+        # Deliberately NOT a refusal: the state carries ordinary metadata, and
+        # reporting all of it would bury the two refusals that matter.
+        table, refused = ia._render_table({"MADE_UP_TOKEN": "anything"})
+
+        self.assertEqual(table, {})
+        self.assertEqual(refused, [])
+
+    def test_fill_placeholders_applies_the_gate_it_used_to_skip(self) -> None:
+        # The gap AC-1 opened with: this writer had neither the cap nor the syntax
+        # rule. Both are asserted through the real entry point, not through the table.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "doc.md").write_text(
+                "a: {{OPERATOR_NAME}} b: {{ORG_NAME}}\n", encoding="utf-8"
+            )
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                ia._fill_placeholders(
+                    root, ["doc.md"],
+                    known={
+                        "OPERATOR_NAME": "x" * (ia._MAX_PLACEHOLDER_VALUE + 1),
+                        "ORG_NAME": "{{PROJECT_SLUG}}",
+                    },
+                )
+
+            self.assertEqual(
+                (root / "doc.md").read_text(), "a: {{OPERATOR_NAME}} b: {{ORG_NAME}}\n"
+            )
+
+    def test_a_refused_value_is_reported_as_still_unfilled(self) -> None:
+        # A refused token was not filled. Reporting it as filled would be a claim the
+        # disk contradicts — the shape of defect this whole epic audits.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "doc.md").write_text("{{ORG_NAME}}\n", encoding="utf-8")
+
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                ia._fill_placeholders(
+                    root, ["doc.md"], known={"ORG_NAME": "{{PROJECT_SLUG}}"}
+                )
+
+            self.assertIn("Still unfilled", buffer.getvalue())
+            self.assertIn("ORG_NAME", buffer.getvalue())
+
+    def test_a_refused_typed_value_is_not_carried_forward_into_the_state(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "doc.md").write_text("{{ORG_NAME}}\n", encoding="utf-8")
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                out = ia._fill_placeholders(
+                    root, ["doc.md"], known={"ORG_NAME": "{{PROJECT_SLUG}}"}
+                )
+
+            # It stays in the state it ARRIVED in (nothing is deleted behind the
+            # operator's back), and it is not adopted as a rendered value.
+            self.assertEqual(out.get("ORG_NAME"), "{{PROJECT_SLUG}}")
+
+    def test_the_sweep_is_single_pass(self) -> None:
+        # Kept as its own assertion so removing the sweep is caught even though it is
+        # no longer the property that closes the chain.
+        rendered, count, injected = ia._render_text(
+            "{{ORG_NAME}}", {"ORG_NAME": "PROJECT_SLUG", "PROJECT_SLUG": "SECRET"}
+        )
+
+        self.assertEqual(rendered, "PROJECT_SLUG")
+        self.assertEqual(count, 1)
+        self.assertEqual(injected, [])
+
+
+class RenderFixedPointTest(unittest.TestCase):
+    """The property the first two attempts at this gate did not have.
+
+    Round 2 chose "one sweep". The audit chose "a value may not carry placeholder
+    syntax". A council of four skeptics broke the second one with three variants,
+    reproduced through the real pipeline — including one where the value is entirely
+    innocent and the braces come from the kit's own template.
+    """
+
+    def _chain(self, template: str, state: dict[str, str]) -> str:
+        """Run the real two-stage pipeline in `run_install_agents` order."""
+        with tempfile.TemporaryDirectory() as s, tempfile.TemporaryDirectory() as d:
+            src, root = Path(s), Path(d)
+            (src / "doc.md").write_text(template, encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()):
+                ia._prerender_source(src, state)
+                (root / "doc.md").write_text((src / "doc.md").read_text(), encoding="utf-8")
+                ia._fill_placeholders(root, ["doc.md"], known=state)
+            return (root / "doc.md").read_text()
+
+    SECRET = "STORED-SECRET-DO-NOT-COMMIT"
+
+    def test_two_values_cannot_compose_into_a_token_across_adjacent_slots(self) -> None:
+        # Each value passes every rule about values: no placeholder syntax, short,
+        # declared. Together, in ONE sweep, they spell `{{PROJECT_SLUG}}`.
+        out = self._chain(
+            "Owner: {{ORG_NAME}}{{GITHUB_OWNER}}\n",
+            {
+                "ORG_NAME": "{{PROJECT_SLUG",
+                "GITHUB_OWNER": "}}",
+                "PROJECT_SLUG": self.SECRET,
+            },
+        )
+        self.assertNotIn(self.SECRET, out)
+
+    def test_one_value_cannot_compose_with_itself_in_a_repeated_slot(self) -> None:
+        out = self._chain(
+            "Owner: {{ORG_NAME}}{{ORG_NAME}}\n",
+            {"ORG_NAME": "}}x{{PROJECT_SLUG", "PROJECT_SLUG": self.SECRET},
+        )
+        self.assertNotIn(self.SECRET, out)
+
+    def test_the_kits_own_braces_cannot_supply_the_syntax(self) -> None:
+        # The one that no rule about values can ever catch: `PROJECT_SLUG` is an
+        # innocent string with no syntax in it at all. The doubled braces are the
+        # TEMPLATE's, and `{{{{ORG_NAME}}}}` renders to `{{PROJECT_SLUG}}`.
+        # Built, not written: see tests/test_render_gate.py for why the payload is
+        # never spelled out in a file, and for the CI gate that keeps it out.
+        template = "Owner: " + "{{" + "{{ORG_NAME}}" + "}}" + "\n"
+        out = self._chain(
+            template, {"ORG_NAME": "PROJECT_SLUG", "PROJECT_SLUG": self.SECRET}
+        )
+        self.assertNotIn(self.SECRET, out)
+
+    def test_an_injecting_render_leaves_the_file_untouched_and_names_the_tokens(self) -> None:
+        text = "Owner: {{ORG_NAME}}{{GITHUB_OWNER}}\n"
+        rendered, count, injected = ia._render_text(
+            text, {"ORG_NAME": "{{PROJECT_SLUG", "GITHUB_OWNER": "}}"}
+        )
+
+        self.assertEqual(rendered, text, "the file must not be half-rendered")
+        self.assertEqual(count, 0)
+        self.assertEqual(injected, ["GITHUB_OWNER", "ORG_NAME"])
+
+    def test_an_ordinary_render_still_reaches_a_fixed_point(self) -> None:
+        # The guard must not fire on the normal case: a value that merely CONTAINS
+        # another token's name, without braces, is not injection.
+        rendered, count, injected = ia._render_text(
+            "hi {{OPERATOR_NAME}}\n", {"OPERATOR_NAME": "Esteban {{ not a token"}
+        )
+
+        self.assertEqual(injected, [])
+        self.assertEqual(count, 1)
+        self.assertIn("Esteban", rendered)
+
+
+class RenderCapTest(unittest.TestCase):
+    """AC-1's own regression, caught by the migrator lens with a baseline diff.
+
+    The cap lived only in `_prerender_source`, which renders the downloaded SOURCE.
+    Carrying it to the writers that render the TARGET turned a working stored answer
+    into a refusal: an upgrade UN-RENDERED a file the previous release had rendered,
+    `doctor` flipped to FAIL, and the verdict oscillated against a host with an
+    older wheel. The cap is a denial-of-service bound, not a validity rule.
+    """
+
+    def test_a_long_but_plausible_answer_is_still_rendered(self) -> None:
+        # 98,848 characters is a measured base64 PNG of a bank-app QR screenshot.
+        # Under the old 4096 this was refused and the slot was dead.
+        value = "Q" * 98_848
+        table, refused = ia._render_table({"PROJECT_ROOT": value})
+
+        self.assertEqual(refused, [])
+        self.assertEqual(table["PROJECT_ROOT"], value)
+
+    def test_an_upgrade_does_not_un_render_a_file_the_previous_release_rendered(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "AGENTS.md").write_text("operador {{OPERATOR_NAME}}\n", encoding="utf-8")
+            stored = {"OPERATOR_NAME": "L" * 5000}
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                ia._fill_placeholders(root, ["AGENTS.md"], known=stored)
+
+            self.assertNotIn("{{OPERATOR_NAME}}", (root / "AGENTS.md").read_text())
+
+    def test_the_bound_still_exists(self) -> None:
+        table, refused = ia._render_table(
+            {"OPERATOR_NAME": "x" * (ia._MAX_PLACEHOLDER_VALUE + 1)}
+        )
+
+        self.assertEqual(table, {})
+        self.assertEqual([t for t, _ in refused], ["OPERATOR_NAME"])
+
+
+class RefusalReportingTest(unittest.TestCase):
+    """What the operator is told, and what they are told to do about it."""
+
+    def test_the_refusal_names_the_state_files_and_the_remedy(self) -> None:
+        # Without this the loop measured by the council has no exit: doctor fails,
+        # sends the operator to `configure`, `configure` refuses the same stored
+        # value, and the only way out left is pasting the value into a git-tracked
+        # kit file by hand — the one place the operator/secrets split exists to
+        # keep it out of.
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            ia._report_refused_values([("ORG_NAME", "because")])
+
+        out = buffer.getvalue()
+        self.assertIn("configure --set", out)
+        self.assertIn(".gk/manifest.json", out)
+
+    def test_a_refusal_for_a_token_no_file_carries_is_not_reported(self) -> None:
+        # It warned on every install about a slot no shipped file uses, and warned
+        # twice per run with identical wording — which trains the reader to skip the
+        # block that matters.
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            ia._report_refused_values([("ORG_NAME", "because")], needed={"OPERATOR_NAME"})
+
+        self.assertEqual(buffer.getvalue(), "")
+
+    def test_a_non_string_stored_value_is_refused_instead_of_crashing(self) -> None:
+        # JSON permits numbers and lists; a hostile shared manifest used to abort the
+        # install with a raw TypeError out of the regex.
+        table, refused = ia._render_table({"ORG_NAME": 7, "OPERATOR_NAME": ["a"]})
+
+        self.assertEqual(table, {})
+        self.assertEqual(sorted(t for t, _ in refused), ["OPERATOR_NAME", "ORG_NAME"])
+
+    def test_a_refused_value_is_never_offered_as_the_interactive_default(self) -> None:
+        # The prompt read `{{ORG_NAME}} [{{PROJECT_SLUG}}]: ` and Enter re-submitted
+        # it: the tool recommended the attacker's payload, then refused what it had
+        # recommended.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "doc.md").write_text("{{ORG_NAME}}\n", encoding="utf-8")
+            prompts: list[str] = []
+
+            def _capture(prompt: str) -> str:
+                prompts.append(prompt)
+                return ""
+
+            with contextlib.redirect_stdout(io.StringIO()), \
+                 unittest.mock.patch("sys.stdin.isatty", return_value=True), \
+                 unittest.mock.patch("builtins.input", _capture):
+                ia._fill_placeholders(
+                    root, ["doc.md"], known={"ORG_NAME": "{{PROJECT_SLUG}}"}
+                )
+
+            self.assertTrue(prompts)
+            self.assertNotIn("PROJECT_SLUG", prompts[0])
+
+
+class ComposingTokensAreDroppedPerRunTest(unittest.TestCase):
+    """Skipping the FILE re-opened `ade371f5#6`; the token is dropped instead.
+
+    A file left raw beside rendered siblings makes the source and the target
+    disagree, and the next upgrade reads the kit's own substitution as operator
+    intent: `.kit-new` is written and a protected file freezes. The council measured
+    the whole sequence over four runs of one target.
+    """
+
+    def _template(self) -> str:
+        return "operador {{OPERATOR_NAME}}\ntag: " + "{{" + "{{ORG_NAME}}" + "}}" + "\n"
+
+    def test_an_innocent_sibling_token_is_still_rendered(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "AGENTS.md").write_text(self._template(), encoding="utf-8")
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                ia._fill_placeholders(
+                    root, ["AGENTS.md"],
+                    known={"OPERATOR_NAME": "Esteban", "ORG_NAME": "PROJECT_SLUG"},
+                )
+
+            text = (root / "AGENTS.md").read_text()
+            self.assertIn("Esteban", text, "the innocent slot must still be filled")
+            self.assertIn("{{ORG_NAME}}", text, "the composing slot must stay raw")
+
+    def test_a_dropped_token_is_reported_as_unfilled_and_not_claimed_in_force(self) -> None:
+        # It used to be in `table`, so `Still unfilled` stayed silent about it and the
+        # returned state declared it applied while the disk held it raw.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "AGENTS.md").write_text(self._template(), encoding="utf-8")
+
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                out = ia._fill_placeholders(
+                    root, ["AGENTS.md"],
+                    known={"OPERATOR_NAME": "Esteban", "ORG_NAME": "PROJECT_SLUG"},
+                )
+
+            self.assertIn("Still unfilled", buffer.getvalue())
+            self.assertIn("ORG_NAME", buffer.getvalue())
+            # The stored answer survives untouched — nothing is deleted behind the
+            # operator's back — but the disk is what it is, and it holds the slot raw.
+            self.assertEqual(out["ORG_NAME"], "PROJECT_SLUG")
+            self.assertIn("{{ORG_NAME}}", (root / "AGENTS.md").read_text())
+
+    def test_the_warning_says_the_operator_cannot_fix_it(self) -> None:
+        # `configure --set` is the remedy for a refused VALUE and is useless here:
+        # the braces are the kit's. Naming it would send the operator in a circle.
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            ia._report_composing_tokens({"doc.md": {"ORG_NAME"}})
+
+        out = buffer.getvalue()
+        self.assertIn("ORG_NAME", out)
+        self.assertIn("doc.md", out, "the message must name the file it blames")
+        self.assertIn("will not change this", out)
+
+    def test_only_the_overlapping_token_is_blamed(self) -> None:
+        # An earlier cut blamed every token the file carried, naming innocent slots —
+        # including personal-data ones — in a security message.
+        text = "titular {{GITHUB_OWNER}}\nowner " + "{{" + "{{ORG_NAME}}" + "}}" + "\n"
+        _, _, composing = ia._render_text(
+            text, {"ORG_NAME": "PROJECT_SLUG", "GITHUB_OWNER": "Ana"}
+        )
+
+        self.assertEqual(composing, ["ORG_NAME"])
+
+
+class BracesAreRefusedInAnyStoredValueTest(unittest.TestCase):
+    def test_a_value_with_an_opening_brace_pair_is_refused(self) -> None:
+        table, refused = ia._render_table({"ORG_NAME": "{{PROJECT_SLUG"})
+        self.assertEqual(table, {})
+        self.assertEqual([t for t, _ in refused], ["ORG_NAME"])
+
+    def test_a_value_with_a_closing_brace_pair_is_refused(self) -> None:
+        # The half that made two innocent-looking values compose across adjacent slots.
+        table, refused = ia._render_table({"PROJECT_SLUG": "}}"})
+        self.assertEqual(table, {})
+        self.assertEqual([t for t, _ in refused], ["PROJECT_SLUG"])
+
+    def test_a_json_null_is_absence_not_a_refusal(self) -> None:
+        table, refused = ia._render_table({"ORG_NAME": None})
+        self.assertEqual(table, {})
+        self.assertEqual(refused, [])
+
+
+class PrerenderDropsComposingTokensTest(unittest.TestCase):
+    """The source pass needs the same drop, and had no test until a mutation said so.
+
+    Mutating `_prerender_source` to keep a composing token left the whole suite
+    green — the gap `_fill_placeholders` did not have. A guard nobody tests is the
+    claim this epic exists to disbelieve.
+    """
+
+    def test_a_composing_token_is_dropped_in_the_file_that_composes(self) -> None:
+        with tempfile.TemporaryDirectory() as s:
+            src = Path(s)
+            (src / "a.md").write_text(
+                "operador {{OPERATOR_NAME}}\n", encoding="utf-8"
+            )
+            (src / "b.md").write_text(
+                "tag: " + "{{" + "{{ORG_NAME}}" + "}}" + "\n", encoding="utf-8"
+            )
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                count = ia._prerender_source(
+                    src, {"OPERATOR_NAME": "Esteban", "ORG_NAME": "PROJECT_SLUG"}
+                )
+
+            # The innocent token renders everywhere; the composing one renders nowhere,
+            # including in the file that could have taken it safely. Per-file was the
+            # alternative and it is what re-opened the frozen-protected-file defect.
+            self.assertEqual((src / "a.md").read_text(), "operador Esteban\n")
+            self.assertIn("{{ORG_NAME}}", (src / "b.md").read_text())
+            self.assertEqual(count, 1)
+
+    def test_one_defective_file_does_not_stop_the_others_rendering(self) -> None:
+        # This test asserted the OPPOSITE for one round, and the inversion is the
+        # finding. Dropping the token for the whole run removed the sibling asymmetry
+        # inside a file and bought blast radius instead: one composable file anywhere
+        # in the tree un-rendered every file carrying that token, and a council
+        # measured `AGENTS.md` frozen permanently for a target with no manifest entry.
+        # The narrowest response is per file AND per token.
+        with tempfile.TemporaryDirectory() as s:
+            src = Path(s)
+            (src / "safe.md").write_text("owner {{ORG_NAME}}\n", encoding="utf-8")
+            (src / "unsafe.md").write_text(
+                "tag: " + "{{" + "{{ORG_NAME}}" + "}}" + "\n", encoding="utf-8"
+            )
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                ia._prerender_source(src, {"ORG_NAME": "PROJECT_SLUG"})
+
+            self.assertEqual((src / "safe.md").read_text(), "owner PROJECT_SLUG\n")
+            self.assertIn("{{ORG_NAME}}", (src / "unsafe.md").read_text())
+
+
+class ComposingWarningIsPrintedOncePerRunTest(unittest.TestCase):
+    """An upgrade printed the block twice, byte-identical, once from each pass.
+
+    The delivery's own reasoning for why that matters is in `_report_refused_values`:
+    repetition "trains the reader to skip exactly the block that matters" — and this
+    is the block that says a slot will stay raw until someone edits a file.
+    """
+
+    def test_a_token_the_source_pass_reported_is_not_reported_again(self) -> None:
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            reported = ia._report_composing_tokens(
+                {"AGENTS.md": {"ORG_NAME"}}, already={("AGENTS.md", "ORG_NAME")}
+            )
+
+        self.assertEqual(buffer.getvalue(), "")
+        self.assertEqual(reported, set())
+
+    def test_the_same_token_in_a_DIFFERENT_file_is_still_reported(self) -> None:
+        # Deduplicating on the token alone threw away the new information: when the
+        # operator's OWN file composes the same token as a kit file already reported,
+        # they were told about the file they cannot edit and never about theirs —
+        # while the message ends "if it is yours, edit it".
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            ia._report_composing_tokens(
+                {"AGENTS.md": {"ORG_NAME"}}, already={("a.md", "ORG_NAME")}
+            )
+
+        self.assertIn("AGENTS.md", buffer.getvalue())
+
+    def test_a_token_only_the_target_pass_sees_is_still_reported(self) -> None:
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            reported = ia._report_composing_tokens(
+                {"AGENTS.md": {"ORG_NAME", "PROJECT_SLUG"}},
+                already={("AGENTS.md", "ORG_NAME")},
+            )
+
+        self.assertIn("PROJECT_SLUG", buffer.getvalue())
+        self.assertNotIn("{{ORG_NAME}}", buffer.getvalue())
+        self.assertEqual(reported, {("AGENTS.md", "PROJECT_SLUG")})
+
+    def test_the_source_pass_hands_its_report_forward(self) -> None:
+        with tempfile.TemporaryDirectory() as s:
+            src = Path(s)
+            (src / "doc.md").write_text(
+                "tag: " + "{{" + "{{ORG_NAME}}" + "}}" + "\n", encoding="utf-8"
+            )
+            reported: set[str] = set()
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                ia._prerender_source(src, {"ORG_NAME": "PROJECT_SLUG"}, reported=reported)
+
+            self.assertEqual(reported, {("doc.md", "ORG_NAME")})
+
+
+class FillPlaceholdersAccountingIsPerFileTest(unittest.TestCase):
+    def test_a_token_filled_somewhere_is_not_reported_unfilled(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "a.md").write_text("org: {{ORG_NAME}}\n", encoding="utf-8")
+            (root / "b.md").write_text(
+                "tag: " + "{{" + "{{ORG_NAME}}" + "}}" + "\n", encoding="utf-8"
+            )
+
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                out = ia._fill_placeholders(
+                    root, ["a.md", "b.md"], known={"ORG_NAME": "ACME"}
+                )
+
+            self.assertEqual((root / "a.md").read_text(), "org: ACME\n")
+            self.assertNotIn("Still unfilled", buffer.getvalue())
+            self.assertEqual(out["ORG_NAME"], "ACME")
+
+    def test_a_typed_value_survives_when_one_file_blocked_it(self) -> None:
+        # `{**known, **table}` protected this by accident when the value came from
+        # `known`. A value typed in this run is not in `known`, so the union strip
+        # dropped it from the state while it sat rendered on disk.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "a.md").write_text("org: {{ORG_NAME}}\n", encoding="utf-8")
+            (root / "b.md").write_text(
+                "tag: " + "{{" + "{{ORG_NAME}}" + "}}" + "\n", encoding="utf-8"
+            )
+
+            with contextlib.redirect_stdout(io.StringIO()), \
+                 unittest.mock.patch("sys.stdin.isatty", return_value=True), \
+                 unittest.mock.patch("builtins.input", lambda _: "ACME"):
+                out = ia._fill_placeholders(root, ["a.md", "b.md"], known={})
+
+            self.assertEqual((root / "a.md").read_text(), "org: ACME\n")
+            self.assertEqual(out.get("ORG_NAME"), "ACME")
+
+
+class WithdrawnFilesAreRemovedFromTargetsTest(unittest.TestCase):
+    """Stopping the copy does not undo the copies already made.
+
+    `.docs/index.html` is the kit's landing page, carrying the author's donation
+    section — a real PIX key, a BR Code with his civil name and city, an Ethereum
+    address, and an outbound request to a QR service. The Python installer already
+    refused to ship it; the shell installer copied it into every target, and three
+    projects have it. The operator's ruling was that no reference may remain, and a
+    file already sitting in three projects is a reference.
+    """
+
+    def test_the_withdrawn_landing_page_is_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".docs").mkdir()
+            (root / ".docs" / "index.html").write_text("<donate>", encoding="utf-8")
+
+            self.assertEqual(ia._remove_withdrawn(root), [".docs/index.html"])
+            self.assertFalse((root / ".docs" / "index.html").exists())
+
+    def test_a_file_the_kit_still_ships_is_untouched(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".docs").mkdir()
+            (root / ".docs" / "concepts.html").write_text("concepts", encoding="utf-8")
+
+            self.assertEqual(ia._remove_withdrawn(root), [])
+            self.assertTrue((root / ".docs" / "concepts.html").exists())
+
+    def test_a_symlink_at_that_path_is_the_projects_own_decision(self) -> None:
+        # Unlinking it would remove something the kit did not put there.
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as other:
+            root = Path(d)
+            real = Path(other) / "their-page.html"
+            real.write_text("the project's own site", encoding="utf-8")
+            (root / ".docs").mkdir()
+            (root / ".docs" / "index.html").symlink_to(real)
+
+            self.assertEqual(ia._remove_withdrawn(root), [])
+            self.assertTrue(real.exists())
+
+    def test_a_target_without_it_is_a_no_op(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(ia._remove_withdrawn(Path(d)), [])

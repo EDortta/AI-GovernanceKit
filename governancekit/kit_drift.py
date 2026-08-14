@@ -52,6 +52,31 @@ class SnapshotError(RuntimeError):
     """The snapshot is missing, unreadable, or does not describe what it claims."""
 
 
+def _credential_table(raw: object) -> dict[str, tuple[str, ...]]:
+    """Read `seeded_credentials` tolerantly: absent, malformed, or the old shape.
+
+    Optional on purpose. Making it required turned a snapshot written before the field
+    existed into an unloadable snapshot for EVERY consumer — `doctor` included, which
+    then degrades to an advisory pass and quietly stops checking. Adding a required key
+    to a persisted artefact without a version is the defect AC-12 names, and the fix for
+    it must not commit it.
+
+    The value is a LIST of digests: a target keeps the bytes it was seeded with for
+    ever, so recognising only the currently pinned release stranded every project
+    adopted before those bytes last changed. A bare string is accepted as a one-item
+    history so an older snapshot still works.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    table: dict[str, tuple[str, ...]] = {}
+    for name, value in raw.items():
+        if isinstance(value, str):
+            table[str(name)] = (value,)
+        elif isinstance(value, list):
+            table[str(name)] = tuple(str(v) for v in value if isinstance(v, str))
+    return {n: d for n, d in table.items() if d}
+
+
 @dataclass(frozen=True)
 class KitSnapshot:
     """What the pinned AI-Agents release says, recorded at pin time."""
@@ -71,6 +96,22 @@ class KitSnapshot:
     # closed. That was R2-16': the shell has fought for AGENTS.md since 2026-07-23
     # while this runtime kept replacing it with a bare copy.
     protected_root_files: tuple[str, ...]
+    # Every file the release seeds into `.credentials/`, name -> sha256 of its content.
+    #
+    # This is the evidence `remove-agents` needs and could not have. The manifest
+    # deliberately carries no digest for that directory — a SHA-256 of a low-entropy
+    # token is a confirmation oracle, and the manifest is the TRACKED half of the
+    # state. So the planner had only the installer's record of the NAMES it wrote, and
+    # printed "matches the file this kit seeds, byte for byte" while comparing nothing.
+    #
+    # A digest of the kit's OWN scaffolding is not a secret: it is identical in every
+    # project and derivable by anyone who downloads the release. It belongs here, in
+    # the kit's package, and not in any target's tracked state.
+    #
+    # It also retires `_CREDENTIALS_SCAFFOLDING`, a hand-written list of eight names
+    # that had to agree with what the release seeds and was guarded by nothing — the
+    # exact pattern this snapshot exists to close.
+    seeded_credentials: dict[str, tuple[str, ...]]
 
     @classmethod
     def load(cls, path: Path | None = None) -> "KitSnapshot":
@@ -90,6 +131,7 @@ class KitSnapshot:
                 shared_section_sha256=raw["shared_section_sha256"],
                 template_seed_sources=tuple(raw["template_seed_sources"]),
                 protected_root_files=tuple(raw["protected_root_files"]),
+                seeded_credentials=_credential_table(raw.get("seeded_credentials")),
             )
         except (KeyError, TypeError) as exc:
             raise SnapshotError(f"kit snapshot at {path} is missing {exc}") from exc
@@ -107,6 +149,10 @@ class KitSnapshot:
                 "shared_section_sha256": self.shared_section_sha256,
                 "template_seed_sources": list(self.template_seed_sources),
                 "protected_root_files": list(self.protected_root_files),
+                "seeded_credentials": {
+                    name: list(digests)
+                    for name, digests in sorted(self.seeded_credentials.items())
+                },
             },
             indent=2,
         ) + "\n"

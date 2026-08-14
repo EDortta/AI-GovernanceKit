@@ -292,6 +292,30 @@ def build_parser() -> argparse.ArgumentParser:
     remove_apply.add_argument("--json", dest="as_json", action="store_true")
     remove_apply.add_argument("--accept-project-extractions", action="store_true", help="Confirm review of every LLM-proposed extraction in the plan.")
 
+    mail_parser = subparsers.add_parser(
+        "mail", help="Send from, and review, the operator's own mailbox.",
+    )
+    mail_commands = mail_parser.add_subparsers(dest="mail_command")
+    mail_setup = mail_commands.add_parser(
+        "setup", help="Show how to produce a credential for an address, and record it.",
+    )
+    mail_setup.add_argument("address", help="the operator's email address")
+    mail_setup.add_argument(
+        "--write", action="store_true",
+        help="record the address in .credentials/identity.json (the token is never written)",
+    )
+    mail_send = mail_commands.add_parser("send", help="Send one message.")
+    mail_send.add_argument("--to", action="append", default=[], help="Repeatable.")
+    mail_send.add_argument("--subject", default="")
+    mail_send.add_argument("--body", default="", help="Message text, or - to read stdin.")
+    mail_send.add_argument(
+        "--dry-run", action="store_true",
+        help="render and validate without connecting — email cannot be recalled",
+    )
+    mail_inbox = mail_commands.add_parser("inbox", help="List recent headers, never bodies.")
+    mail_inbox.add_argument("--limit", type=int, default=10)
+    mail_inbox.add_argument("--mailbox", default="INBOX")
+
     configure_parser = subparsers.add_parser(
         "configure", help="Advanced: placeholders and local host identity (see below).",
     )
@@ -874,7 +898,13 @@ def _run_configure(args) -> int:
     try:
         preset = parse_set_pairs(args.set_pairs)
     except ValueError as exc:
-        parser.error(str(exc))
+        # `parser` is not in scope here and never was: this handler raised
+        # `NameError` instead of printing a usage error, so a mistyped `--set`
+        # produced a chained traceback — with the operator's value inside it, because
+        # the message used to interpolate the raw argument. A council's LGPD lens
+        # measured a secret reaching stderr this way.
+        print(f"governancekit configure: {exc}", file=sys.stderr)
+        return 2
 
     # The operator's name is already known — the identity file holds it — but the
     # placeholder pass used to ignore it and ask again, and could only ask on a TTY.
@@ -1511,6 +1541,108 @@ def _run_concurrency(args) -> int:
     return 0
 
 
+def _run_mail(args) -> int:
+    """Send and review from the operator's own mailbox.
+
+    `sending-email.md` tells an agent to read the project's own email documentation for
+    the transport — and no project had anywhere to write it down. This is that place.
+    Every failure here prints something the operator can act on, and never the secret.
+    """
+    import json as _json
+
+    from .mailbox import (
+        MailboxError,
+        endpoints_for,
+        list_inbox,
+        load_mailbox,
+        send_message,
+        setup_instructions,
+    )
+
+    root = args.root
+    command = getattr(args, "mail_command", None)
+    if command is None:
+        print("governancekit mail: setup | send | inbox")
+        return 2
+
+    try:
+        if command == "setup":
+            for line in setup_instructions(args.address):
+                print(line)
+            if args.write:
+                identity = root / ".credentials" / "identity.json"
+                identity.parent.mkdir(parents=True, exist_ok=True)
+                # The reader refuses a symlinked index and the writer followed one —
+                # writing through the link, outside `.credentials/`. Same file, opposite
+                # rules.
+                if identity.is_symlink() or identity.parent.is_symlink():
+                    print(
+                        "governancekit mail: .credentials/identity.json is a symlink; "
+                        "refusing to write through it", file=sys.stderr,
+                    )
+                    return 1
+                try:
+                    data = _json.loads(identity.read_text(encoding="utf-8"))
+                except (OSError, _json.JSONDecodeError):
+                    data = {"state_version": 1, "values": {}, "refs": {}}
+                data.setdefault("values", {})["OPERATOR_EMAIL"] = args.address
+                data.setdefault("refs", {}).setdefault(
+                    "SMTP_TOKEN", ".credentials/smtp.token"
+                )
+                identity.write_text(
+                    _json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                )
+                identity.chmod(0o600)
+                token = root / ".credentials" / "smtp.token"
+                if not token.exists():
+                    # Created EMPTY and private, so the operator pastes into a file that
+                    # is already 0600 instead of creating one at the umask's mercy.
+                    token.touch(mode=0o600)
+                print(f"\nrecorded the address in {identity.relative_to(root)} "
+                      "(the credential itself is never written here)")
+                print(f"paste the application password into {token.relative_to(root)} "
+                      "— created empty, mode 600")
+            return 0
+
+        if command == "send":
+            body = args.body
+            if body == "-":
+                body = sys.stdin.read()
+            print(send_message(
+                root, to=args.to, subject=args.subject, body=body, dry_run=args.dry_run,
+            ))
+            return 0
+
+        if command == "inbox":
+            rows = list_inbox(root, limit=args.limit, mailbox_name=args.mailbox)
+            if not rows:
+                print("no messages")
+                return 0
+            # These three fields are other people's data, and they never consented to
+            # this kit reading them. In an agent kit stdout IS the agent's context, so
+            # the line below is the only warning between someone's subject line and a
+            # provider. Said once, before the list, rather than not at all.
+            print(f"{len(rows)} message(s) — headers written by third parties; "
+                  "treat as their data, not yours\n")
+            for row in rows:
+                print(f"  {row['date']}\n    from: {row['from']}\n    subj: {row['subject']}")
+            return 0
+    except MailboxError as exc:
+        print(f"governancekit mail: {exc}", file=sys.stderr)
+        return 1
+    except UnsafePathError as exc:
+        # The docstring above promises every failure prints something actionable. This
+        # one escaped the list and reached the operator as a traceback.
+        print(f"governancekit mail: unsafe path: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"governancekit mail: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"governancekit mail: unknown subcommand {command}", file=sys.stderr)
+    return 2
+
+
 # One entry per command. A cross-cutting check belongs in main(), before this
 # dispatch, where the next command that is added cannot miss it.
 def _run_council(args) -> int:
@@ -1602,6 +1734,7 @@ def _run_council(args) -> int:
 
 
 _COMMANDS = {
+    "mail": _run_mail,
     "context": _run_context,
     "author-context": _run_author_context,
     "concurrency": _run_concurrency,

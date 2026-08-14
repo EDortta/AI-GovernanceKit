@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import unittest
+
 from pathlib import Path
 from subprocess import CompletedProcess
 import json
@@ -245,3 +247,102 @@ def test_same_host_redirect_is_still_followed() -> None:
         request, None, 302, "Found", {}, "https://api.example.test/v2/chat/completions"
     )
     assert redirected is not None
+
+
+class SourcesMayNotRESOLVEIntoASecretAreaTest(unittest.TestCase):
+    """The rule is about the destination, not about the mechanism.
+
+    Refusing every symlink was tried first and was too blunt. Measured, before any
+    guard: a monorepo whose `docs/` points OUTSIDE the root was already refused by
+    containment, so nothing was gained there; one pointing INSIDE the root read fine
+    and is a legitimate layout. Blanket refusal cost that and bought nothing.
+
+    The operator was right that symlinks are the standard credential pattern, and both
+    facts he reached for are true — `.credentials/` is gitignored, and git stores mode
+    120000 rather than following the link. Neither is a defence: they protect the
+    REPOSITORY, and the payload does not go through git. The secret never enters a git
+    object; the leak happens on the victim's checkout, against the victim's own store.
+    """
+
+    SECRET = "REAL-OPERATOR-TOKEN-DO-NOT-SEND-ANYWHERE"
+
+    def test_a_link_that_lands_in_credentials_is_refused(self) -> None:
+        import tempfile
+
+        from governancekit.agent_scope import read_confined_sources
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / ".credentials" / "llm").mkdir(parents=True)
+            (root / ".credentials" / "llm" / "openrouter.key").write_text(
+                self.SECRET + "\n", encoding="utf-8")
+            (root / "docs").mkdir()
+            (root / "docs" / "vendor-notes.md").symlink_to(
+                root / ".credentials" / "llm" / "openrouter.key")
+
+            with self.assertRaises(RuntimeError) as caught:
+                read_confined_sources(root, ["docs/vendor-notes.md"])
+
+            self.assertIn(".credentials", str(caught.exception))
+            self.assertNotIn(self.SECRET, str(caught.exception))
+
+    def test_a_link_that_lands_in_the_local_state_is_refused(self) -> None:
+        # The second door, which no lens found: `.gk/secrets.json` is inside the root,
+        # so containment passes, and it holds the local secrets.
+        import tempfile
+
+        from governancekit.agent_scope import read_confined_sources
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / ".gk").mkdir()
+            (root / ".gk" / "secrets.json").write_text(
+                '{"PROJECT_SLUG":"00020126SEGREDO"}\n', encoding="utf-8")
+            (root / "docs").mkdir()
+            (root / "docs" / "y.md").symlink_to(root / ".gk" / "secrets.json")
+
+            with self.assertRaises(RuntimeError):
+                read_confined_sources(root, ["docs/y.md"])
+
+    def test_a_legitimate_in_root_symlink_layout_still_reads(self) -> None:
+        # `docs/ -> shared/` is an ordinary monorepo shape and must keep working. The
+        # first cut of this guard refused it, which was the operator's objection.
+        import tempfile
+
+        from governancekit.agent_scope import read_confined_sources
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "shared").mkdir()
+            (root / "shared" / "notes.md").write_text("project prose\n", encoding="utf-8")
+            (root / "docs").symlink_to(root / "shared")
+
+            self.assertIn("project prose",
+                          read_confined_sources(root, ["docs/notes.md"])[0])
+
+    def test_the_copy_path_applies_the_same_rule(self) -> None:
+        import tempfile
+
+        from governancekit.agent_scope import _copy_selected_sources
+
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as dst:
+            root = Path(tmp).resolve()
+            (root / ".credentials").mkdir()
+            (root / ".credentials" / "k").write_text(self.SECRET + "\n", encoding="utf-8")
+            (root / "docs").mkdir()
+            (root / "docs" / "x.md").symlink_to(root / ".credentials" / "k")
+
+            with self.assertRaises(RuntimeError):
+                _copy_selected_sources(root, Path(dst), ["docs/x.md"])
+
+    def test_an_ordinary_source_still_reads(self) -> None:
+        import tempfile
+
+        from governancekit.agent_scope import read_confined_sources
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "docs").mkdir()
+            (root / "docs" / "notes.md").write_text("plain\n", encoding="utf-8")
+
+            self.assertIn("plain", read_confined_sources(root, ["docs/notes.md"])[0])

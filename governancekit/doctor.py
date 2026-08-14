@@ -15,7 +15,12 @@ from .kit_drift import (
     extract_shared_section,
 )
 
-_PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]{2,})\}\}")
+# One definition of "what is a placeholder", imported rather than re-typed. This file
+# carried its own — `{2,}` where the installer writes `+`, a minimum of three characters
+# against two — so a `{{AB}}` slot the installer would fill was invisible to the check
+# that exists to report unfilled slots. Two gates over one contract must read one rule,
+# or the newer one drifts and the tool ends up disagreeing with itself.
+from .install_agents import _PLACEHOLDER_RE
 
 
 @dataclass(frozen=True)

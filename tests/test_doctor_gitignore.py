@@ -278,3 +278,20 @@ class AdvisoryCoverageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheRemovalPlanIsIgnoredTest(unittest.TestCase):
+    """A plan file that travels in git can be applied against the wrong target.
+
+    It records a verdict per path — `remove` at confidence 1.0 with review dispensed —
+    and `apply` acts on the FILE, not on a fresh analysis. Every sibling artefact of
+    `.gk/` was already inside the managed block; these two were not.
+    """
+
+    def test_the_plan_and_the_context_proposal_are_in_the_managed_block(self) -> None:
+        from governancekit.install_agents import _FRESH_PATHS, _gitignore_entries
+
+        entries = _gitignore_entries(_FRESH_PATHS)
+
+        self.assertIn(".gk/remove-agents-plan.json", entries)
+        self.assertIn(".gk/context-proposal/", entries)
