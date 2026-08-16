@@ -1,0 +1,42 @@
+{
+  "_comment": "Derived from the pinned AI-Agents release by scripts/refresh-kit-snapshot.py. Do not hand-edit: the point of this file is that it was read off the release, not typed.",
+  "agents_ref": "v1.2.1",
+  "governancekit_version_range": ">=0.2.2,<0.4.0",
+  "shared_section_sha256": "e625369fa5430bb718dd0d5027c1afca7673efc4ae757199331bcb8879418926",
+  "template_seed_sources": [
+    "templates/handoff.template.md",
+    "templates/napkin-lessons.template.md",
+    "templates/required-reading.template.md"
+  ],
+  "protected_root_files": [
+    "AGENTS.md"
+  ],
+  "seeded_credentials": {
+    ".gitignore": [
+      "0f7196d55ef06b52a7e481204602a10981fdf3d00d58f9a84ac29dc27c086659",
+      "ca2bfb2c0cd19c161d87ed0b4992f2496f1ea8e6935f095976241a7bf7aed9fb"
+    ],
+    "README-es.md": [
+      "9c4ae05ac9b61545fc48fe0a05732ec6e99618234a925b7ef9896d0e677bdff1"
+    ],
+    "README-ptbr.md": [
+      "73002a3241d0eb659d254f80e60f3b520b3f1d4f67d2ccb23a5ea4e8be41c48c"
+    ],
+    "README.md": [
+      "9e865c8b19c9635b81810360e10692e68df65b5575cfe6ea205dfec72baa5a55"
+    ],
+    "identity.json.example": [
+      "d75c613cab6f732f98fa42fb2d688beccb913e06d3809d344400633ea573e372",
+      "505455c645561cb7dbbf6e4f5b0ae20a44db604ea60cdf521e8395dc6e11931f"
+    ],
+    "jira.json.example": [
+      "ba18d7b95b4a50a7679484fe5ef2ce815c7b923a67d3bf02c2084c621864a4f5"
+    ],
+    "programmer.token.example": [
+      "e0643f5badc78fe42937401b6d870e59dbab922239fe009b217b41e06d1b760c"
+    ],
+    "reviewer.token.example": [
+      "7a7c8ab770ac6b0560b520421c1a10c073732bd3d73b506a050d0e96c9e0e9ef"
+    ]
+  }
+}

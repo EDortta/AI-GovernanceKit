@@ -157,6 +157,9 @@ def test_install_agents_asks_before_using_configured_llm(monkeypatch, tmp_path) 
         '{"providers": [{"name": "openai", "mode": "env", "credential_ref": "TEST_KEY", "base_url": "https://example.invalid/v1", "model": "gpt-test", "role": "primary"}]}\n',
         encoding="utf-8",
     )
+    # With a description present the flow reaches the provider question, which is what
+    # this test is about; without one it stops earlier, on the advice prompt.
+    (tmp_path / "README.md").write_text("# Demo\n\nBills churches monthly.\n", encoding="utf-8")
     monkeypatch.setattr(cli.sys, "stdin", _InteractiveStdin())
     answers = iter(["n", "n"])
     prompts: list[str] = []
@@ -171,10 +174,19 @@ def test_install_agents_asks_before_using_configured_llm(monkeypatch, tmp_path) 
         code = cli.main(["--root", str(tmp_path), "install-agents"])
 
     assert code == 0
+    # A configured provider is not consent. The wording moved when the install flow
+    # started sharing `author-context`'s step — the project's own description is what
+    # leaves the machine, so the prompt names that rather than "enrich".
     assert any(
-        prompt.startswith("Use configured LLM provider openai / gpt-test to enrich this proposal? [y/N]")
+        prompt.startswith("Send this project's description and detected evidence to "
+                          "openai / gpt-test?")
         for prompt in prompts
     )
+    # Declining does not abandon the project: the deterministic branch still writes
+    # both documents, with the flags left for a human.
+    overview = (tmp_path / "docs" / "software-overview.md").read_text(encoding="utf-8")
+    assert "- project_context_ready: no" in overview
+    assert "The Start Gate is shut" in stdout.getvalue()
 
 
 def test_docs_only_does_not_modify_root_gitignore(monkeypatch, tmp_path) -> None:

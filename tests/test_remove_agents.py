@@ -4,6 +4,12 @@ import hashlib
 import json
 
 from governancekit import cli
+import unittest
+
+import tempfile
+
+from pathlib import Path
+
 from governancekit.remove_agents import apply_removal_plan, build_removal_plan, write_removal_plan
 
 
@@ -106,3 +112,129 @@ def test_llm_extraction_moves_project_content_only_after_explicit_acceptance(tmp
     assert extracted.read_text(encoding="utf-8") == "LOCAL DECISION\n"
     assert str(item.project_destination) in (tmp_path / "docs/required-reading.md").read_text(encoding="utf-8")
     assert result.extracted == [item.project_destination]
+
+
+class PlanAndApplyAgreeTest(unittest.TestCase):
+    """AC-2 — `apply` removed nothing it had just printed `remove:` for.
+
+    The plan grew a class (`kit-seeded-unchanged`) and `apply` kept filtering on the
+    old one, so the operator read `remove: .credentials/README.md`, ran the apply, and
+    the file was still there. It was the open QUESTION of the round that produced the
+    defect — "apply do remove-agents não exercitado de ponta a ponta" — written down
+    and not followed.
+    """
+
+    SEEDED = {"README.md": "how to put tokens here\n"}
+
+    def _digests(self):
+        import hashlib
+        # tuples, not strings: the table is a HISTORY per name, and `x in "abc"` is
+        # substring matching — a str-valued mock passes for the wrong reason.
+        return {n: (hashlib.sha256(c.encode()).hexdigest(),)
+                for n, c in self.SEEDED.items()}
+
+    def test_everything_the_plan_says_remove_is_actually_removed(self) -> None:
+        import hashlib
+        import json
+        import unittest.mock as mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".credentials").mkdir(parents=True)
+            for name, content in self.SEEDED.items():
+                (root / ".credentials" / name).write_text(content, encoding="utf-8")
+            (root / "AGENTS.md").write_text("# kit\n", encoding="utf-8")
+            (root / ".gk").mkdir(exist_ok=True)
+            (root / ".gk" / "manifest.json").write_text(json.dumps({
+                "state_version": 1,
+                "seeded_credentials": list(self.SEEDED),
+                "files": {
+                    "AGENTS.md": hashlib.sha256(b"# kit\n").hexdigest(),
+                },
+            }), encoding="utf-8")
+
+            with mock.patch(
+                "governancekit.remove_agents._seeded_credential_digests",
+                return_value=self._digests(),
+            ):
+                plan = build_removal_plan(root)
+                promised = sorted(i.path for i in plan.items if i.action == "remove")
+                apply_removal_plan(root, plan)
+
+            self.assertIn(".credentials/README.md", promised)
+            for rel in promised:
+                self.assertFalse(
+                    (root / rel).exists(),
+                    f"the plan printed `remove: {rel}` and the apply left it on disk",
+                )
+
+    def test_nothing_the_plan_preserves_is_touched(self) -> None:
+        import json
+        import unittest.mock as mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".credentials").mkdir(parents=True)
+            (root / ".credentials" / "identity.json").write_text("{}\n", encoding="utf-8")
+            (root / ".gk").mkdir(exist_ok=True)
+            (root / ".gk" / "manifest.json").write_text(
+                json.dumps({"state_version": 1, "files": {}}), encoding="utf-8"
+            )
+
+            with mock.patch(
+                "governancekit.remove_agents._seeded_credential_digests",
+                return_value=self._digests(),
+            ):
+                plan = build_removal_plan(root)
+                apply_removal_plan(root, plan)
+
+            self.assertTrue((root / ".credentials" / "identity.json").exists())
+
+
+class APlanFromAnotherVersionIsRefusedTest(unittest.TestCase):
+    """A plan written before AC-2/AC-3 records the OLD branches' verdicts.
+
+    Under the previous code that plan was a no-op; under this one `apply` deletes.
+    Its `.credentials/README.md` entry carries `matches the file this kit seeds, byte
+    for byte` — the string AC-3 exists to abolish — for a file nobody compared, and
+    `apply` used to trust it verbatim. Changing what a persisted artefact MEANS
+    without versioning it is the defect AC-12 names.
+    """
+
+    def test_a_plan_written_by_an_older_kit_is_refused_by_name(self) -> None:
+        import json
+        from governancekit.remove_agents import PLAN_VERSION, load_removal_plan
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".gk").mkdir(parents=True)
+            # The literal 2, not `PLAN_VERSION - 1`: a relative version always
+            # mismatches, so the test passed under a mutation that put the version
+            # back where it was. It has to name the release whose plans must be
+            # refused, which is the one that wrote the false evidence string.
+            self.assertGreater(PLAN_VERSION, 2, "plans from v2 must stay refused")
+            (root / ".gk" / "remove-agents-plan.json").write_text(json.dumps({
+                "schema_version": 2,
+                "root": str(root.resolve()),
+                "created_at": "2026-08-12T00:00:00+00:00",
+                "items": [],
+            }), encoding="utf-8")
+
+            with self.assertRaises(ValueError) as caught:
+                load_removal_plan(root)
+
+            message = str(caught.exception)
+            self.assertIn("another version of the kit", message)
+            self.assertNotIn("project root", message,
+                             "a version mismatch used to be blamed on the root")
+
+    def test_a_current_plan_still_loads(self) -> None:
+        from governancekit.remove_agents import load_removal_plan, write_removal_plan
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text("# kit\n", encoding="utf-8")
+            plan = build_removal_plan(root)
+            write_removal_plan(root, plan)
+
+            self.assertEqual(load_removal_plan(root).schema_version, plan.schema_version)

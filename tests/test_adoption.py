@@ -7,25 +7,98 @@ from governancekit.adoption import (
     format_adoption_proposal,
 )
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
+from governancekit.context_authoring import flag_is_yes
 
 
-def test_generated_adoption_is_evidence_based_and_sets_readiness(tmp_path) -> None:
+def test_generated_adoption_never_declares_itself_ready(tmp_path) -> None:
+    """A machine may write the document. It may never write the flag.
+
+    This assertion is the inverse of the one it replaces. The old contract had the
+    generator emit `- project_context_ready: yes` in the same file where it listed
+    the things it could not determine, which opened the Start Gate over content no
+    human had read. Only `context_authoring.confirm_document` flips a flag.
+    """
     (tmp_path / "README.md").write_text("# Demo\n", encoding="utf-8")
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
-    proposal = build_adoption_proposal(tmp_path)
-    written = apply_adoption_proposal(proposal)
-    assert written == ["docs/software-overview.md", "docs/limits.md"]
-    assert "project_context_ready: yes" in (tmp_path / "docs/software-overview.md").read_text()
-    assert "limits_ready: yes" in (tmp_path / "docs/limits.md").read_text()
+
+    applied = apply_adoption_proposal(build_adoption_proposal(tmp_path))
+
+    assert applied.written == ["docs/software-overview.md", "docs/limits.md"]
+    for rel, marker in (
+        ("docs/software-overview.md", "project_context_ready"),
+        ("docs/limits.md", "limits_ready"),
+    ):
+        text = (tmp_path / rel).read_text()
+        assert f"- {marker}: no" in text
+        assert not flag_is_yes(text, marker)
+    assert applied.unconfirmed == ["docs/software-overview.md", "docs/limits.md"]
 
 
-def test_adoption_never_overwrites_complete_project_documents(tmp_path) -> None:
+def test_the_shipped_template_prose_does_not_pass_as_a_ready_flag(tmp_path) -> None:
+    """The incident, as a test, with the artifact the kit actually publishes.
+
+    The installer seeds these two files from the kit's own `docs/`, and that text
+    explains the flag in a sentence. The old gate tested `"project_context_ready:
+    yes" in old` over the whole file, so the SENTENCE matched, adoption skipped the
+    write, and the flow reported "existing project documents preserved" over the
+    kit's own boilerplate. Fixture is the real prose, not a synthetic string.
+    """
     docs = tmp_path / "docs"
     docs.mkdir()
-    (docs / "software-overview.md").write_text("project_context_ready: yes\ncustom\n")
-    (docs / "limits.md").write_text("limits_ready: yes\ncustom\n")
-    assert apply_adoption_proposal(build_adoption_proposal(tmp_path)) == []
+    seeded = (
+        "# Software Overview\n\n## Metadata\n\n- project_context_ready: no\n\n"
+        "This repository provides a universal, reusable agent-governance bundle.\n\n"
+        "## Install-Time Role\n\nWhen copied into a target project, the programmer must "
+        "replace this content with that project's actual context and set "
+        "`project_context_ready: yes` only after the file is accurate.\n"
+    )
+    (docs / "software-overview.md").write_text(seeded, encoding="utf-8")
+
+    applied = apply_adoption_proposal(build_adoption_proposal(tmp_path))
+
+    assert "docs/software-overview.md" in applied.written
+    assert "the programmer must replace" not in (docs / "software-overview.md").read_text()
+
+
+def test_a_confirmed_document_is_never_retracted(tmp_path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "software-overview.md").write_text("- project_context_ready: yes\ncustom\n")
+    (docs / "limits.md").write_text("- limits_ready: yes\ncustom\n")
+
+    applied = apply_adoption_proposal(build_adoption_proposal(tmp_path))
+
+    assert applied.written == []
+    assert [why for _, why in applied.preserved] == [
+        "you already confirmed it ready", "you already confirmed it ready"
+    ]
     assert "custom" in (docs / "software-overview.md").read_text()
+    assert applied.unconfirmed == []
+
+
+def test_a_short_hand_written_document_is_not_clobbered(tmp_path) -> None:
+    """Too short to classify as authored, and none of it is the kit's.
+
+    `classify_document` calls a three-line document TEMPLATE, because length is all
+    it has. Writing over it would destroy exactly what the Start Gate exists to
+    collect, so the deterministic path replaces only text the kit itself put there.
+    """
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "software-overview.md").write_text(
+        "# Overview\n\n- project_context_ready: no\n\nWe bill churches monthly.\n",
+        encoding="utf-8",
+    )
+
+    applied = apply_adoption_proposal(build_adoption_proposal(tmp_path))
+
+    assert "docs/software-overview.md" not in applied.written
+    assert "We bill churches monthly." in (docs / "software-overview.md").read_text()
+    # The discriminating case for where `unconfirmed` comes from: this document was
+    # NOT written, and its flag on disk is still `no`, so it must be listed. Deriving
+    # the verdict from the write list — the belief — silently drops it, and the suite
+    # could not tell the two apart until this line existed.
+    assert applied.unconfirmed == ["docs/software-overview.md", "docs/limits.md"]
 
 
 def test_drift_is_advisory_and_compares_current_discovery_to_accepted_config(tmp_path) -> None:

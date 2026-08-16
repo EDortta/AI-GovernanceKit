@@ -5,7 +5,7 @@ from pathlib import Path
 
 from governancekit.agent_scope import ProposedDomain, ScopeProposal
 from governancekit.project_config import ProviderConfig, apply_project_config_plan, build_project_config_plan
-from governancekit.scope_conversation import DomainCandidate, _LLM_PRESETS, _collect_providers, _detected_providers, _domain_answer, _is_legacy_pending_scope_baseline, _merge_domain_candidates, _print_analysis_notice, _print_domain_selection_help, _print_provider_catalog, _print_provider_help, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
+from governancekit.scope_conversation import DomainCandidate, _llm_presets, _collect_providers, _detected_providers, _domain_answer, _is_legacy_pending_scope_baseline, _merge_domain_candidates, _print_analysis_notice, _print_domain_selection_help, _print_provider_catalog, _print_provider_help, _saved_providers, _write_credential_file, load_required_reading, resolve_locale, run_scope_conversation
 
 
 def _proposal() -> ScopeProposal:
@@ -44,20 +44,39 @@ def test_neutral_shell_uses_project_language_before_inherited_language(tmp_path:
 
 
 def test_nvidia_preset_uses_its_openai_compatible_endpoint() -> None:
-    assert _LLM_PRESETS["nvidia"] == (
+    assert _llm_presets()["nvidia"] == (
         "https://integrate.api.nvidia.com/v1",
         "nvidia/nemotron-3-super-120b-a12b",
         "NVIDIA_API_KEY",
     )
 
 
-def test_provider_catalog_lists_nvidia_nim_as_openai_compatible(capsys) -> None:
+def test_the_provider_catalog_offers_every_preset_the_kit_can_suggest(capsys) -> None:
+    """Hand-written in three locales until 2026-08-12, and therefore always one edit
+    behind. `openrouter` was offered to the operator by the install flow and missing
+    from the screen where they choose — the same "you were not told" defect, one screen
+    on. The list is derived now, so a preset cannot exist without being offered."""
+    from governancekit.scope_conversation import _llm_presets
+
     _print_provider_catalog("en")
 
     output = capsys.readouterr().out
     assert "OpenAI-compatible" in output
-    assert "NVIDIA NIM" in output
-    assert "NVIDIA_API_KEY" in output
+    for name in _llm_presets():
+        assert name in output, f"{name} is a preset but is not offered"
+    assert "openrouter" in output
+    assert "free models behind one key" in output
+    assert "other" in output
+
+
+def test_the_provider_catalog_is_offered_in_every_locale(capsys) -> None:
+    from governancekit.scope_conversation import _llm_presets
+
+    for locale in ("en", "pt-BR", "es"):
+        _print_provider_catalog(locale)
+        output = capsys.readouterr().out
+        for name in _llm_presets():
+            assert name in output, f"{name} missing in {locale}"
 
 
 def test_provider_help_limits_llm_use_to_the_scope_interview(capsys) -> None:
@@ -167,8 +186,8 @@ def test_detected_nvidia_credential_uses_the_nim_preset_without_reading_the_secr
     assert provider.name == "nvidia"
     assert provider.mode == "file-ref"
     assert provider.credential_ref == ".credentials/llm/nvidia.key"
-    assert provider.base_url == _LLM_PRESETS["nvidia"][0]
-    assert provider.model == _LLM_PRESETS["nvidia"][1]
+    assert provider.base_url == _llm_presets()["nvidia"][0]
+    assert provider.model == _llm_presets()["nvidia"][1]
 
 
 def test_provider_interview_offers_a_detected_nvidia_configuration(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -253,3 +272,27 @@ def test_scope_conversation_reuses_pending_configuration_as_defaults(tmp_path: P
     assert conversation.capability_domains == {"manage-sessions": "sessions"}
     assert conversation.scope_summary == "Existing scope."
     assert "configuração salva ou pendente" in capsys.readouterr().out
+
+
+def test_which_detected_key_becomes_primary_does_not_move_with_the_catalog(tmp_path) -> None:
+    """Routing must not change under an upgrade because a data file grew.
+
+    `primary` used to be "index 0 of the presets mapping", and that mapping was
+    hand-written in the order gemini, openai, nvidia. Deriving it from the catalog
+    reordered it to openrouter, nvidia, gemini, openai — so a project holding a gemini
+    and an nvidia key silently switched primary on upgrade, with nothing said anywhere.
+    The rule is stated in `_PRIMARY_PREFERENCE` now, and this pins it.
+    """
+    from governancekit.scope_conversation import _PRIMARY_PREFERENCE, _detected_providers
+
+    keys = tmp_path / ".credentials" / "llm"
+    keys.mkdir(parents=True)
+    (keys / "gemini.key").write_text("k\n", encoding="utf-8")
+    (keys / "nvidia.key").write_text("k\n", encoding="utf-8")
+
+    detected = _detected_providers(tmp_path)
+    primaries = [p.name for p in detected if p.role == "primary"]
+
+    assert primaries == ["gemini"], detected
+    assert len([p for p in detected if p.role == "primary"]) == 1
+    assert _PRIMARY_PREFERENCE[0] == "gemini"

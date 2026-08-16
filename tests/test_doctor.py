@@ -450,3 +450,30 @@ def failed_check_names(result) -> set[str]:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlaceholderRuleIsSharedTest(unittest.TestCase):
+    """`doctor` carried its own idea of what a placeholder is.
+
+    `{2,}` here against `+` in the installer: a minimum of three characters against
+    two. A `{{AB}}` slot the installer fills was invisible to the check whose whole
+    job is to report unfilled slots. Same shape as the `.gitignore` defect this
+    repository already fixed once — two gates over one contract read one list, or
+    the newer one drifts and the tool disagrees with itself.
+    """
+
+    def test_the_two_modules_use_the_same_rule_object(self) -> None:
+        from governancekit import doctor as dr
+        from governancekit import install_agents as ia
+
+        self.assertIs(dr._PLACEHOLDER_RE, ia._PLACEHOLDER_RE)
+
+    def test_a_two_character_slot_is_reported_as_unfilled(self) -> None:
+        # The installer fills `{{AB}}`; the doctor used not to see it.
+        from governancekit import doctor as dr
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "AGENTS.md").write_text("x {{AB}}\n", encoding="utf-8")
+
+            self.assertIn("AB", dr._PLACEHOLDER_RE.findall((root / "AGENTS.md").read_text()))

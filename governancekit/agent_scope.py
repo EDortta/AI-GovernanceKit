@@ -119,11 +119,7 @@ def _copy_selected_sources(root: Path, destination: Path, sources: list[str]) ->
     """Give the analysis adapter a read-only-shaped workspace, not the project root."""
     for rel in sources:
         relative = Path(rel)
-        source = (root / relative).resolve()
-        try:
-            source.relative_to(root)
-        except ValueError as exc:
-            raise RuntimeError("scope source escaped the project root") from exc
+        source = _confined_source(root, rel)
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
@@ -251,15 +247,58 @@ def _credential_from_file(
     return secret.strip(), replace(provider, **overrides)
 
 
+# Areas inside the project that the kit treats as secret. Derived from the installer's
+# own constants rather than typed again — `.credentials/` is where the operator's real
+# tokens live, and the two state files are the LOCAL half that `_write_state` keeps out
+# of the tracked manifest precisely because it holds their name, paths and payloads.
+def _secret_areas() -> tuple[str, ...]:
+    from .install_agents import _CREDENTIALS_DIR, _OPERATOR_FILE, _SECRETS_FILE
+
+    return (_CREDENTIALS_DIR, _OPERATOR_FILE, _SECRETS_FILE)
+
+
+def _confined_source(root: Path, rel: str) -> Path:
+    """Resolve *rel* under *root*, refusing what escapes it or lands in a secret area.
+
+    Both readers below used to check containment only, and a symlink's TARGET is inside
+    the root — so a link committed under `docs/` made `.credentials/llm/openrouter.key`
+    an approved source and its content went into the payload sent to the provider. The
+    same provider whose key it was. Measured: the secret is NOT in git (git stores mode
+    120000, the link string), so the repository is clean and the leak happens on the
+    victim's checkout, against the victim's own credential store. Both facts an operator
+    would reach for — `.credentials/` is gitignored, git does not follow symlinks — are
+    true, and neither is a defence: they protect the REPOSITORY, and the payload does
+    not go through git.
+
+    Refusing every symlink was tried first and is too blunt. Measured, before any guard:
+    a monorepo whose `docs/` points OUTSIDE the root was already refused by containment,
+    so nothing was gained there; one pointing INSIDE the root — `docs/ -> shared/` — read
+    fine and is a legitimate layout. Blanket refusal cost that and bought nothing extra.
+
+    So the rule is about the destination, not the mechanism: a scope source may resolve
+    through as many links as the project likes, and may not come to rest in an area the
+    kit treats as secret. That also closes a second door the council did not find —
+    `docs/y.md -> .gk/secrets.json`, which is inside the root and holds local secrets.
+    """
+    path = (root / rel).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise RuntimeError("scope source escaped the project root") from exc
+    for area in _secret_areas():
+        guarded = (root / area).resolve()
+        if path == guarded or guarded in path.parents:
+            raise RuntimeError(
+                f"scope source resolves into {area}, which holds credentials: {rel}"
+            )
+    return path
+
+
 def read_confined_sources(root: Path, sources: list[str]) -> list[str]:
     """Read *sources*, refusing any path that resolves outside *root*."""
     text: list[str] = []
     for rel in sources:
-        path = (root / rel).resolve()
-        try:
-            path.relative_to(root)
-        except ValueError as exc:
-            raise RuntimeError("scope source escaped the project root") from exc
+        path = _confined_source(root, rel)
         text.append(f"--- {rel} ---\n{path.read_text(encoding='utf-8', errors='replace')}")
     return text
 

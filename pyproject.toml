@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-governancekit"
-version = "0.3.0"
+version = "0.3.2"
 description = "Local-first governance runtime tools for AI-assisted software delivery."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,3 +22,9 @@ governancekit = "governancekit.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["governancekit*"]
+
+# The drift snapshot is data, not code, and would otherwise be dropped from a
+# built wheel — leaving `refresh-kit-snapshot.py --check` unable to read what an
+# installed copy claims about the release it pins.
+[tool.setuptools.package-data]
+governancekit = ["_kit_snapshot.json", "_llm_catalog.json"]
