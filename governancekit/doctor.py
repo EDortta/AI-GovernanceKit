@@ -348,23 +348,30 @@ def _check_sibling_branch(root: Path) -> CheckResult:
     return CheckResult("sibling branch", True, f"branch '{branch}' clear of sibling ownership", advisory=True)
 
 
-_PLACEHOLDER_SCAN_PATHS = [
-    "AGENTS.md",
-    "CLAUDE.md",
-    ".cursorrules",
-    ".windsurfrules",
-    "GEMINI.md",
-    ".github/copilot-instructions.md",
-]
-
-
 def _check_unfilled_placeholders(root: Path) -> CheckResult:
-    """Fail if any kit placeholder token remains in installed files."""
+    """Fail if any kit placeholder token remains in installed files.
+
+    Scope is the same as `install-agents`/`configure` (AI-GovernanceKit#8): a fixed
+    list of six root files used to miss everything under a kit-owned directory
+    (`.docs/workflows/`, `.docs/agents/`), so a raw `{{TOKEN}}` there could pass this
+    check while `configure._scan` — the only one of the three that walked directories
+    — would have caught it. `_iter_scan_targets` is now the one walk all three share.
+    """
+    from .configure import _CONFIGURE_EXCLUDED_PATHS
+    from .install_agents import (
+        _FRESH_PATHS,
+        _PROJECT_SEED_PATHS,
+        _dest_rel,
+        _iter_scan_targets,
+    )
+
+    dest_paths = [
+        _dest_rel(rel) for rel in _FRESH_PATHS
+        if rel not in _PROJECT_SEED_PATHS and rel not in _CONFIGURE_EXCLUDED_PATHS
+    ]
     found: dict[str, list[str]] = {}
-    for rel in _PLACEHOLDER_SCAN_PATHS:
-        path = root / rel
-        if not path.is_file():
-            continue
+    for path in _iter_scan_targets(root, dest_paths):
+        rel = str(path.relative_to(root))
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -378,10 +385,17 @@ def _check_unfilled_placeholders(root: Path) -> CheckResult:
             f"{rel}: {', '.join(f'{{{{{t}}}}}' for t in tokens)}"
             for rel, tokens in found.items()
         )
+        # Bare `configure` prompts for nothing and exits 0 off a TTY — CI, an
+        # unattended agent — so the loop this remedy is meant to close never closes
+        # (AC-15; same defect `_check_host_identity` fixed one check up, one field
+        # over: `--set` names it, prose never did). `--set KEY=VALUE` works today and
+        # was undiscoverable from this message alone.
         return CheckResult(
             "unfilled placeholders",
             False,
-            f"kit not configured — run '{_command(root, 'configure')}' to fill: {detail}",
+            f"kit not configured — run '{_command(root, 'configure')} --set "
+            "KEY=VALUE' (repeatable; interactively, plain "
+            f"'{_command(root, 'configure')}' also prompts) to fill: {detail}",
         )
     return CheckResult("unfilled placeholders", True, "all placeholders filled")
 

@@ -22,6 +22,7 @@ from .install_agents import (
     _RETIRED_PLACEHOLDERS,
     _PLACEHOLDER_RE,
     _PROJECT_SEED_PATHS,
+    _iter_scan_targets,
     _dest_rel,
     _render_table,
     _render_file_text,
@@ -29,19 +30,6 @@ from .install_agents import (
     _report_refused_values,
     persist_placeholder_values,
 )
-from .path_safety import UnsafePathError, safe_path, safe_regular_file
-
-# Text file extensions worth scanning for placeholders. Kept deliberately small —
-# the kit's templates are Markdown / dotfiles / shell.
-_TEXT_SUFFIXES: frozenset[str] = frozenset({
-    ".md", ".txt", ".sh", ".bash", ".html", ".json", ".toml", ".cfg", ".ini",
-    ".yml", ".yaml", ".py", ".rules",
-})
-
-# Dotfiles (no suffix) that the kit ships with placeholders.
-_TEXT_NAMES: frozenset[str] = frozenset({
-    ".cursorrules", ".windsurfrules",
-})
 
 # Known kit placeholders. Only these are filled — arbitrary [WORD] tokens (e.g.
 # the doctor's own `[FAIL]` / `[HINT]` output samples in README) are left alone.
@@ -178,10 +166,6 @@ def run_configure_identity(
     return result
 
 
-def _is_text_file(path: Path) -> bool:
-    return path.suffix in _TEXT_SUFFIXES or path.name in _TEXT_NAMES
-
-
 def _scan(root: Path) -> dict[str, list[Path]]:
     """Map each known placeholder token in active kit-owned files.
 
@@ -189,28 +173,18 @@ def _scan(root: Path) -> dict[str, list[Path]]:
     scanned or changed by ``configure``.
     """
     found: dict[str, list[Path]] = {}
-    for rel in _FRESH_PATHS:
-        if rel in _PROJECT_SEED_PATHS or rel in _CONFIGURE_EXCLUDED_PATHS:
+    dest_paths = [
+        _dest_rel(rel) for rel in _FRESH_PATHS
+        if rel not in _PROJECT_SEED_PATHS and rel not in _CONFIGURE_EXCLUDED_PATHS
+    ]
+    for path in _iter_scan_targets(root, dest_paths):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
             continue
-        path = root / _dest_rel(rel)
-        if path.is_dir():
-            safe_path(root, path)
-            candidates = path.rglob("*")
-        else:
-            candidates = (path,)
-        for candidate in candidates:
-            if candidate.is_symlink():
-                raise UnsafePathError(f"refusing symlink in managed kit path: {candidate}")
-            if not safe_regular_file(root, candidate) or not _is_text_file(candidate):
-                continue
-            path = candidate
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            for token in _PLACEHOLDER_RE.findall(text):
-                if token in _KNOWN_TOKENS:
-                    found.setdefault(token, []).append(path)
+        for token in _PLACEHOLDER_RE.findall(text):
+            if token in _KNOWN_TOKENS:
+                found.setdefault(token, []).append(path)
     return found
 
 

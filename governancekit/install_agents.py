@@ -13,7 +13,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .path_safety import UnsafePathError, safe_path
+from .path_safety import UnsafePathError, safe_path, safe_regular_file
 
 REPO = "EDortta/AI-Agents"
 # Pinned to a tagged release (not the mutable "main" branch) so installs are
@@ -1668,6 +1668,57 @@ def _resolve_track_kit_docs(root: Path, cli_value: bool | None) -> bool:
 
 _PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]+)\}\}")
 
+# Text file extensions worth scanning for placeholders. Kept deliberately small —
+# the kit's templates are Markdown / dotfiles / shell.
+_TEXT_SUFFIXES: frozenset[str] = frozenset({
+    ".md", ".txt", ".sh", ".bash", ".html", ".json", ".toml", ".cfg", ".ini",
+    ".yml", ".yaml", ".py", ".rules",
+})
+
+# Dotfiles (no suffix) that the kit ships with placeholders.
+_TEXT_NAMES: frozenset[str] = frozenset({
+    ".cursorrules", ".windsurfrules",
+})
+
+
+def _is_text_file(path: Path) -> bool:
+    return path.suffix in _TEXT_SUFFIXES or path.name in _TEXT_NAMES
+
+
+def _iter_scan_targets(
+    root: Path, rel_paths: Iterable[str], *, exclude: frozenset[str] = frozenset()
+) -> Iterator[Path]:
+    """Walk every text file under *rel_paths*, one scope for every placeholder reader.
+
+    Shared by ``install-agents``, ``configure`` and ``doctor`` (AI-GovernanceKit#8):
+    before this, each had its own list and its own walk, and only ``configure``'s
+    actually descended into directories. ``_do_upgrade``/``_do_fresh`` return
+    directory entries as single items (``['AGENTS.md', '.docs']``), and
+    ``install-agents``/``doctor`` both stopped there without reading anything below
+    — so a raw ``{{TOKEN}}`` under ``.docs/workflows/`` passed both the fill pass and
+    the doctor check that was supposed to catch what the fill pass missed, while
+    `configure`'s independent `rglob` scan (the only one of the three that walked)
+    saw it correctly. A directory is walked with ``rglob``; a symlink anywhere in the
+    tree is refused, matching the guard ``configure`` already applied on its own.
+    """
+    for rel in rel_paths:
+        if rel in exclude:
+            continue
+        path = root / rel
+        if path.is_dir():
+            safe_path(root, path)
+            candidates: Iterable[Path] = path.rglob("*")
+        elif path.is_file():
+            candidates = (path,)
+        else:
+            continue
+        for candidate in candidates:
+            if candidate.is_symlink():
+                raise UnsafePathError(f"refusing symlink in managed kit path: {candidate}")
+            if not safe_regular_file(root, candidate) or not _is_text_file(candidate):
+                continue
+            yield candidate
+
 # A stored answer is text this process did not author: it comes from `.gk/manifest.json`,
 # the half of the state a team shares and commits. The cap exists for ONE reason — to
 # bound what a hostile or mistaken value can make a render pass allocate. It is not a
@@ -1980,12 +2031,11 @@ def _fill_placeholders(
 
     Returns every value in force after this run, for the caller to persist.
     """
-    # Collect all unique placeholders across installed files
+    # Collect all unique placeholders across installed files. `installed_paths` can
+    # (and does) carry directory entries such as `.docs` — `_iter_scan_targets` walks
+    # into them instead of skipping them; see its docstring for the bug this closes.
     placeholder_files: dict[str, list[Path]] = {}
-    for rel in installed_paths:
-        path = root / rel
-        if not path.is_file():
-            continue
+    for path in _iter_scan_targets(root, installed_paths):
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
