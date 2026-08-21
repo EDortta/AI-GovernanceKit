@@ -1970,3 +1970,39 @@ class WithdrawnFilesAreRemovedFromTargetsTest(unittest.TestCase):
     def test_a_target_without_it_is_a_no_op(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(ia._remove_withdrawn(Path(d)), [])
+
+    def test_the_withdrawn_shell_installer_is_removed(self) -> None:
+        # AC-30 (folding AC-6, AC-10): the shell installer and the Python installer
+        # each wrote the same manifest and the same managed `.gitignore` block with no
+        # shared source of truth, and diverged in ways that dropped data (a manifest
+        # key one added and the other did not know about; a `.gitignore` suffix
+        # guarding the operator's own name and prose). The operator's decision was
+        # retirement, not reconciliation.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "scripts").mkdir()
+            (root / "scripts" / "install-agents-kit.sh").write_text(
+                "#!/usr/bin/env bash\n", encoding="utf-8"
+            )
+
+            self.assertEqual(
+                ia._remove_withdrawn(root), ["scripts/install-agents-kit.sh"]
+            )
+            self.assertFalse((root / "scripts" / "install-agents-kit.sh").exists())
+
+
+class ShellInstallerIsNoLongerShippedTest(unittest.TestCase):
+    """AC-30: this kit stops seeding/upgrading the shell installer it now withdraws.
+
+    Shipping and withdrawing the same path in the same release would fight itself —
+    `--upgrade` re-copying what `_remove_withdrawn` just deleted.
+    """
+
+    def test_fresh_paths_no_longer_names_it(self) -> None:
+        self.assertNotIn("scripts/install-agents-kit.sh", ia._FRESH_PATHS)
+
+    def test_upgrade_paths_no_longer_names_it(self) -> None:
+        self.assertNotIn("scripts/install-agents-kit.sh", ia._UPGRADE_PATHS)
+
+    def test_it_is_named_in_withdrawn_paths(self) -> None:
+        self.assertIn("scripts/install-agents-kit.sh", ia._WITHDRAWN_PATHS)

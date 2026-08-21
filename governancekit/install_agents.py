@@ -101,7 +101,6 @@ _FRESH_PATHS: list[str] = [
     *_PROJECT_SEED_PATHS,
     "handoff.md",
     "new-tag.sh",
-    "scripts/install-agents-kit.sh",
     "scripts/agent-worktree.sh",
 ]
 # `templates` is deliberately NOT installed, and the reason is worth keeping.
@@ -139,7 +138,6 @@ _UPGRADE_PATHS: list[str] = [
     ".github/copilot-instructions.md",
     ".amazonq/rules/ai-agents.md",
     "new-tag.sh",
-    "scripts/install-agents-kit.sh",
     "scripts/agent-worktree.sh",
     *_KIT_DOC_PATHS,
 ]
@@ -1355,8 +1353,24 @@ def _write_state(
 # shell installer copied it (`copy_file_replace ".docs/index.html"`), and the shell
 # installer is being retired. Withdrawing it here reaches the targets that already have
 # it, which stopping the copy cannot.
+#
+# `scripts/install-agents-kit.sh` (AC-30, folding AC-6 and AC-10): the operator decided
+# the shell installer retires rather than gets reconciled with this one. Two installers
+# writing the same manifest and the same managed `.gitignore` block, with no shared
+# source of truth, produced two concrete defects (AC-6: the shell's `write_manifest`
+# drops any key the Python side added that it does not itself know about; AC-10: the
+# shell's `.gitignore` rewrite drops suffixes — `*.kit-new`, `*.pre-draft` — that guard
+# the operator's own name and prose) and is a standing source of more of the same class.
+# Removing it from `_FRESH_PATHS`/`_UPGRADE_PATHS` stops this kit from re-seeding it;
+# withdrawing it here reaches every project that already has a copy, the same way
+# `.docs/index.html` was reached. The source repository (AI-Agents) retiring its own
+# copy of the script — and the docs that tell an operator to run it — is separate,
+# tracked work: this kit's withdrawal does not wait on it, because a stale local copy
+# left on disk after the source stops shipping it is exactly the kind of drift this
+# mechanism exists to close.
 _WITHDRAWN_PATHS: tuple[str, ...] = (
     ".docs/index.html",
+    "scripts/install-agents-kit.sh",
 )
 
 
