@@ -408,7 +408,7 @@ def _check_concurrency(root: Path) -> CheckResult:
     if survey.beyond_current == 0:
         return CheckResult("concurrency", True, "nothing open beyond this checkout", advisory=True)
     detail = ", ".join(
-        f"{item.branch}{'' if item.unmerged else ' (merged)'}"
+        f"{item.branch}{' (unknown)' if item.unmerged is None else ('' if item.unmerged else ' (merged)')}"
         for item in survey.items
         if not item.is_current
     )

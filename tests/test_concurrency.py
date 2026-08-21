@@ -96,6 +96,34 @@ def test_a_worktree_with_nothing_unmerged_is_reported_as_removable(tmp_path) -> 
     assert "can be removed" in cc.format_survey(survey)
 
 
+def test_a_failed_unmerged_read_is_never_reported_as_removable(monkeypatch, tmp_path) -> None:
+    # `_unmerged_count` used to fold a failed `git rev-list` into 0, and 0 is exactly
+    # `removable`'s trigger — a read failure read as "merged, safe to delete". This
+    # pins the fix: failure must surface as unknown, never as a confident zero.
+    root = _repo(tmp_path / "unknown")
+    _commit_on(root, "feature/uc-006/w", "work")
+    _git(root, "worktree", "add", "-q", str(tmp_path / "wt-w"), "feature/uc-006/w")
+
+    real_git = cc._git
+
+    def _flaky(path: Path, *args: str) -> str | None:
+        if args[:2] == ("rev-list", "--count"):
+            return None
+        return real_git(path, *args)
+
+    monkeypatch.setattr(cc, "_git", _flaky)
+
+    survey = cc.survey_concurrency(root)
+
+    target = next(item for item in survey.items if item.branch == "feature/uc-006/w")
+    assert target.unmerged is None
+    assert target.removable is False
+    assert target not in survey.removable
+    rendered = cc.format_survey(survey)
+    assert "unmerged count unknown" in rendered
+    assert "can be removed" not in rendered
+
+
 def test_the_current_checkout_is_never_reported_as_removable(tmp_path) -> None:
     root = _repo(tmp_path / "self")
 
