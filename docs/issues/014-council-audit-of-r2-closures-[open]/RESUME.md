@@ -2,10 +2,11 @@
 
 - work_id: WK-20260813-council-audit-of-r2-closures
 - date: 2026-08-13
-- status: `[draft]` — Fase 0 (AC-1, AC-2/3/4/5, AC-25, AC-28) commitada em `development`
-  (`74bfefa`, `3effe89`, 0.3.1→0.3.2, 2026-08-14). Execução noturna **desarmada pelo
-  operador** — ver seção abaixo. Fase 1 (`CONFIRM-TREE`, AC-13/20/21/22/28-emenda/29,
-  o `manifest.override.json`) sem código implementado.
+- status: `[open]` — Fase 0 commitada (`74bfefa`, `3effe89`, 0.3.2, 2026-08-14).
+  **Fase 1 implementada em 2026-08-26** na branch `feature/mutirao-20260826-batch`
+  (`AC-29`, `AC-22`, `AC-21`, dissoluções `AC-20`/`AC-13`, emenda `AC-28`,
+  `CONFIRM-TREE` confirmado) — ver seção "Fase 1" abaixo. Execução noturna segue
+  **desarmada pelo operador**.
 - origem: pedido do operador, 2026-08-13 — `council.md` §4 `[DEFAULT] Whenever the operator asks`
 
 ## O que aconteceu
@@ -332,6 +333,99 @@ texto começando com `PASS` — rodar `claude -p` manualmente no MESMO ambiente 
 cron usaria (sem TTY, sem o shell de login) é o primeiro passo, não assumir que o
 código da Fase 1 está ruim.
 
-**Next (DO THIS FIRST):** diagnosticar o `claude -p` em contexto de cron antes de
-rearmar; só depois voltar a implementar `CONFIRM-TREE`/`AC-13`/`AC-20..22`/
-`AC-28-emenda`/`AC-29` (o `manifest.override.json`, Fase 1 do `PLANO-UNIFICADO.md`).
+**Next da sessão de 2026-08-14 (superado):** a Fase 1 foi implementada em sessão
+interativa em 2026-08-26 (abaixo). O diagnóstico do `claude -p` em cron continua
+pendente e só importa se a esteira noturna voltar a ser armada.
+
+---
+
+## Fase 1 — implementada em 2026-08-26 (`feature/mutirao-20260826-batch`)
+
+Sessão interativa (Squad D do mutirão de backlog). Commits `15818a4..dd1b8b6`
+mais o lote de correções do concílio de bloco. Suíte: **643 → 678 passed**
+(derivado de `pytest` antes/depois; o `1 skipped` intermediário era o teste de
+paridade do shell installer, aposentado por escrito — ver abaixo). **36 testes
+novos** (`git diff development -- tests/ | grep -c "^+    def test_"`).
+
+| item | estado |
+|---|---|
+| `AC-29` | fechado — `.gk/manifest.override.json` é a única metade local (metadata + hashes derivados de valor local, 0600 desde a criação); `_read_state` funde com override vencendo; migração lê-funde-escreve-apaga o par legado, nessa ordem |
+| `AC-22` | fechado pelo mecanismo do split, com **proveniência pegajosa**: entrada local só volta à metade compartilhada com re-hash desta corrida + conteúdo comprovadamente limpo. A 1ª versão testava o disco de hoje e a lente técnica reproduziu dois vazamentos (arquivo apagado; reescrito limpo) — ambos com regressão |
+| `AC-21` | fechado — `configure --unset` (com dedupe, aviso de arquivo corrompido, e os portadores de identidade NOMEADOS), `remove-agents apply --purge-state`, plano nomeia estado sobrevivente com remédio POR ITEM, backup com dado renderizado é anunciado |
+| `AC-20` | dissolvido em teste (3 portas: leitura filtrada, tabela de render, próxima escrita — 3 mutações vermelhas) |
+| `AC-13` | dissolvido em teste (chave não declarada nomeada e nunca persistida; declarada local vai ao override) |
+| `AC-28-emenda` | registro corrigido na própria issue: o implementado foi `OPERATOR_EMAIL` em `identity.json` via `mailbox.py`, não `SMTP_ACCOUNT` de volta — decisão, não deriva |
+| `CONFIRM-TREE` | **confirmado** pela lente second caller do concílio de bloco: AC-25 pass (receita da issue reproduzida, extractor recebeu zero bytes de `.credentials/`, inclusive grafia `./`), AC-28 pass (SMTP_ACCOUNT órfão reaproveitado antes E depois da migração AC-29) |
+
+### Concílio de bloco — rodada 1, três lentes (2026-08-26)
+
+Lentes independentes: *sweep skeptic*, *claim auditor*, *second caller* (este com
+o mandato CONFIRM-TREE). As quatro contagens, derivadas dos JSONs das lentes
+(registro em `.gk/council/`):
+
+| contagem | número |
+|---|---|
+| levantados | 8 achados + 8 perguntas (sweep 2+3 · second caller 4+2 · claim auditor 2+3) |
+| sobreviveram ao §2 | **8** |
+| viraram teste | **6** (mutação vermelha cada — verificado duas vezes: por mim e pelo fix auditor da r2, 6/6 red. A derivação `git diff -- tests/` sobre o lote devolve **8** porque dois testes da r2 entraram no mesmo lote não commitado; os 6 da r1 são os de `test_elimination.py` menos os dois nomeados na seção r2) |
+| fechados sem teste | 2 — CA-1 (aposentadoria escrita do teste de paridade morto) e SC-3 (aceitação de risco abaixo) |
+| perguntas em aberto | 8 → **4 tratadas na própria rodada** (janela 0600 fechada; comentário "half a team shares" retocado; docstring `state.json` retocado; `--allow-unverified` documentado em ptbr/es); **4 ficam** (discover.py monitorar; gate por `state_version` — operador; upgrade e2e com rede; cobertura parcial da lente de segurança caída). A primeira redação dizia "3 respondidas / 5 ficam" — agrupava dois retoques como um e errava a subtração; o fix auditor da r2 conferiu contra o registro |
+
+Os 8 achados: F1 ressurreição do valor eliminado a partir dos portadores de
+identidade (unset agora os nomeia; detecção nunca edita `.credentials/`);
+F2 `_surviving_state` omitia os dois portadores; SC-1 `--unset` com chave
+duplicada crashava sem eliminar; SC-2 remédio-cobertor mentia para o diretório
+de backup (remédio por item agora); SC-3 (abaixo); SC-4 dois `apply` no mesmo
+segundo estouravam no mkdir; CA-1 teste de paridade morto rotulado de "skip
+ambiental" com mensagem falsa; CA-2 o warning de digests corrompia o stdout de
+`plan --json` (foi para stderr, com teste de pureza).
+
+### Concílio de bloco — rodada 2, duas lentes (2026-08-26)
+
+Lentes: *regression hunter* e *fix auditor* (o fix auditor caiu por limite de
+sessão após confirmar os 6 triggers de código e foi CONCLUÍDO por uma segunda
+instância da mesma lente — ainda rodada 2, nunca uma terceira). As quatro
+contagens, derivadas dos relatórios (registro r2 em `.gk/council/`):
+
+| contagem | número |
+|---|---|
+| levantados | 3 achados + 3 perguntas (regression hunter 1+3 · fix auditor 2+0) |
+| sobreviveram ao §2 | **3** |
+| viraram teste | **2** (sonda de carrier em symlink; plano revisado como sobrevivente/purgável — mutação vermelha cada) |
+| fechados sem teste | 2 — as duas correções de escrituração desta própria tabela |
+| perguntas em aberto | 3 → 1 fechada com teste (plano `.gk/remove-agents-plan.json` nomeado e purgado); ficam 2 (TOCTOU de dois `apply` CONCORRENTES no mesmo segundo — aceito como corner case, o erro sai limpo; alinhamento do comentário de `_CONFIGURE_EXCLUDED_PATHS` com a leitura tolerante — o docstring do probe já explica) |
+
+Classificação (§ obrigatório): **3 introduzido-pela-r1** (a sonda de carriers
+que levantava `UnsafePathError` em symlink DEPOIS da mutação e ANTES do
+relatório — a classe exata que a épica audita, introduzida pela correção F1; e
+as duas divergências de contagem no RESUME), **0 aberto-da-r1**, **0
+pré-existente** entre os achados (a pergunta do plano era pré-existente e fechou
+com teste). Todos os 8 fechamentos da r1 confirmados: 6/6 mutações vermelhas
+pelo fix auditor, SC-3 auditada como honesta (os três mitigantes verificados
+contra o código, inclusive o `_gitignore_entries` do kit velho em
+`development`).
+
+### Aceitação de risco escrita — SC-3 (downgrade / frota mista)
+
+Um kit **pré-0.3.3** rodando `_write_state` num alvo já migrado: (a) reescreve
+`.gk/.gitignore` sem a linha `manifest.override.json` — o override fica a um
+`git add -A` de rastreado; (b) recria `operator.json`; (c) na volta ao kit novo,
+o override antigo vence a resposta mais nova do par legado. **Não corrigido,
+deliberadamente**: o código velho não é alcançável por código novo, e gate-ar
+por `state_version` quebraria a frota inteira por causa de um cenário de
+downgrade que o parque não pratica (o parque atualiza, não regride). Mitigantes:
+o override nasce e permanece 0600; a linha do root `.gitignore` gerenciado só é
+regravada por instalador, e o kit velho que a regrava também regrava a legada
+(`operator.json` continua ignorado). A saída real é o parque migrar para 0.3.3+
+— mesma resposta da lição de 2026-08-11 ("onde mora a cópia que decide?").
+Decisão de gate-ar por versão fica com o operador (pergunta aberta do concílio).
+
+### Não validado nesta fase
+
+- Fluxo `install-agents --upgrade` ponta a ponta com download real (rede) — o
+  second caller cobriu por dupla chamada direta de `_write_state` e pela suíte.
+- A lente de segurança do pré-commit do AC-29 caiu por limite de sessão após
+  confirmar parcialmente os quesitos 1–6; o que ela não terminou (janela 0600 —
+  depois fechada via claim auditor — e DoS de leitura em `_carries_local_value`)
+  ficou coberto por revisão própria, não por lente independente.
+- `run_plan.py`/esteira noturna: intocada, segue desarmada.

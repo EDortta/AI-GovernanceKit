@@ -944,18 +944,15 @@ def _run_remove_agents(args) -> int:
                 "Not covered by --purge-state: the git history (a value ever "
                 "committed stays in it) and the backup this run just wrote."
             )
-        elif result.surviving_state:
-            from .remove_agents import _PERSONAL_STATE_FILES
+        if result.surviving_state:
+            from .remove_agents import _survivor_description, _survivor_remedy
 
-            described = dict(_PERSONAL_STATE_FILES)
             print("State that survives de-adoption and may carry the operator's data:")
             for rel in result.surviving_state:
-                detail = described.get(rel, "backups written by remove-agents apply")
-                print(f"  {rel} — {detail}")
-            print(
-                "  Eliminate with `remove-agents apply --purge-state`, or one "
-                "value at a time with `configure --unset <TOKEN>`."
-            )
+                print(
+                    f"  {rel} — {_survivor_description(rel)} "
+                    f"[{_survivor_remedy(rel)}]"
+                )
     return 0
 
 
@@ -970,7 +967,9 @@ def _run_configure(args) -> int:
     if args.unset_keys:
         from .install_agents import unset_placeholder_values
 
-        removed, unreadable = unset_placeholder_values(args.root, args.unset_keys)
+        removed, unreadable, elsewhere = unset_placeholder_values(
+            args.root, args.unset_keys
+        )
         print("AI GovernanceKit configure --unset")
         for key, sources in removed.items():
             if sources:
@@ -990,6 +989,16 @@ def _run_configure(args) -> int:
                 + ", ".join(unreadable)
                 + "\n  A stored value may survive inside — inspect or delete "
                 "them by hand; this command does not guess."
+            )
+        for key, carriers in elsewhere.items():
+            # Without this line the elimination was an affirmation the next
+            # command contradicted: `configure` re-inherits the value from these
+            # carriers and persists it again — the sweep lens reproduced the
+            # resurrection end to end.
+            print(
+                f"  Note: {key} also lives in: " + ", ".join(carriers)
+                + "\n  Not touched by this command — and `configure` will "
+                "re-inherit it from there until you remove it by hand."
             )
         print(
             "  Files already rendered with a value, and the git history, are "

@@ -569,17 +569,22 @@ class TheFailClosedWarningIsPrintedOncePerRunTest(unittest.TestCase):
                 _seed(root, f".docs/agents/doc{i}.md", "x\n")
             _manifest(root, {})
 
+            # stderr since the block council's claim auditor caught the warning
+            # corrupting `plan --json`'s stdout: the once-per-run property is
+            # unchanged, only the stream moved — and stdout must stay CLEAN.
             buffer = _io.StringIO()
+            clean_stdout = _io.StringIO()
             with _mock.patch(
                 "governancekit.remove_agents._seeded_credential_digests",
                 return_value={},
-            ), _ctx.redirect_stdout(buffer):
+            ), _ctx.redirect_stdout(clean_stdout), _ctx.redirect_stderr(buffer):
                 build_removal_plan(root)
 
             self.assertEqual(
                 buffer.getvalue().count("no kit snapshot digests"), 1,
                 buffer.getvalue()[:400],
             )
+            self.assertNotIn("no kit snapshot digests", clean_stdout.getvalue())
 
 
 class TheSharedManifestCannotReachCredentialsTest(unittest.TestCase):

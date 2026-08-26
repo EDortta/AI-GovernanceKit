@@ -44,3 +44,30 @@ bloco a partir do release pinado — com a regra de propriedade preservada
 ### DoD
 - Projeto novo instalado pelo caminho Python aponta o agente para os contratos do
   kit sem passo manual, ou o gap está aceito por escrito com o `doctor` avisando.
+
+## (d) O teste de paridade do bloco `.gitignore` foi aposentado COM o instalador
+
+`tests/test_doctor_gitignore.py` trazia `ShellInstallerWritesTheSameBlockTests`,
+que comparava o bloco escrito pelo `install-agents-kit.sh` do checkout vizinho
+contra `SECRET_IGNORE_PATTERNS`. Com o script retirado (AC-30; AI-Agents PR #19),
+o teste caía num `skipTest` permanente com mensagem FALSA ("checkout is not
+available" — o checkout existe; o script não). Detectado independentemente pelo
+claim auditor do concílio de bloco de 2026-08-26 e pelo item 6 da "Coordenação
+pendente" da épica 006 do AI-Agents. **Resolvido em 2026-08-26**: a classe foi
+aposentada por escrito (tombstone no próprio arquivo), não deixada verde sem
+testar nada.
+
+## Regra do release único (coordenação com AI-Agents v1.3.0)
+
+Quando o operador cortar a `v1.3.0` do AI-Agents (pós-merge da PR #19 de lá), o
+bump do GovernanceKit tem de sair num ÚNICO release: `DEFAULT_REF=v1.3.0` +
+checksum em `KNOWN_TARBALL_SHA256` + atualização das 4 páginas que citam o ref.
+Um release intermediário apagaria o script dos alvos enquanto reinstala um
+`AGENTS.md` de `v1.2.1` que manda rodá-lo. **O que esta entrega já deixou
+pronto**: `refresh-kit-snapshot.py` sobrevive ao tarball sem o script (fallback
+para `_PROTECTED_FILES`), a landing não ensina mais `curl|bash`, o teste que
+exigia a URL do script agora afirma a ausência, `--allow-unverified` existe no
+parser, e o teste de paridade foi aposentado. **O que fica para o bump**: o par
+ref+checksum e as páginas — passo do operador, no checklist de corte de tag do
+AI-Agents (épica 006 de lá, `tag-cut-checklist.md`). Nota de contexto: as tags
+`v1.1.8`/`v1.2.0`/`v1.2.1` existem no origin; o pino atual `v1.2.1` está íntegro.

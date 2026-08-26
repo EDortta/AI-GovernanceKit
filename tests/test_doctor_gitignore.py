@@ -204,32 +204,22 @@ class GeneratedBlockMatchesRealGitSemanticsTests(unittest.TestCase):
                 self.assertFalse(ignored, f"{probe} is a template but the block hides it")
 
 
-class ShellInstallerWritesTheSameBlockTests(unittest.TestCase):
-    """Two installers, one contract — the A3 defect, one level up.
-
-    `scripts/install-agents-kit.sh` in the companion AI-Agents checkout is the other
-    install path. It wrote `.gk/.gitignore` and `.credentials/.gitignore` and never
-    touched the project's own file, so a shell-installed project failed the mandatory
-    `gitignore secrets` gate from birth — and the failure message named a Python
-    command it had never run. Fixing only the Python side would have left half the
-    park broken while the issue read as closed.
-    """
-
-    def _shell_block(self) -> list[str]:
-        script = (
-            Path(__file__).resolve().parents[2]
-            / "Agents" / "scripts" / "install-agents-kit.sh"
-        )
-        if not script.is_file():
-            self.skipTest("companion AI-Agents checkout is not available")
-        text = script.read_text(encoding="utf-8")
-        start = text.index("write_root_gitignore_secrets() {")
-        body = text[start:]
-        opening = body.index("cat <<'IGN'\n") + len("cat <<'IGN'\n")
-        return body[opening:body.index("\nIGN", opening)].splitlines()
-
-    def test_the_shell_block_lists_exactly_the_python_patterns(self) -> None:
-        self.assertEqual(sorted(self._shell_block()), sorted(SECRET_IGNORE_PATTERNS))
+# ── ShellInstallerWritesTheSameBlockTests: RETIRED DELIBERATELY, 2026-08-26 ──
+#
+# The class compared the `.gitignore` block written by AI-Agents'
+# `install-agents-kit.sh` against `SECRET_IGNORE_PATTERNS`. AC-30 retired that
+# installer (this kit withdraws installed copies; the source repo removed it in
+# AI-Agents PR #19), so the parity SUBJECT no longer exists — there is one
+# implementation left, and it is the one every other test in this module pins.
+#
+# What must not survive is the shape the test had fallen into: when the script
+# vanished from the sibling checkout, `skipTest("companion AI-Agents checkout is
+# not available")` turned it permanently green-by-silence with a message that was
+# FALSE (the checkout exists; the script does not) — a dead test wearing an
+# environmental label, caught by the block council's claim auditor and named
+# independently as coordination item 6 of the AI-Agents epic 006. A parity test
+# whose counterpart is retired is retired WITH it, in writing — never left to
+# skip forever. See docs/issues/ac30-aftermath-residue-and-seeding-[open].md.
 
 
 class AlreadyTrackedSecretTests(unittest.TestCase):

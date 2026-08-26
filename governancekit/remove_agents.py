@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
@@ -156,8 +157,18 @@ def _report_missing_credential_digests() -> None:
     warning was written for: the two changes were made for opposite reasons and
     cancelled. Empty is the condition that matters, however it arose.
     """
-    print("\nWarning: no kit snapshot digests to compare .credentials/ against.")
-    print("  De-adoption will leave the kit's own scaffolding in place.")
+    # stderr, not stdout: `plan --json` promises machine-readable stdout, and a
+    # council's claim auditor caught this warning arriving BEFORE the payload —
+    # three lines where json.loads expects one. A warning is exactly what stderr
+    # is for; the operator still sees it, the JSON consumer never does.
+    print(
+        "\nWarning: no kit snapshot digests to compare .credentials/ against.",
+        file=sys.stderr,
+    )
+    print(
+        "  De-adoption will leave the kit's own scaffolding in place.",
+        file=sys.stderr,
+    )
 
 
 @dataclass(frozen=True)
@@ -506,16 +517,66 @@ _PERSONAL_STATE_FILES: tuple[tuple[str, str], ...] = (
     (".gk/secrets.json", "legacy local sensitive values"),
     (".gk/manifest.json",
      "shared kit state (file hashes, ref — not identity, but kit residue)"),
+    # Raised as a round-2 council question: the reviewed plan survives `apply`,
+    # and under `--with-llm` it carries `project_content` — extracted text that
+    # can hold the operator's data. Same rule as its siblings: named as a
+    # survivor, eliminated by --purge-state.
+    (".gk/remove-agents-plan.json",
+     "the reviewed removal plan — may carry LLM-extracted project content"),
+)
+
+# Identity carriers OUTSIDE `.gk/` that also hold the operator's data and that
+# neither `--purge-state` nor `configure --unset` touches: `.credentials/` is a
+# no-write zone for cleanup commands (it holds the operator's real tokens), and
+# the host identity file is the §8b identity contract. The council's sweep lens
+# reproduced the cost of not naming them: a purge reported "complete" while the
+# operator's name survived in both — and `configure` re-inherited it from there,
+# resurrecting the very value `--unset` had just eliminated. Named, with the
+# honest remedy: remove by hand.
+_IDENTITY_CARRIERS: tuple[tuple[str, str], ...] = (
+    (".credentials/identity.json",
+     "operator identity/address (credential store — remove by hand; cleanup "
+     "commands never write here)"),
+    (".governancekit-identity.json",
+     "host identity (operator name, machine paths — remove by hand or "
+     "reconfigure)"),
+)
+
+# What each surviving path's REAL remedy is. The first cut printed one blanket
+# remedy ("--purge-state or --unset") under every row, and a council lens ran it
+# against the backup directory: neither command touches backups, so the plan
+# named a cure that provably does not cure — the exact output-vs-disk class this
+# epic audits.
+_SURVIVOR_REMEDIES: dict[str, str] = {
+    ".gk/remove-agents-backup/":
+        "delete the directory yourself once the restore point is no longer "
+        "needed; --purge-state does not touch it",
+    ".credentials/identity.json": "remove by hand; no kit command writes here",
+    ".governancekit-identity.json": "remove by hand, or reconfigure identity",
+}
+_DEFAULT_SURVIVOR_REMEDY = (
+    "eliminate with `remove-agents apply --purge-state` or one value at a time "
+    "with `configure --unset <TOKEN>`"
 )
 
 
 def _surviving_state(root: Path) -> list[str]:
-    """The state files that exist now and will still exist after `apply`."""
+    """State that exists now, carries the operator's data, and survives `apply`."""
     surviving = [rel for rel, _ in _PERSONAL_STATE_FILES if (root / rel).is_file()]
+    surviving += [rel for rel, _ in _IDENTITY_CARRIERS if (root / rel).is_file()]
     backups = root / ".gk/remove-agents-backup"
     if backups.is_dir() and any(backups.iterdir()):
         surviving.append(".gk/remove-agents-backup/")
     return surviving
+
+
+def _survivor_description(rel: str) -> str:
+    described = dict(_PERSONAL_STATE_FILES) | dict(_IDENTITY_CARRIERS)
+    return described.get(rel, "backups written by remove-agents apply")
+
+
+def _survivor_remedy(rel: str) -> str:
+    return _SURVIVOR_REMEDIES.get(rel, _DEFAULT_SURVIVOR_REMEDY)
 
 
 def build_removal_plan(root: Path, *, with_llm: bool = False, extractor: Callable[[Path, str, str, dict[str, str]], tuple[str, str, float]] = _llm_extract) -> RemovalPlan:
@@ -705,7 +766,17 @@ def apply_removal_plan(
     purge_state: bool = False,
 ) -> ApplyResult:
     root = root.resolve()
-    backup_dir = root / ".gk/remove-agents-backup" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    # The stamp has one-second granularity, and two applies inside the same
+    # second used to die on a raw `Errno 17` from the exist_ok=False mkdir —
+    # found by the second-caller lens the moment the remedy text started sending
+    # operators back for a second apply. A suffix keeps both runs' backups.
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    backup_parent = root / ".gk/remove-agents-backup"
+    backup_dir = backup_parent / stamp
+    suffix = 0
+    while backup_dir.exists():
+        suffix += 1
+        backup_dir = backup_parent / f"{stamp}-{suffix}"
     # By ACTION, not by classification. `action` IS the decision the plan reached;
     # `classification` is the explanation it printed. Re-deciding here from the
     # explanation is the second source of truth that produced the defect: the plan
@@ -811,14 +882,14 @@ def format_removal_plan(plan: RemovalPlan) -> str:
         # AC-21: state the plan does not touch, named HERE because a plan that
         # hides what survives is a plan the operator cannot review. These carry
         # the operator's data; elimination is explicit, never a silent default.
+        # The remedy is PER ITEM: one blanket cure named commands that provably
+        # do not cover the backup directory (second-caller lens, round 1).
         lines.append("state that survives apply (carries the operator's data):")
-        described = dict(_PERSONAL_STATE_FILES)
         for rel in plan.surviving_state:
-            detail = described.get(rel, "backups written by remove-agents apply")
-            lines.append(f"  survives: {rel} — {detail}")
-        lines.append(
-            "  eliminate with `remove-agents apply --purge-state` or "
-            "`configure --unset <TOKEN>`; the git history is not covered"
-        )
+            lines.append(
+                f"  survives: {rel} — {_survivor_description(rel)} "
+                f"[{_survivor_remedy(rel)}]"
+            )
+        lines.append("  the git history is not covered by any of these")
     lines.append("LLM extraction is a proposed patch only; apply requires explicit acceptance after review.")
     return "\n".join(lines)

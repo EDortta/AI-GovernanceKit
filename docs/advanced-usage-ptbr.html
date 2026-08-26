@@ -51,6 +51,7 @@ governancekit --root /projeto install-agents
 
 # Atualização de uma instalação existente
 governancekit --root /projeto install-agents --upgrade</code></pre>
+    <p><code>install-agents --allow-unverified</code> instala um tarball sem checksum conhecido. Sem o flag, um ref não pinado é recusado em vez de avisado: o kit não instala o que não consegue verificar. O uso não verificado avisa em stderr.</p>
     <table>
       <thead><tr><th>Parâmetro</th><th>Descrição</th></tr></thead>
       <tbody>

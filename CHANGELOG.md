@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-26
+
+Fase 1 do PLANO-UNIFICADO da épica 014 (`AC-29`, `AC-21`, e as dissoluções
+`AC-20`/`AC-22`/`AC-13`), mais os fechamentos de segurança do mutirão.
+
+### Added
+
+- **`.gk/manifest.override.json` (AC-29)** — the one LOCAL half of the state:
+  identity answers, sensitive values, and the hashes of files rendered with
+  them. Merges over the tracked manifest on read (override wins) and never
+  reaches it on write. The legacy pair (`operator.json`, `secrets.json`) is
+  read, migrated in, and deleted on the next write.
+- **`configure --unset KEY` (AC-21)** — eliminates a stored answer from the
+  state files, reporting exactly which file each key left. Rendered files and
+  the git history are explicitly out of reach, and the message says so.
+- **`remove-agents apply --purge-state` (AC-21)** — explicit elimination of the
+  local state files after de-adoption; the plan now NAMES the state that
+  survives `apply` and says it carries the operator's data, and a backup that
+  copies rendered personal data is announced (retention: kept until deleted).
+- **`install-agents --allow-unverified`** — the escape hatch the checksum
+  refusal has named since it was written, now actually accepted by the parser.
+  Off by default; the unverified install warns on stderr.
+
+### Fixed
+
+- **AC-22** — the digest of a file rendered with a local value no longer lands
+  in the committed manifest, and provenance is sticky: a previously-local entry
+  only returns to the shared half on a fresh hash of provably clean content
+  (two leak paths — deleted file, clean rewrite — reproduced by the pre-commit
+  council and regression-tested).
+- **`doctor`'s manifest check reads both halves** — it was blind to
+  override-routed files: a deleted rendered `AGENTS.md` still produced
+  "all tracked kit paths present".
+- **AC-20 / AC-13 dissolved into tests** — a poisoned shared manifest cannot
+  reach the render table nor the next write; `configure --set` with an
+  undeclared key is named and never persisted anywhere.
+- **The landing page stopped teaching `curl | bash` of the retired shell
+  installer** (AC-30 aftermath; the ecosystem's own security-standards.md
+  forbids curl|bash) — replaced by the supported `governancekit install-agents`.
+- **`scripts/refresh-kit-snapshot.py` survives a release without the shell
+  installer** — it died on the absence, freezing the snapshot at the last
+  dual-installer world; `protected_root_files` now falls back to the runtime's
+  own list, the only implementation left.
+- The operator's real e-mail address left the docs examples
+  (`docs/advanced-usage*.html`) and test fixtures.
+
 ## [0.3.2] - 2026-08-14
 
 ### Fixed

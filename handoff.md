@@ -1,5 +1,45 @@
 # Handoff
 
+## [2026-08-26] Fase 1 do WK-20260813-council-audit-of-r2-closures — implementada (Squad D, mutirão)
+
+- branch: `feature/mutirao-20260826-batch` (base `development`, que segue 8 commits
+  à frente de `origin/development` — a PR sinaliza e lista os 8). `main` intocada.
+- RESUME: `docs/issues/014-council-audit-of-r2-closures-[open]/RESUME.md` (seção
+  "Fase 1 — implementada em 2026-08-26")
+- work_id: `WK-20260813-council-audit-of-r2-closures` (fase) + itens 012/011/ac30
+
+### Entregue
+
+- **012** renomeada `[finished]`; **011** com front-matter corrigido (a conta dos
+  fechamentos da rodada 2 agora fecha: 10 + 6, ambiguidade de numeração registrada).
+- **014 → `[open]`**, emenda do AC-28 registrada como decisão (OPERATOR_EMAIL via
+  mailbox, não SMTP_ACCOUNT de volta).
+- **Fase 1**: AC-29 (`.gk/manifest.override.json`, migração do par legado, 0600
+  desde a criação), AC-22 (hash de arquivo renderizado sai da metade commitada,
+  proveniência pegajosa), AC-21 (`configure --unset`, `remove-agents apply
+  --purge-state`, plano nomeia sobreviventes com remédio por item, backup
+  anunciado), AC-20/AC-13 dissolvidos em teste, CONFIRM-TREE confirmado (AC-25 e
+  AC-28 pass por reprodução).
+- **AC-30 aftermath**: landing sem `curl|bash`, `refresh-kit-snapshot.py`
+  sobrevive ao tarball sem o shell installer, teste de paridade aposentado por
+  escrito, `--allow-unverified` no parser, issues (b)/(c) registradas em
+  `docs/issues/ac30-aftermath-residue-and-seeding-[open].md` com a regra do
+  release único v1.3.0.
+- E-mail pessoal real do operador removido dos exemplos (docs + fixtures).
+
+### Checks/Tests executed
+
+- `pytest`: 643 → 680 passed, 26 subtests, **zero skips** (o skip morto foi
+  aposentado). 38 testes novos; toda correção com mutação vermelha verificada.
+- Concílio de bloco: r1 (3 lentes) 8 achados/8 perguntas, todos fechados; r2
+  (2 lentes) com classificação — registros em `.gk/council/` (r1 `4d03e0a6…`).
+- not validated: fluxo `install-agents --upgrade` ponta a ponta com download
+  real; esteira noturna (`run_plan.py`) intocada e desarmada; itens 010-G* e
+  008 não iniciados (ver relatório do squad).
+
+**Next:** operador decidir a PR; depois o corte v1.3.0 do AI-Agents com o bump
+DEFAULT_REF+checksum num release único (checklist na issue ac30-aftermath).
+
 ## [2026-08-14] Fase 0 do WK-20260813-council-audit-of-r2-closures — commitada; execução noturna achada quebrada
 
 - branch: `development`, commits `74bfefa` (conteúdo) e `3effe89` (0.3.1→0.3.2). Não

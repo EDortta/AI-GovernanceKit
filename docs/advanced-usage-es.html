@@ -44,6 +44,7 @@ governancekit --root /proyecto install-agents
 
 # Actualización de una instalación existente
 governancekit --root /proyecto install-agents --upgrade</code></pre>
+    <p><code>install-agents --allow-unverified</code> instala un tarball sin checksum conocido. Sin el flag, una ref no fijada se rechaza en lugar de advertirse: el kit no instala lo que no puede verificar. El uso no verificado advierte por stderr.</p>
     <table><tbody>
       <tr><td><code>--ref REF</code></td><td>Tag, branch o commit de AI-Agents. Por defecto: <code>v1.2.1</code> con checksum.</td></tr>
       <tr><td><code>--repo OWNER/REPO</code></td><td>Repositorio alternativo. Por defecto: <code>EDortta/AI-Agents</code>.</td></tr>

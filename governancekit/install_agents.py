@@ -896,17 +896,26 @@ def persist_placeholder_values(root: Path, values: dict[str, str]) -> None:
 
 def unset_placeholder_values(
     root: Path, keys: list[str]
-) -> tuple[dict[str, list[str]], list[str]]:
+) -> tuple[dict[str, list[str]], list[str], dict[str, list[str]]]:
     """AC-21 — eliminate stored answers, and say exactly what was done.
 
     Returns ``({key: [state files it was removed from]}, [unreadable state
-    files])``. An empty list for a key means it was stored nowhere — said, not
-    silently absorbed, because a mistyped token would otherwise report the same
-    success as a real elimination. The second element exists for the same reason
-    one layer down: ``_read_json`` folds a corrupt file into ``{}``, and without
-    it a truncated ``operator.json`` still holding the value byte-for-byte was
-    answered with "nothing to eliminate" — an affirmation the disk contradicts,
-    reproduced by the security lens of this delivery's pre-commit critique.
+    files], {key: [identity carriers still holding it]})``. An empty list for a
+    key means it was stored in no state file — said, not silently absorbed,
+    because a mistyped token would otherwise report the same success as a real
+    elimination. The second element exists for the same reason one layer down:
+    ``_read_json`` folds a corrupt file into ``{}``, and without it a truncated
+    ``operator.json`` still holding the value byte-for-byte was answered with
+    "nothing to eliminate" — an affirmation the disk contradicts, reproduced by
+    the security lens of this delivery's pre-commit critique.
+
+    The third element is the sweep lens's round-1 finding: "where the kit stores
+    the operator" is not only ``.gk/`` — ``.credentials/identity.json`` and
+    ``.governancekit-identity.json`` hold the same data, this command does NOT
+    edit them (the credential store is a no-write zone for cleanup commands; the
+    host identity file is the §8b contract), and ``configure`` re-inherits from
+    them — so an unset that stayed silent about them reported an elimination the
+    next command would undo. Named, so the operator can finish the job by hand.
 
     Three deliberate boundaries, all from the issue's ARO:
     - **State only.** Files already rendered with the value are not rewritten:
@@ -918,6 +927,12 @@ def unset_placeholder_values(
       state file would keep saying "there is local state here".
     """
     root = root.resolve()
+    # Deduplicated, order kept: the same key twice in one invocation (an operator
+    # retry, a script with a duplicated argument) made the second `del` raise
+    # KeyError AFTER the first had mutated the dict and BEFORE anything was
+    # written — the elimination command crashed without eliminating. Found by the
+    # second-caller lens, round 1.
+    keys = list(dict.fromkeys(keys))
     removed: dict[str, list[str]] = {key: [] for key in keys}
     unreadable: list[str] = []
     for state_rel in (_STATE_FILE, _OVERRIDE_FILE, _OPERATOR_FILE, _SECRETS_FILE):
@@ -958,7 +973,39 @@ def unset_placeholder_values(
             path.chmod(0o600)
         else:
             path.unlink()
-    return removed, unreadable
+
+    # Identity carriers outside the state files, still holding an equivalent
+    # value after this run. Detection only, never edits — see the docstring.
+    #
+    # Read the way `identity.py` reads the same files: `safe_regular_file`, which
+    # SKIPS a symlink instead of raising. The first cut used `safe_path`, which
+    # raises `UnsafePathError` on the symlinked `.credentials/` layout the repo
+    # itself documents as intentional — and it raised AFTER the state files had
+    # been mutated and BEFORE the report printed: the elimination happened and
+    # the command said nothing. Round-2 regression hunter, reproduced. A carrier
+    # this cannot read safely is simply not reported; the state-file work above
+    # is already done and must always be reported.
+    def _carrier_json(rel: str) -> dict:
+        path = root / rel
+        if not safe_regular_file(root, path):
+            return {}
+        return _read_json(path)
+
+    carrier_field = {"OPERATOR_NAME": "operator_name"}
+    cred = _carrier_json(".credentials/identity.json")
+    cred_values = cred.get("values")
+    host = _carrier_json(".governancekit-identity.json")
+    elsewhere: dict[str, list[str]] = {}
+    for key in keys:
+        spots: list[str] = []
+        if isinstance(cred_values, dict) and str(cred_values.get(key) or "").strip():
+            spots.append(".credentials/identity.json")
+        field = carrier_field.get(key)
+        if field and str(host.get(field) or "").strip():
+            spots.append(".governancekit-identity.json")
+        if spots:
+            elsewhere[key] = spots
+    return removed, unreadable, elsewhere
 
 
 def _prerender_source(
@@ -1165,7 +1212,7 @@ def _sync_dir(
             d.rmdir()
 
 
-# ── install state (.gk/state.json) ─────────────────────────────────────────────
+# ── install state (.gk/manifest.json + .gk/manifest.override.json) ─────────────────────────────────────────────
 
 def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -1182,7 +1229,9 @@ def _read_json(path: Path) -> dict:
 
 
 def _read_state(root: Path) -> dict:
-    """Load ``.gk/state.json``; an absent or corrupt file yields an empty state.
+    """Load the split state (manifest + override + legacy pair) as one dict.
+
+    An absent or corrupt file yields an empty contribution.
 
     Empty means "nothing is provably kit-owned and nothing is known about the
     operator" — which makes the upgrade preserve files and ask questions, never
@@ -1472,6 +1521,13 @@ def _write_state(
             override_payload["metadata"] = local_meta
         if local_files:
             override_payload["files"] = local_files
+        if not override_path.exists():
+            # Created restrictive BEFORE the content lands. write_text-then-chmod
+            # left a window where a fresh file held the values under the umask's
+            # default mode — raised as a question by the block council's claim
+            # auditor. `touch(mode=...)` opens with 0600 & ~umask, so the file is
+            # never wider than 0600 at any point of its life.
+            override_path.touch(mode=0o600)
         override_path.write_text(
             json.dumps(override_payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -1956,7 +2012,8 @@ def _render_table(known: dict[str, str] | None) -> tuple[dict[str, str], list[tu
        the property lives.
 
     The refused value is left in the state and not deleted. It arrived from
-    `.gk/manifest.json`, the half a team shares; dropping the victim's copy would not
+    `.gk/manifest.json` (the half a team shares) or from the local override;
+    dropping the victim's copy would not
     remove it from the source and would silently discard whatever else it holds.
     """
     table: dict[str, str] = {}
@@ -2190,7 +2247,7 @@ def _fill_placeholders(
     ``[MANDATORY]`` are policy vocabulary, not personalization slots. Mirrors
     ``configure.py``.
 
-    *known* carries answers from previous runs (``.gk/state.json``). They are offered
+    *known* carries answers from previous runs (the merged ``.gk`` state). They are offered
     as the default so the operator confirms with Enter instead of retyping, and they
     are applied without any prompt when there is no terminal — which is what gives an
     unattended ``--upgrade`` continuity across the template overwrite.
