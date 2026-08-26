@@ -2,10 +2,19 @@
 
 - work_id: WK-20260810-sending-email-canonico
 - date: 2026-08-10
-- status: `[review]` — duas rodadas de concílio. Dos 16 achados da rodada 2, **8
-  fechados** por decisão do operador em 2026-08-10 (R2-1, R2-3, R2-4, R2-5, R2-6, R2-7,
-  R2-12, R2-13, R2-14, R2-19); **6 em aberto**. `v1.2.0` publicada e a cadeia verificada
-  ponta a ponta num alvo real.
+- status: `[review]` — duas rodadas de concílio; **nenhum achado da rodada 2 continua
+  aberto**. Dos 16 distintos: **10** fechados por decisão do operador em 2026-08-10
+  (R2-1, R2-3, R2-4, R2-5, R2-6, R2-7, R2-12, R2-13, R2-14, R2-19 — a redação anterior
+  desta linha dizia "8 fechados; 6 em aberto": o "8" contradizia a própria lista de 10,
+  e o "6 em aberto" venceu em 2026-08-11/12); os 6 restantes fecharam em seguida:
+  **R2-18** em `b1c46ea`, **R2-2, R2-11, R2-15, R2-16** em `711f853` (ambos
+  2026-08-11) e **R2-17** verificado como não reproduzível. O **R2-16'** fechou em
+  2026-08-12. O que falta é decisão do operador (ver Next Step). `v1.2.0` publicada e
+  a cadeia verificada ponta a ponta num alvo real.
+  (Ambiguidade herdada, registrada em vez de reescrita: esta linha sempre citou
+  R2-17..R2-19, enquanto o registro da rodada 2 no corpo enumera os 16 distintos como
+  R2-1..R2-16 — R2-8/9/10 fechados in-place neste próprio arquivo. Sob qualquer das
+  duas numerações, nenhum achado da rodada 2 segue aberto.)
 
 ## Next Step (DO THIS FIRST)
 
