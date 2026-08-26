@@ -28,14 +28,14 @@ class EndpointsAreDerivedFromTheAddressTest(unittest.TestCase):
     def test_an_unknown_domain_falls_back_and_SAYS_it_guessed(self) -> None:
         # A guess announced as a guess is correctable; a guess announced as a fact is a
         # bug report three weeks later.
-        ends = mailbox.endpoints_for("calegari@youbrtech.com.br")
+        ends = mailbox.endpoints_for("operator@empresa-exemplo.com.br")
 
-        self.assertEqual(ends.smtp_host, "mail.youbrtech.com.br")
-        self.assertEqual(ends.imap_host, "imap.youbrtech.com.br")
+        self.assertEqual(ends.smtp_host, "mail.empresa-exemplo.com.br")
+        self.assertEqual(ends.imap_host, "imap.empresa-exemplo.com.br")
         self.assertTrue(ends.derived)
 
     def test_the_setup_text_says_so_too(self) -> None:
-        text = "\n".join(mailbox.setup_instructions("calegari@youbrtech.com.br"))
+        text = "\n".join(mailbox.setup_instructions("operator@empresa-exemplo.com.br"))
 
         self.assertIn("guessed from the domain", text)
         self.assertIn(".credentials/smtp.token", text)
@@ -143,7 +143,7 @@ class OverridesWinOverTheGuessTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _identity(root, values={
-                "OPERATOR_EMAIL": "calegari@youbrtech.com.br",
+                "OPERATOR_EMAIL": "operator@empresa-exemplo.com.br",
                 "SMTP_OVERRIDES": {"smtp_host": "mail.provedor.com.br", "smtp_port": 465},
             }, refs={})
 
@@ -151,7 +151,7 @@ class OverridesWinOverTheGuessTest(unittest.TestCase):
 
             self.assertEqual(ends.smtp_host, "mail.provedor.com.br")
             self.assertEqual(ends.smtp_port, 465)
-            self.assertEqual(ends.imap_host, "imap.youbrtech.com.br")
+            self.assertEqual(ends.imap_host, "imap.empresa-exemplo.com.br")
 
 
 class TheOrphanReuseActuallyFiresTest(unittest.TestCase):

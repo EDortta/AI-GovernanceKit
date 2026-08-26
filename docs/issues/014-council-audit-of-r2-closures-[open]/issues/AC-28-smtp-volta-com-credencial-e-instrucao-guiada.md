@@ -1,5 +1,37 @@
 # Issue AC-28 — origem: decisão do operador, 2026-08-13 ("precisamos dele sim")
 
+> **EMENDA 2026-08-26 — o registro passa a descrever o que foi implementado.**
+> O desenho abaixo ("SMTP_ACCOUNT sai de `_RETIRED_PLACEHOLDERS` e volta a
+> `_PLACEHOLDER_DESCRIPTIONS`") **não** foi o entregue, e a diferença é decisão
+> tomada na implementação da Fase 0 (`74bfefa`, 2026-08-14), não deriva:
+>
+> - `SMTP_ACCOUNT` **permanece retirado** (`install_agents.py`,
+>   `_RETIRED_PLACEHOLDERS`) e permanece em `_OPERATOR_PLACEHOLDERS`, pelo motivo
+>   já gravado ali: um valor legado nunca pode cair na metade rastreada.
+> - O endereço do operador entrou como **`OPERATOR_EMAIL`** em
+>   `.credentials/identity.json` (`values`), lido por `governancekit/mailbox.py`
+>   (`_ADDRESS_VALUE = "OPERATOR_EMAIL"`), que ainda **lê** o `SMTP_ACCOUNT` órfão
+>   legado (`_LEGACY_ADDRESS_VALUES`) sem nunca reescrevê-lo — o alvo respondido
+>   antes da aposentadoria funciona sem nova pergunta, que era o caso de prova do
+>   plano de teste abaixo.
+> - `SMTP_DOMAIN` **não voltou**: o domínio é derivado da parte pós-`@` do
+>   endereço, exatamente como o item 4 abaixo previa ("provavelmente é derivável").
+>   Um slot, não dois.
+> - A credencial continua **apontada, nunca guardada**: `refs.SMTP_TOKEN` →
+>   `.credentials/smtp.token` (o split `values`/`refs` do `identity.json.example`).
+> - A instrução guiada saiu em `docs/advanced-usage*.html`, offline — nos **três
+>   arquivos de língua**, mas a seção `mail` em si está em inglês nos três
+>   (registrado para que "três línguas" não vire claim sem lastro; traduzir é
+>   pendência menor, não deriva). O exemplo dos três trazia o endereço pessoal
+>   real do operador; trocado por `operator@empresa-exemplo.com.br` em 2026-08-26
+>   (o histórico do git ainda o carrega — isto não é eliminação).
+> - O que cruza repositório (`.credentials/README.md` nas três línguas do AI-Agents,
+>   `identity.json.example`, `sending-email.md`) segue com o dono **AI-Agents** e
+>   não é coberto por esta emenda.
+>
+> Um desenho melhor que o encomendado, registrado aqui para que o próximo concílio
+> leia o delta implementação×texto como **decisão implementada**, não como drift.
+
 ## AC-28 — `SMTP_ACCOUNT` volta, com credencial e instrução guiada por domínio [alta]
 
 > **Isto reverte uma decisão documentada.** `SMTP_ACCOUNT` e `SMTP_DOMAIN` foram

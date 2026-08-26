@@ -180,7 +180,7 @@ governancekit --root /projeto voice-integration detect --json</code></pre>
     <p>The operator's own mailbox: send from it, and review what arrived. The kit stores
     the address and the <em>path</em> to a credential, never the credential itself.
     Endpoints are derived from the domain, and a derived guess says so.</p>
-    <pre><code>governancekit --root /project mail setup calegari@youbrtech.com.br --write
+    <pre><code>governancekit --root /project mail setup operator@empresa-exemplo.com.br --write
 governancekit --root /project mail send --to alguem@example.org --subject "Assunto" --body - --dry-run
 governancekit --root /project mail inbox --limit 10 --mailbox INBOX</code></pre>
     <p><code>--dry-run</code> renders and validates the message and the route without
