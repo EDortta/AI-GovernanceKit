@@ -93,7 +93,12 @@ def test_landing_navigation_is_translated_compact_and_agents_install_is_separate
 
     assert "Detalhes avançados de uso</a></li>" not in landing
     assert "installs by copying files" not in landing
-    assert f"AI-Agents/{DEFAULT_REF}/scripts/install-agents-kit.sh" in landing
+    # AC-30 retired the shell installer; the landing must not teach a curl|bash of
+    # it (the ecosystem's own security-standards.md forbids curl|bash, and the tag
+    # the pill pinned still serves the second-writer script AC-6/AC-10 documented).
+    # This line used to assert the pill EXISTS — the test was pinning the defect.
+    assert "install-agents-kit.sh" not in landing
+    assert "governancekit --root . install-agents" in landing
     assert ".companion-card .arrow-link {\n      display: block;" in landing
 
 

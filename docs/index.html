@@ -1276,7 +1276,12 @@
         <p data-i18n="c1.p">O "o quê e por quê" — templates AGENTS.md, contratos de papel, templates de issue
         e docs de fluxo de trabalho que você copia para qualquer repositório para definir regras de governança
         para agentes e programadores.</p>
-        <code class="companion-pill">bash &lt;(curl -fsSL https://raw.githubusercontent.com/EDortta/AI-Agents/v1.2.1/scripts/install-agents-kit.sh) --target .</code>
+        <!-- The shell installer was retired (AC-30, 2026-08-21): it was the second
+             writer of .gk/manifest.json and the managed .gitignore block, and the
+             kit now withdraws installed copies of it. The supported path is the
+             Python CLI below — and a curl|bash instruction here violated the
+             ecosystem's own security-standards.md ("no curl|bash"). -->
+        <code class="companion-pill">governancekit --root . install-agents</code>
         <a class="arrow-link" href="https://github.com/EDortta/AI-Agents" data-i18n="c1.link">Ver AI-Agents →</a>
       </div>
       <div class="companion-card">

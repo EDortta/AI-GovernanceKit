@@ -35,6 +35,7 @@ from governancekit.install_agents import (
     DEFAULT_REF,
     KNOWN_TARBALL_SHA256,
     REPO,
+    _PROTECTED_FILES,
     _TEMPLATE_SEEDS,
 )
 from governancekit.kit_drift import (
@@ -84,6 +85,20 @@ def _member(tar: tarfile.TarFile, suffix: str) -> str:
                 break
             return handle.read().decode("utf-8")
     raise SystemExit(f"ERROR: {suffix} not found in the {DEFAULT_REF} tarball")
+
+
+def _optional_member(tar: tarfile.TarFile, suffix: str) -> str | None:
+    """Like :func:`_member`, but absence is an answer, not an error.
+
+    Exists for exactly one file: the shell installer, which AC-30 retired. The
+    next AI-Agents release legitimately ships without it, and a refresher that
+    dies on that absence can never describe any release after the retirement —
+    the snapshot freezes at the last dual-installer world for ever.
+    """
+    try:
+        return _member(tar, suffix)
+    except SystemExit:
+        return None
 
 
 def _credential_digests(tar: tarfile.TarFile) -> dict[str, str]:
@@ -156,9 +171,23 @@ def build_snapshot() -> KitSnapshot:
         with tarfile.open(tarball, "r:gz") as tar:
             contract = json.loads(_member(tar, _CONTRACT_SOURCE))
             section = _member(tar, _SHARED_SECTION_SOURCE)
-            installer = _member(tar, _SHELL_INSTALLER_SOURCE)
+            installer = _optional_member(tar, _SHELL_INSTALLER_SOURCE)
             carried = {name.split("/", 1)[-1] for name in tar.getnames()}
     seeded = _credential_history()
+    if installer is None:
+        # AC-30: the release no longer ships the shell installer, so the parity
+        # this field guards (R2-16': two installers, one answer) has one side
+        # left. The snapshot records the runtime's own list — the sole remaining
+        # implementation — so the parity test keeps tripping if THIS side ever
+        # drops the protection silently.
+        print(
+            f"note: {DEFAULT_REF} ships no {_SHELL_INSTALLER_SOURCE} (retired by "
+            "AC-30); protected_root_files now mirrors this runtime's "
+            "_PROTECTED_FILES, the only implementation left."
+        )
+        protected = tuple(sorted(_PROTECTED_FILES))
+    else:
+        protected = extract_protected_root_files(installer)
     return KitSnapshot(
         agents_ref=contract["ai_agents"]["ref"],
         governancekit_version_range=contract["governancekit"]["version_range"],
@@ -166,7 +195,7 @@ def build_snapshot() -> KitSnapshot:
         template_seed_sources=tuple(
             sorted(src for src in set(_TEMPLATE_SEEDS.values()) if src in carried)
         ),
-        protected_root_files=extract_protected_root_files(installer),
+        protected_root_files=protected,
         seeded_credentials=seeded,
     )
 
