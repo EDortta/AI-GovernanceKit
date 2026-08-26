@@ -181,6 +181,11 @@ class RemovalPlan:
     created_at: str
     items: list[RemovalItem]
     provider: dict[str, str]
+    # AC-21: the state files that will SURVIVE `apply` and carry the operator's
+    # data. They were invisible to the plan — `build_removal_plan` reads `files`
+    # from the manifest, which never lists `.gk/*` — so the command whose job is
+    # "leave nothing behind" left every personal record behind without a word.
+    surviving_state: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -192,6 +197,13 @@ class ApplyResult:
     removed: list[str]
     preserved: list[str]
     extracted: list[str] = field(default_factory=list)
+    # AC-21: what `--purge-state` eliminated, what still survives on disk, and
+    # which backed-up files carry the operator's rendered data. Data, not prints:
+    # `apply` is also called under `--json`, where prose on stdout corrupts the
+    # payload — the CLI decides how to say it.
+    purged: list[str] = field(default_factory=list)
+    surviving_state: list[str] = field(default_factory=list)
+    personal_backups: list[str] = field(default_factory=list)
 
 
 def _sha256(path: Path) -> str:
@@ -484,6 +496,28 @@ def _llm_extract(root: Path, rel: str, content: str, provider: dict[str, str]) -
     return result["project_content"], result["kit_content"], float(result["confidence"])
 
 
+# The local state files de-adoption does not remove, with what each one holds.
+# One list, consumed by the plan (which must NAME them) and by `--purge-state`
+# (which eliminates them) — two consumers of one truth, never two lists.
+_PERSONAL_STATE_FILES: tuple[tuple[str, str], ...] = (
+    (".gk/manifest.override.json",
+     "local identity answers and hashes derived from them"),
+    (".gk/operator.json", "legacy local identity answers"),
+    (".gk/secrets.json", "legacy local sensitive values"),
+    (".gk/manifest.json",
+     "shared kit state (file hashes, ref — not identity, but kit residue)"),
+)
+
+
+def _surviving_state(root: Path) -> list[str]:
+    """The state files that exist now and will still exist after `apply`."""
+    surviving = [rel for rel, _ in _PERSONAL_STATE_FILES if (root / rel).is_file()]
+    backups = root / ".gk/remove-agents-backup"
+    if backups.is_dir() and any(backups.iterdir()):
+        surviving.append(".gk/remove-agents-backup/")
+    return surviving
+
+
 def build_removal_plan(root: Path, *, with_llm: bool = False, extractor: Callable[[Path, str, str, dict[str, str]], tuple[str, str, float]] = _llm_extract) -> RemovalPlan:
     root = root.resolve()
     manifest = _manifest_files(root)
@@ -624,6 +658,7 @@ def build_removal_plan(root: Path, *, with_llm: bool = False, extractor: Callabl
         created_at=datetime.now(timezone.utc).isoformat(),
         items=items,
         provider=({"status": "used", **provider} if provider else {"status": "not-invoked", "reason": "pass --with-llm to propose extractions for unreferenced modified kit files"}),
+        surviving_state=_surviving_state(root),
     )
 
 
@@ -655,10 +690,20 @@ def load_removal_plan(root: Path, plan_path: Path | None = None) -> RemovalPlan:
     if Path(data.get("root", "")).resolve() != root:
         raise ValueError("plan is not compatible with this project root")
     items = [RemovalItem(**item) for item in data.get("items", [])]
-    return RemovalPlan(data["schema_version"], data["root"], data["created_at"], items, data.get("provider", {}))
+    return RemovalPlan(
+        data["schema_version"], data["root"], data["created_at"], items,
+        data.get("provider", {}),
+        surviving_state=[str(rel) for rel in data.get("surviving_state", [])],
+    )
 
 
-def apply_removal_plan(root: Path, plan: RemovalPlan, *, accept_project_extractions: bool = False) -> ApplyResult:
+def apply_removal_plan(
+    root: Path,
+    plan: RemovalPlan,
+    *,
+    accept_project_extractions: bool = False,
+    purge_state: bool = False,
+) -> ApplyResult:
     root = root.resolve()
     backup_dir = root / ".gk/remove-agents-backup" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     # By ACTION, not by classification. `action` IS the decision the plan reached;
@@ -713,7 +758,48 @@ def apply_removal_plan(root: Path, plan: RemovalPlan, *, accept_project_extracti
         additions = "".join(f"- `{path}` — project-specific content extracted from AI-Agents material\n" for path in extracted if f"`{path}`" not in existing)
         reading.parent.mkdir(parents=True, exist_ok=True)
         reading.write_text(existing.rstrip() + "\n" + additions, encoding="utf-8")
-    return ApplyResult(backup_dir, [item.path for item, _ in targets if item.action == "remove"], [item.path for item in plan.items if item.action == "preserve"], extracted)
+
+    # AC-21 — the backup this run just wrote may CONTAIN the operator's rendered
+    # data (the de-adoption of a configured target copies AGENTS.md with the
+    # operator's name inside). Announced by file NAME, never by value, and with the
+    # retention stated: nothing expires it, it stays until deleted. Silence here is
+    # how de-adoption became a command that MULTIPLIES copies of personal data.
+    from .install_agents import _read_state, _state_metadata
+
+    local_values = [
+        v for v in _state_metadata(_read_state(root)).values()
+        if isinstance(v, str) and v
+    ]
+    personal_backups: list[str] = []
+    if local_values:
+        for rel in copied:
+            try:
+                text = (backup_dir / rel).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if any(value in text for value in local_values):
+                personal_backups.append(rel)
+    # AC-21 — the elimination path. Explicit, never the default: the backup and the
+    # state exist to permit regret, and deleting them silently trades one problem
+    # for another. What this can and cannot eliminate is the CLI's message —
+    # a value that ever reached git history is NOT eliminable by this kit.
+    purged: list[str] = []
+    if purge_state:
+        for rel, _ in _PERSONAL_STATE_FILES:
+            target = safe_path(root, root / rel)
+            if target.is_file():
+                target.unlink()
+                purged.append(rel)
+    surviving = _surviving_state(root)
+    return ApplyResult(
+        backup_dir,
+        [item.path for item, _ in targets if item.action == "remove"],
+        [item.path for item in plan.items if item.action == "preserve"],
+        extracted,
+        purged=purged,
+        surviving_state=surviving,
+        personal_backups=sorted(personal_backups),
+    )
 
 
 def format_removal_plan(plan: RemovalPlan) -> str:
@@ -721,5 +807,18 @@ def format_removal_plan(plan: RemovalPlan) -> str:
     for item in plan.items:
         review = " (review required)" if item.requires_operator_review else ""
         lines.append(f"  {item.action}: {item.path} [{item.classification}]{review}")
+    if plan.surviving_state:
+        # AC-21: state the plan does not touch, named HERE because a plan that
+        # hides what survives is a plan the operator cannot review. These carry
+        # the operator's data; elimination is explicit, never a silent default.
+        lines.append("state that survives apply (carries the operator's data):")
+        described = dict(_PERSONAL_STATE_FILES)
+        for rel in plan.surviving_state:
+            detail = described.get(rel, "backups written by remove-agents apply")
+            lines.append(f"  survives: {rel} — {detail}")
+        lines.append(
+            "  eliminate with `remove-agents apply --purge-state` or "
+            "`configure --unset <TOKEN>`; the git history is not covered"
+        )
     lines.append("LLM extraction is a proposed patch only; apply requires explicit acceptance after review.")
     return "\n".join(lines)

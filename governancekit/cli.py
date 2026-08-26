@@ -253,6 +253,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not offer the required-reading-driven scope interview after installation.",
     )
+    install_parser.add_argument(
+        "--allow-unverified",
+        dest="allow_unverified",
+        action="store_true",
+        help=(
+            "Install a ref for which no checksum is pinned. The download's own "
+            "error message has named this flag since the checksum gate was "
+            "written, and the guide documents it — but the parser never accepted "
+            "it, so the only remedy the refusal offered died with 'unrecognized "
+            "arguments'. Off by default; the unverified install warns on stderr."
+        ),
+    )
     adoption_mode = install_parser.add_mutually_exclusive_group()
     adoption_mode.add_argument("--quick", action="store_true", help="Apply high-confidence generated adoption defaults.")
     adoption_mode.add_argument("--review", action="store_true", help="Show the consolidated adoption proposal (interactive default).")
@@ -291,6 +303,14 @@ def build_parser() -> argparse.ArgumentParser:
     remove_apply.add_argument("--plan", type=Path, help="Reviewed plan below --root (default: .gk/remove-agents-plan.json).")
     remove_apply.add_argument("--json", dest="as_json", action="store_true")
     remove_apply.add_argument("--accept-project-extractions", action="store_true", help="Confirm review of every LLM-proposed extraction in the plan.")
+    remove_apply.add_argument(
+        "--purge-state", dest="purge_state", action="store_true",
+        help="Also eliminate the kit's state files: the LOCAL identity halves "
+             "(manifest.override.json and the legacy pair) AND the shared "
+             ".gk/manifest.json — kit residue, tracked, so it is recoverable "
+             "from git and its deletion shows in git status. Explicit on "
+             "purpose; the backup and the git history are not covered.",
+    )
 
     mail_parser = subparsers.add_parser(
         "mail", help="Send from, and review, the operator's own mailbox.",
@@ -326,6 +346,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         metavar="KEY=VALUE",
         help="Set a placeholder value non-interactively. Repeatable.",
+    )
+    configure_parser.add_argument(
+        "--unset",
+        dest="unset_keys",
+        action="append",
+        default=[],
+        metavar="KEY",
+        help="Eliminate a stored answer from the kit's state files. Repeatable. "
+             "Files already rendered with the value, and the git history, are "
+             "not touched.",
     )
     identity_group = configure_parser.add_argument_group(
         "host identity", "Per-instance, gitignored identity (non-interactive flags)."
@@ -656,6 +686,7 @@ def _run_install_agents(args) -> int:
             migrate_content=args.migrate_content,
             track=args.track,
             install_awt=args.install_awt,
+            allow_unverified=args.allow_unverified,
         )
     except RuntimeError as exc:
         print(f"ERROR: {exc}", flush=True)
@@ -873,11 +904,20 @@ def _run_remove_agents(args) -> int:
             print(json.dumps(payload, sort_keys=True, ensure_ascii=False) if args.as_json else format_removal_plan(plan) + f"\nPlan written: {output}")
             return 0
         plan = load_removal_plan(args.root, args.plan)
-        result = apply_removal_plan(args.root, plan, accept_project_extractions=args.accept_project_extractions)
+        result = apply_removal_plan(
+            args.root, plan,
+            accept_project_extractions=args.accept_project_extractions,
+            purge_state=args.purge_state,
+        )
     except (OSError, ValueError, UnsafePathError) as exc:
         print(f"ERROR: {exc}")
         return 1
-    payload = {"backup_dir": str(result.backup_dir), "removed": result.removed, "preserved": result.preserved, "extracted": result.extracted}
+    payload = {
+        "backup_dir": str(result.backup_dir), "removed": result.removed,
+        "preserved": result.preserved, "extracted": result.extracted,
+        "purged": result.purged, "surviving_state": result.surviving_state,
+        "personal_backups": result.personal_backups,
+    }
     if args.as_json:
         print(json.dumps(payload, sort_keys=True, ensure_ascii=False))
     else:
@@ -887,14 +927,79 @@ def _run_remove_agents(args) -> int:
             print(f"  removed: {item}")
         for item in result.extracted:
             print(f"  extracted: {item}")
+        for item in result.purged:
+            print(f"  state eliminated: {item}")
         if not result.removed:
             print("  no files were eligible for automatic removal")
+        # AC-21 — said here, not in the library, so `--json` stays parseable.
+        if result.personal_backups:
+            print(
+                "Note: the backup just written contains the operator's rendered "
+                "data in: " + ", ".join(result.personal_backups)
+                + f"\n  It lives in {result.backup_dir} and is kept until you "
+                "delete it — nothing expires it."
+            )
+        if result.purged:
+            print(
+                "Not covered by --purge-state: the git history (a value ever "
+                "committed stays in it) and the backup this run just wrote."
+            )
+        elif result.surviving_state:
+            from .remove_agents import _PERSONAL_STATE_FILES
+
+            described = dict(_PERSONAL_STATE_FILES)
+            print("State that survives de-adoption and may carry the operator's data:")
+            for rel in result.surviving_state:
+                detail = described.get(rel, "backups written by remove-agents apply")
+                print(f"  {rel} — {detail}")
+            print(
+                "  Eliminate with `remove-agents apply --purge-state`, or one "
+                "value at a time with `configure --unset <TOKEN>`."
+            )
     return 0
 
 
 def _run_configure(args) -> int:
     from .configure import parse_set_pairs, run_configure, run_configure_identity
     from .identity import ALL_FIELDS, load_identity
+
+    # AC-21 — eliminations first, and each one reported by WHERE it was removed
+    # from. An `--unset` of a key stored nowhere is said in as many words: a
+    # mistyped token reporting the same success as a real elimination is the
+    # "output says one thing, disk says another" class this epic audits.
+    if args.unset_keys:
+        from .install_agents import unset_placeholder_values
+
+        removed, unreadable = unset_placeholder_values(args.root, args.unset_keys)
+        print("AI GovernanceKit configure --unset")
+        for key, sources in removed.items():
+            if sources:
+                print(f"  eliminated {key} from: " + ", ".join(sources))
+            elif unreadable:
+                # "Not stored anywhere" would be a claim no one verified: a state
+                # file is sitting there unreadable, and the value may be inside.
+                print(
+                    f"  not found in any READABLE state file: {key} — but see the "
+                    "warning below."
+                )
+            else:
+                print(f"  not stored anywhere: {key} (nothing to eliminate)")
+        if unreadable:
+            print(
+                "  Warning: unreadable/corrupt state file(s) still on disk: "
+                + ", ".join(unreadable)
+                + "\n  A stored value may survive inside — inspect or delete "
+                "them by hand; this command does not guess."
+            )
+        print(
+            "  Files already rendered with a value, and the git history, are "
+            "not touched by this command."
+        )
+        if not args.set_pairs and not any(
+            getattr(args, f, None) for f in ALL_FIELDS
+        ):
+            return 0
+
     try:
         preset = parse_set_pairs(args.set_pairs)
     except ValueError as exc:

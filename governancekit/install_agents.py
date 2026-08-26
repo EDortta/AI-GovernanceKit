@@ -894,6 +894,73 @@ def persist_placeholder_values(root: Path, values: dict[str, str]) -> None:
     )
 
 
+def unset_placeholder_values(
+    root: Path, keys: list[str]
+) -> tuple[dict[str, list[str]], list[str]]:
+    """AC-21 — eliminate stored answers, and say exactly what was done.
+
+    Returns ``({key: [state files it was removed from]}, [unreadable state
+    files])``. An empty list for a key means it was stored nowhere — said, not
+    silently absorbed, because a mistyped token would otherwise report the same
+    success as a real elimination. The second element exists for the same reason
+    one layer down: ``_read_json`` folds a corrupt file into ``{}``, and without
+    it a truncated ``operator.json`` still holding the value byte-for-byte was
+    answered with "nothing to eliminate" — an affirmation the disk contradicts,
+    reproduced by the security lens of this delivery's pre-commit critique.
+
+    Three deliberate boundaries, all from the issue's ARO:
+    - **State only.** Files already rendered with the value are not rewritten:
+      un-rendering is an edit to project files this command has no mandate for.
+    - **The git history is not touched.** A value that was ever committed is not
+      eliminable by this kit, and claiming otherwise would be the class of
+      affirmation-without-artifact this epic audits.
+    - The override/legacy file is DELETED when its last key goes: an empty local
+      state file would keep saying "there is local state here".
+    """
+    root = root.resolve()
+    removed: dict[str, list[str]] = {key: [] for key in keys}
+    unreadable: list[str] = []
+    for state_rel in (_STATE_FILE, _OVERRIDE_FILE, _OPERATOR_FILE, _SECRETS_FILE):
+        path = safe_path(root, root / state_rel)
+        if path.is_file() and not _read_json(path):
+            # Present, but `_read_json` saw nothing in it. Only a literal empty
+            # object is benign; a parse error OR a non-dict payload (an array
+            # can carry the value just as well) means the value may still be
+            # inside, and "nothing to eliminate" would be false.
+            benign = False
+            try:
+                benign = json.loads(path.read_text(encoding="utf-8")) == {}
+            except (OSError, json.JSONDecodeError):
+                pass
+            if not benign:
+                unreadable.append(state_rel)
+            continue
+        data = _read_json(path)
+        meta = data.get("metadata")
+        if not isinstance(meta, dict):
+            continue
+        hit = [key for key in keys if key in meta]
+        if not hit:
+            continue
+        for key in hit:
+            del meta[key]
+            removed[key].append(state_rel)
+        if state_rel == _STATE_FILE:
+            # The shared manifest survives: it holds the file table and the ref,
+            # which are not the operator's data.
+            path.write_text(
+                json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+        elif meta or _state_files(data):
+            path.write_text(
+                json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            path.chmod(0o600)
+        else:
+            path.unlink()
+    return removed, unreadable
+
+
 def _prerender_source(
     src_root: Path,
     known: dict[str, str],

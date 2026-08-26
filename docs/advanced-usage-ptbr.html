@@ -85,6 +85,7 @@ governancekit --root /projeto configure \
       <thead><tr><th>Parâmetro</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
       <tbody>
         <tr><td><code>--set KEY=VALUE</code></td><td>Não</td><td>Preenche placeholder legado. Pode ser repetido.</td></tr>
+        <tr><td><code>--unset KEY</code></td><td>Não</td><td>Elimina uma resposta guardada dos arquivos de estado do kit (<code>.gk/manifest.json</code>, <code>.gk/manifest.override.json</code>, o par legado); repetível. Arquivos já renderizados com o valor, e o histórico do git, não são tocados.</td></tr>
         <tr><td><code>--operator-name NAME</code></td><td>Sim</td><td>Nome do operador humano.</td></tr>
         <tr><td><code>--host-id ID</code></td><td>Sim</td><td>Identificador estável desta máquina ou instância.</td></tr>
         <tr><td><code>--instance-path PATH</code></td><td>Sim</td><td>Caminho absoluto deste checkout.</td></tr>
@@ -191,6 +192,7 @@ governancekit --root /project mail inbox --limit 10 --mailbox INBOX</code></pre>
     <h2><code>remove-agents</code></h2>
     <pre><code>governancekit --root /projeto remove-agents plan --with-llm --json
 governancekit --root /projeto remove-agents apply --plan .gk/remove-agents-plan.json --accept-project-extractions</code></pre>
+    <p>O plano nomeia os arquivos de estado locais que sobrevivem ao <code>apply</code> — <code>.gk/manifest.override.json</code> e o par legado carregam as respostas de identidade do operador. <code>apply --purge-state</code> os elimina explicitamente (nunca por padrão). Fora do alcance do purge: o histórico do git e o backup que a mesma execução acabou de escrever, anunciado sempre que contém dado renderizado do operador.</p>
     <p>Com <code>--with-llm</code>, o provedor primário configurado pode propor a separação de conteúdo local. Revise o plano: a aplicação exige <code>--accept-project-extractions</code>, escreve o conteúdo do projeto em <code>docs/project-rules/</code>, registra a leitura e cria backup.</p>
   </section>
 

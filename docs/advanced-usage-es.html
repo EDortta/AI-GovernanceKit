@@ -66,6 +66,7 @@ governancekit --root /proyecto install-agents --upgrade</code></pre>
   --assigned-ports "3000,8000" --branch-ownership "feature/mi-branch"</code></pre>
     <table><thead><tr><th>Parámetro</th><th>Obligatorio</th><th>Descripción</th></tr></thead><tbody>
       <tr><td><code>--set KEY=VALUE</code></td><td>No</td><td>Completa un placeholder heredado; repetible.</td></tr>
+      <tr><td><code>--unset KEY</code></td><td>No</td><td>Elimina una respuesta guardada de los archivos de estado del kit (<code>.gk/manifest.json</code>, <code>.gk/manifest.override.json</code>, el par heredado); repetible. Los archivos ya renderizados con el valor, y el historial de git, no se tocan.</td></tr>
       <tr><td><code>--operator-name NAME</code></td><td>Sí</td><td>Nombre del operador humano.</td></tr>
       <tr><td><code>--host-id ID</code></td><td>Sí</td><td>Identificador estable de máquina o instancia.</td></tr>
       <tr><td><code>--instance-path PATH</code></td><td>Sí</td><td>Ruta absoluta de este checkout.</td></tr>
@@ -193,6 +194,7 @@ governancekit --root /project mail inbox --limit 10 --mailbox INBOX</code></pre>
     <h2><code>remove-agents</code></h2>
     <pre><code>governancekit --root /proyecto remove-agents plan --with-llm --json
 governancekit --root /proyecto remove-agents apply --plan .gk/remove-agents-plan.json --accept-project-extractions</code></pre>
+    <p>El plan nombra los archivos de estado locales que sobreviven al <code>apply</code> — <code>.gk/manifest.override.json</code> y el par heredado llevan las respuestas de identidad del operador. <code>apply --purge-state</code> los elimina explícitamente (nunca por defecto). Fuera del alcance: el historial de git y el backup que la misma ejecución acaba de escribir, anunciado siempre que contiene datos renderizados del operador.</p>
     <p>Con <code>--with-llm</code>, el proveedor primario configurado puede proponer la separación de contenido local. Revise el plan: aplicar exige <code>--accept-project-extractions</code>, escribe el contenido del proyecto en <code>docs/project-rules/</code>, registra la lectura y crea una copia.</p>
   </section>
 

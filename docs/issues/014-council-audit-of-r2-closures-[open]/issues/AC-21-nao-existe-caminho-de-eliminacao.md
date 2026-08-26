@@ -1,5 +1,14 @@
 # Issue AC-21 — origem: crítica de quatro céticos sobre AC-1, 2026-08-13 (lente: LGPD)
 
+> **Nota de implementação, 2026-08-26 (Fase 1):** `--purge-state` elimina, além do
+> par local e do override, também o `.gk/manifest.json` — que é COMPARTILHADO e
+> rastreado, e o escopo abaixo não pedia. Decisão registrada aqui porque a lente
+> de segurança do pré-commit a apontou como "defensável mas não pedida": numa
+> de-adoção completa o manifesto é resíduo do kit; ele é recuperável pelo git e a
+> deleção aparece no `git status` antes de qualquer commit. O help da flag nomeia
+> as duas naturezas (local vs compartilhado). Se o operador preferir preservar o
+> manifesto no purge, é uma linha em `_PERSONAL_STATE_FILES`.
+
 ## AC-21 — a de-adoção não elimina dado pessoal, e multiplica as cópias [alta]
 
 ### Contexto
