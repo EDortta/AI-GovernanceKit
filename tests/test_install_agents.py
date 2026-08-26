@@ -301,9 +301,11 @@ class InstallAgentsTests(unittest.TestCase):
             self.assertEqual(overwritten, [])
 
     def test_secrets_ignored_but_manifest_shared(self) -> None:
-        # The team must share the hashes; only the credential half stays out of git.
+        # The team must share the hashes; only the local half stays out of git —
+        # the override, plus the legacy pair for the un-migrated fleet.
         for track in (True, False):
             entries = ia._gitignore_entries(["AGENTS.md", "docs/agents"], track_kit_docs=track)
+            self.assertIn(ia._OVERRIDE_FILE, entries)
             self.assertIn(ia._OPERATOR_FILE, entries)
             self.assertIn(ia._SECRETS_FILE, entries)
             self.assertNotIn(f"{ia._STATE_DIR}/", entries)
@@ -321,28 +323,25 @@ class InstallAgentsTests(unittest.TestCase):
                 },
             )
             manifest = ia._read_json(root / ia._STATE_FILE)
-            operator = ia._read_json(root / ia._OPERATOR_FILE)
-            secrets = ia._read_json(root / ia._SECRETS_FILE)
+            override = ia._read_json(root / ia._OVERRIDE_FILE)
 
             # `GITHUB_OWNER` is SHAREABLE: it identifies the repository, not a person,
             # so it belongs in the tracked half.
             self.assertEqual(manifest["metadata"], {"GITHUB_OWNER": "uuid-123"})
+            # AC-29: the local half is ONE file, `.gk/manifest.override.json`.
+            # The property this test always guarded is unchanged — an operator
+            # answer never reaches the tracked manifest — only the local
+            # destination moved. The legacy pair is not created any more: two
+            # local files were two sources of truth, and `_write_state`
+            # migrates and deletes them.
             self.assertEqual(
-                operator["metadata"],
+                override["metadata"],
                 {"OPERATOR_NAME": "Esteban", "SMTP_ACCOUNT": "a@b.c"},
             )
-            # Empty by decision, 2026-08-13: every name that routed here was a donation
-            # slot, and all six were removed — measured first, and none was used by any
-            # shipped file or answered in any governed project. The split stays
-            # three-way because the third destination is a policy, not an accident: the
-            # next value that must never reach a tracked file has somewhere to go.
-            # Not created at all, rather than created empty — which is the better
-            # answer: a file that exists says "there is local state here" to every
-            # reader, and after the removal there is none.
-            self.assertEqual(secrets, {})
+            self.assertFalse((root / ia._OPERATOR_FILE).exists())
             self.assertFalse((root / ia._SECRETS_FILE).exists())
             self.assertEqual(ia._SENSITIVE_PLACEHOLDERS, frozenset())
-            self.assertEqual((root / ia._OPERATOR_FILE).stat().st_mode & 0o777, 0o600)
+            self.assertEqual((root / ia._OVERRIDE_FILE).stat().st_mode & 0o777, 0o600)
             # Callers still see one logical state.
             self.assertEqual(
                 ia._state_metadata(ia._read_state(root)),

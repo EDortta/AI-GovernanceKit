@@ -296,9 +296,14 @@ class ConfigureRenderGateTests(unittest.TestCase):
                 root, preset={"ORG_NAME": "{{PROJECT_SLUG}}"}, interactive=False
             )
 
-            manifest = root / ".gk" / "manifest.json"
-            operator = root / ".gk" / "operator.json"
-            for state_file in (manifest, operator):
+            # Every half the state has ever lived in: the tracked manifest, the
+            # AC-29 override (where a persisted answer lands today), and the
+            # legacy pair. Checking a file that is never created any more is a
+            # vacuous pass, and the override — the actual destination — was the
+            # one the first cut of this sweep did not read.
+            for name in ("manifest.json", "manifest.override.json",
+                         "operator.json", "secrets.json"):
+                state_file = root / ".gk" / name
                 if state_file.exists():
                     self.assertNotIn("{{PROJECT_SLUG}}", state_file.read_text())
 

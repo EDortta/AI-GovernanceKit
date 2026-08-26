@@ -249,12 +249,18 @@ def _credential_from_file(
 
 # Areas inside the project that the kit treats as secret. Derived from the installer's
 # own constants rather than typed again — `.credentials/` is where the operator's real
-# tokens live, and the two state files are the LOCAL half that `_write_state` keeps out
-# of the tracked manifest precisely because it holds their name, paths and payloads.
+# tokens live, and the state files (the AC-29 override plus the legacy pair it
+# migrates from) are the LOCAL half that `_write_state` keeps out of the tracked
+# manifest precisely because it holds their name, paths and payloads.
 def _secret_areas() -> tuple[str, ...]:
-    from .install_agents import _CREDENTIALS_DIR, _OPERATOR_FILE, _SECRETS_FILE
+    from .install_agents import (
+        _CREDENTIALS_DIR,
+        _OPERATOR_FILE,
+        _OVERRIDE_FILE,
+        _SECRETS_FILE,
+    )
 
-    return (_CREDENTIALS_DIR, _OPERATOR_FILE, _SECRETS_FILE)
+    return (_CREDENTIALS_DIR, _OPERATOR_FILE, _SECRETS_FILE, _OVERRIDE_FILE)
 
 
 def _confined_source(root: Path, rel: str) -> Path:

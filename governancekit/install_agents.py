@@ -117,8 +117,9 @@ _FRESH_PATHS: list[str] = [
 #
 # The self-upgrade path it was meant to repair is degraded, not blocked, and the first
 # cut of this comment overstated it. The shipped shell installer reads
-# `.credentials/identity.json` while this installer writes identity to
-# `.gk/operator.json`, so the two do not share the operator's answers: with stdin closed
+# `.credentials/identity.json` while this installer writes identity to the local
+# state half (`.gk/manifest.override.json` since AC-29; `.gk/operator.json` before
+# it), so the two do not share the operator's answers: with stdin closed
 # the shell run exits 8, but on a TTY — how an operator actually self-upgrades — it
 # prompts and completes. So the entry did buy something; it just did not buy enough to
 # be worth claiming the project's own directory. The silent bail is fixed where it belongs: the shell
@@ -237,23 +238,30 @@ _CONFIG_FILE = ".governancekit"
 # ships and deletes NOTHING. Safe by default — the cost is that a file genuinely
 # retired upstream lingers until the first state-backed upgrade records it.
 _STATE_DIR = ".gk"
-# Split by who may read it, because the three halves have different requirements.
+# Split by who may read it. Two halves, one rule (operator decision, 2026-08-13,
+# PLANO-UNIFICADO of epic 014): the manifest says what the kit IS in this project;
+# the override says what THIS MACHINE knows.
 #
-# manifest.json is COMMITTED: file hashes are not secret, and a team sharing a
-# checkout must share them — that is what makes every programmer's upgrade decide
-# ownership the same way. Only project-wide answers (org, repo owner) belong here.
+# manifest.json is COMMITTED: file hashes of impersonal kit files are not secret, and
+# a team sharing a checkout must share them — that is what makes every programmer's
+# upgrade decide ownership the same way. Only project-wide answers (org, repo owner)
+# belong here. Nothing derived from personal data does — not the values, and not the
+# hash of a file rendered with them (AC-22: the template is public and the candidate
+# set is the team, so a hash of the rendered result is a confirmation oracle).
 #
-# operator.json is GITIGNORED: per-programmer / per-machine identity answers such
-# as operator name, SMTP account, and local absolute paths. These must never be
-# shared through the repository, or every clone would inherit the previous
-# programmer's identity.
+# manifest.override.json is GITIGNORED, per-machine, mode 0600: per-programmer
+# identity answers (operator name, local absolute paths), anything sensitive, and the
+# hashes of files whose rendered content carries such a value. It merges over the
+# manifest on read and never reaches it on write. If a team genuinely needs to share
+# these values, encrypt a copy to the RECIPIENTS' public keys (sops/age) — never
+# "encrypt with the origin machine's private key", which only signs.
 #
-# secrets.json is GITIGNORED: local values that must never reach a tracked file, and
-# wallet addresses. If a team genuinely needs to share these, encrypt this file to
-# the RECIPIENTS' public keys (sops/age) — never "encrypt with the origin machine's
-# private key", which only signs and leaves the content readable to anyone holding
-# the public key.
+# operator.json and secrets.json are the LEGACY local halves (same gitignored rules).
+# They are still read, and the next write migrates their content into the override
+# and deletes them — reading them forever while writing elsewhere would leave two
+# sources of truth, which is the defect class AC-30 just retired an installer over.
 _STATE_FILE = f"{_STATE_DIR}/manifest.json"
+_OVERRIDE_FILE = f"{_STATE_DIR}/manifest.override.json"
 _OPERATOR_FILE = f"{_STATE_DIR}/operator.json"
 _SECRETS_FILE = f"{_STATE_DIR}/secrets.json"
 _STATE_VERSION = 1
@@ -1116,26 +1124,36 @@ def _read_state(root: Path) -> dict:
     state = _read_json(safe_path(root, root / _STATE_FILE))
     operator = _read_json(safe_path(root, root / _OPERATOR_FILE))
     secrets = _read_json(safe_path(root, root / _SECRETS_FILE))
+    override = _read_json(safe_path(root, root / _OVERRIDE_FILE))
     # Legacy manifests may still carry operator-local fields from before
     # operator.json existed. Ignore them here so a clone never inherits another
     # programmer's identity; the next write strips them from the manifest.
     manifest_meta = {
         k: v for k, v in _state_metadata(state).items() if k not in _OPERATOR_PLACEHOLDERS
     }
-    if not operator and not secrets:
+    if not operator and not secrets and not override:
         if manifest_meta != _state_metadata(state):
             merged = dict(state)
             merged["metadata"] = manifest_meta
             return merged
         return state
     # Present the split files to callers as one logical state; only _write_state
-    # knows they are stored apart.
+    # knows they are stored apart. The override wins: it is what this machine
+    # answered, while the legacy pair and the manifest are what it inherited.
     merged = dict(state)
     merged["metadata"] = {
         **manifest_meta,
         **_state_metadata(operator),
         **_state_metadata(secrets),
+        **_state_metadata(override),
     }
+    override_files = _state_files(override)
+    if override_files:
+        # File hashes routed local by `_write_state` (a rendered file carrying a
+        # local value). Merged here so ownership judgement on THIS machine still
+        # sees them; a clone without the override simply preserves those files,
+        # which is the safe direction an absent state already means.
+        merged["files"] = {**_state_files(state), **override_files}
     return merged
 
 
@@ -1203,11 +1221,17 @@ def _write_state(
     }
 
     unclaimed = set(preserved or ())
+    # The rels whose digest THIS run computed from the file on disk. The routing
+    # below may only reclassify a previously-local entry on the strength of a
+    # digest that provably describes content it just read — a merged entry from a
+    # previous state describes bytes nobody looked at in this run.
+    rehashed: set[str] = set()
     for rel in installed:
         target = safe_path(root, root / rel)
         if target.is_file():
             if rel not in unclaimed:
                 files[rel] = _file_sha256(target)
+                rehashed.add(rel)
         elif target.is_dir():
             for f in sorted(p for p in target.rglob("*") if p.is_file()):
                 rel_to_root = f.relative_to(root).as_posix()
@@ -1217,6 +1241,7 @@ def _write_state(
                     files.pop(rel_to_root, None)
                     continue
                 files[rel_to_root] = _file_sha256(f)
+                rehashed.add(rel_to_root)
 
     merged_meta = {**_state_metadata(previous), **metadata}
     # Dropped BEFORE the split, so no branch below can receive them. Putting the filter
@@ -1233,8 +1258,69 @@ def _write_state(
         k: v for k, v in merged_meta.items()
         if k not in _OPERATOR_PLACEHOLDERS and k not in _SENSITIVE_PLACEHOLDERS
     }
-    operator_local = {k: v for k, v in merged_meta.items() if k in _OPERATOR_PLACEHOLDERS}
-    sensitive = {k: v for k, v in merged_meta.items() if k in _SENSITIVE_PLACEHOLDERS}
+    local_meta = {
+        k: v for k, v in merged_meta.items()
+        if k in _OPERATOR_PLACEHOLDERS or k in _SENSITIVE_PLACEHOLDERS
+    }
+
+    # AC-22, resolved by the manifest/override split rather than by a smarter hash:
+    # a file whose RENDERED content carries a local value must not have its digest in
+    # the committed half. The template is public and ships at the ref the manifest
+    # itself records, so for such a file the digest's only unknown is the personal
+    # value — hashing it publishes a confirmation oracle whose candidate set is the
+    # team. Two rules, in order of authority:
+    #
+    # 1. **Provenance is sticky.** An entry already in the override describes content
+    #    that carried a local value WHEN IT WAS HASHED. The first cut tested the file
+    #    as it sits on disk today, and a council lens measured what that publishes:
+    #    delete the file and the personalized digest fell through to the tracked
+    #    manifest; rewrite it clean and the OLD digest — still derived from the
+    #    personal value — fell through the same way. A previously-local entry may
+    #    move to the shared half only on fresh evidence: this run re-hashed the file
+    #    (`rehashed`), there are stored values to test against, and the content
+    #    provably carries none of them. No evidence, no reclassification.
+    # 2. **New placement is by content.** For everything else the digest just
+    #    computed describes the bytes just read, so the scan decides. Over-routing
+    #    is the safe direction — an entry missing from the shared half reads as
+    #    "preserve, ask" — and unreadable is unknowable: never publish on a guess.
+    #
+    # `files` starts from the MERGED previous state, so entries a legacy tracked
+    # manifest already carries migrate out of it on this write.
+    local_values = [v for v in local_meta.values() if isinstance(v, str) and v]
+    previously_local = set(
+        _state_files(_read_json(safe_path(root, root / _OVERRIDE_FILE)))
+    )
+
+    def _content_carries_local_value(rel: str) -> bool | None:
+        """True/False from the file's current bytes; None when there is no evidence
+        (missing file, unreadable file, or no stored values to test against)."""
+        if not local_values:
+            return None
+        target = safe_path(root, root / rel)
+        if not target.is_file():
+            return None
+        try:
+            text = target.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        return any(value in text for value in local_values)
+
+    def _routes_local(rel: str) -> bool:
+        verdict = _content_carries_local_value(rel)
+        if rel in previously_local:
+            # Sticky: only a fresh hash of provably clean content may downgrade.
+            return not (rel in rehashed and verdict is False)
+        if verdict is None:
+            # No evidence. A digest computed THIS run from a file the scan could
+            # not read must not be published while stored values exist that it
+            # may carry; a merged entry keeps the placement the team already had.
+            return bool(local_values) and rel in rehashed
+        return verdict
+
+    local_files: dict[str, str] = {
+        rel: digest for rel, digest in files.items() if _routes_local(rel)
+    }
+    files = {rel: digest for rel, digest in files.items() if rel not in local_files}
 
     state_dir = safe_path(root, root / _STATE_DIR)
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -1245,6 +1331,12 @@ def _write_state(
     safe_path(root, state_dir / ".gitignore").write_text(
         "# Managed by governancekit.\n"
         "# manifest.json is intentionally NOT ignored — the team must share it.\n"
+        "# manifest.override.json is what THIS MACHINE knows: identity answers and\n"
+        "# hashes derived from them. It must never be committed.\n"
+        "manifest.override.json\n"
+        # The legacy local pair stays listed: a mixed-version fleet still writes
+        # them, and an un-migrated target must not have them one `git add -A`
+        # from tracked just because a newer kit rewrote this file first.
         "operator.json\n"
         "secrets.json\n"
         "context-telemetry.jsonl\n"
@@ -1304,39 +1396,32 @@ def _write_state(
         encoding="utf-8",
     )
 
-    operator_path = safe_path(root, root / _OPERATOR_FILE)
-    if operator_local:
-        operator_path.write_text(
-            json.dumps(
-                {"state_version": _STATE_VERSION, "metadata": operator_local},
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
+    # One local file, not two. Written only when there is something local to record,
+    # so a project with no local answers never grows a confusing empty file.
+    override_path = safe_path(root, root / _OVERRIDE_FILE)
+    if local_meta or local_files:
+        override_payload: dict[str, object] = {"state_version": _STATE_VERSION}
+        if local_meta:
+            override_payload["metadata"] = local_meta
+        if local_files:
+            override_payload["files"] = local_files
+        override_path.write_text(
+            json.dumps(override_payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        operator_path.chmod(0o600)
-    elif operator_path.exists():
-        operator_path.unlink()
+        override_path.chmod(0o600)
+    elif override_path.exists():
+        override_path.unlink()
 
-    # Written only when there is something to write, so a project with no secrets
-    # never grows a confusing empty file.
-    if sensitive:
-        secrets_path = safe_path(root, root / _SECRETS_FILE)
-        secrets_path.write_text(
-            json.dumps(
-                {"state_version": _STATE_VERSION, "metadata": sensitive},
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        secrets_path.chmod(0o600)
-    else:
-        secrets_path = root / _SECRETS_FILE
-        if secrets_path.exists():
-            secrets_path.unlink()
+    # Migration of the legacy pair, and it happens HERE, after the override is on
+    # disk. `previous` was read through `_read_state`, which merges both legacy
+    # files, so everything they held is already inside `local_meta` — deleting them
+    # loses nothing and leaves ONE local source of truth. Deleting before the
+    # override write would have a crash window where the answers exist nowhere.
+    for legacy_rel in (_OPERATOR_FILE, _SECRETS_FILE):
+        legacy_path = safe_path(root, root / legacy_rel)
+        if legacy_path.exists():
+            legacy_path.unlink()
 
 
 # ── legacy layout migration ──────────────────────────────────────────────────────
@@ -1963,8 +2048,8 @@ def _report_refused_values(
     for token, reason in sorted(refused):
         print(f"  {{{{{token}}}}} — {reason}")
     print(
-        "  Stored answers live in .gk/manifest.json (shared), .gk/operator.json and "
-        ".gk/secrets.json (local).\n"
+        "  Stored answers live in .gk/manifest.json (shared) and "
+        ".gk/manifest.override.json (local).\n"
         "  Replace one with: governancekit --root <project> configure "
         "--set <TOKEN>=<value>"
     )
@@ -2296,6 +2381,8 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     # different baseline. Only the local operator/secrets halves and the stash are
     # ignored, unconditionally — unlike .docs/, this is not subject to the
     # track-kit-docs choice.
+    entries.append(_OVERRIDE_FILE)
+    # The legacy pair stays listed for the un-migrated and mixed-version fleet.
     entries.append(_OPERATOR_FILE)
     entries.append(_SECRETS_FILE)
     entries.append(f"{_STATE_DIR}/context-telemetry.jsonl")

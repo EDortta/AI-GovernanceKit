@@ -203,12 +203,24 @@ def _sha256(path: Path) -> str:
 
 
 def _manifest_files(root: Path) -> dict[str, str]:
-    path = root / ".gk/manifest.json"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    files: dict[str, object] = {}
+    # Both halves of the state, override winning. `_write_state` routes the hash of
+    # any file rendered with a local value into `.gk/manifest.override.json` (AC-22),
+    # so on the machine that rendered it the evidence for e.g. `AGENTS.md` lives
+    # there. A clone without the override simply has no entry, and every branch
+    # downstream reads an absent entry as "preserve, review" — the safe direction.
+    for state_rel in (".gk/manifest.json", ".gk/manifest.override.json"):
+        try:
+            data = json.loads((root / state_rel).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        half = data.get("files", {})
+        if isinstance(half, dict):
+            files.update(half)
+    if not files:
         return {}
-    files = data.get("files", {})
     # `.credentials/` claims are dropped HERE, not at each consumer. Filtering only the
     # candidate set left the claim alive in this dict, and the loop reads
     # `expected = manifest.get(rel)` off it — so a claim the selection had just refused

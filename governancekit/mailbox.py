@@ -245,20 +245,27 @@ def _identity(root: Path) -> dict:
 
 
 def _legacy_operator_state(root: Path) -> str:
-    """An `SMTP_ACCOUNT` answered before the 2026-08-10 retirement, in `.gk/operator.json`."""
-    try:
-        data = json.loads((root / ".gk/operator.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return ""
-    if not isinstance(data, dict):
-        return ""
-    metadata = data.get("metadata")
-    if not isinstance(metadata, dict):
-        return ""
-    for legacy in _LEGACY_ADDRESS_VALUES:
-        value = metadata.get(legacy)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    """An `SMTP_ACCOUNT` answered before the 2026-08-10 retirement, in local state.
+
+    Two carriers, because AC-29 moved the local half: `.gk/operator.json` is where
+    the park's orphans were answered, and `.gk/manifest.override.json` is where the
+    next `_write_state` migrates that file's content before deleting it. Reading
+    only the old name would make the migration silently orphan the orphan.
+    """
+    for state_rel in (".gk/manifest.override.json", ".gk/operator.json"):
+        try:
+            data = json.loads((root / state_rel).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        metadata = data.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        for legacy in _LEGACY_ADDRESS_VALUES:
+            value = metadata.get(legacy)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
     return ""
 
 

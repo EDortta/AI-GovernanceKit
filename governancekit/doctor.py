@@ -631,16 +631,29 @@ def _check_legacy_rule_traps(root: Path) -> CheckResult:
 
 
 def _check_manifest_drift(root: Path) -> CheckResult:
-    path = root / ".gk" / "manifest.json"
-    if not path.is_file():
+    # Both halves of the state, override winning — the same two-file rule as
+    # `remove_agents._manifest_files`. AC-29 routes the hash of any file rendered
+    # with a local value into `.gk/manifest.override.json`, so reading only the
+    # tracked half made this check blind to exactly those files: delete a rendered
+    # `AGENTS.md` and the verdict stayed "all tracked kit paths present". A check
+    # that reads one half of a two-half state certifies the half it skipped.
+    halves = (root / ".gk" / "manifest.json", root / ".gk" / "manifest.override.json")
+    if not any(path.is_file() for path in halves):
         return CheckResult("AI-Agents manifest", True, "no install manifest recorded", advisory=True)
-    try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-        files = state.get("files", {})
-    except (OSError, json.JSONDecodeError):
-        return CheckResult("AI-Agents manifest", False, "unreadable .gk/manifest.json")
-    if not isinstance(files, dict):
-        return CheckResult("AI-Agents manifest", False, "manifest files must be an object")
+    files: dict = {}
+    for path in halves:
+        if not path.is_file():
+            continue
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return CheckResult("AI-Agents manifest", False, f"unreadable .gk/{path.name}")
+        half = state.get("files", {}) if isinstance(state, dict) else None
+        if half is None:
+            half = {}
+        if not isinstance(half, dict):
+            return CheckResult("AI-Agents manifest", False, "manifest files must be an object")
+        files.update(half)
     missing = sorted(rel for rel in files if not (root / rel).is_file())
     if missing:
         shown = ", ".join(missing[:8])
