@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from .path_safety import safe_path
+from .path_safety import UnsafePathError, safe_path
 
 OVERVIEW_REL = "docs/software-overview.md"
 LIMITS_REL = "docs/limits.md"
@@ -81,6 +81,37 @@ def _set_flag_yes(text: str, marker: str) -> str:
     )
 
 
+def is_kit_authored(text: str) -> bool:
+    """Whether this text is something the KIT put there, not something a project wrote.
+
+    Deterministic adoption may replace only its own leavings. `classify_document`
+    cannot answer this alone: a genuinely hand-written but short document also
+    classifies ``TEMPLATE``, and overwriting one would destroy the very thing the
+    Start Gate exists to collect.
+
+    Two families count as the kit's: the seeded template prose (`_TEMPLATE_MARKERS`,
+    the sentences that live in the kit's own `docs/` files), and the fingerprint of
+    the deterministic generator itself, so a second adoption run may refresh what a
+    first one wrote.
+    """
+    if is_kit_template(text):
+        return True
+    lowered = text.lower()
+    return "## evidence-based proposal" in lowered or "## accepted baseline" in lowered
+
+
+def is_kit_template(text: str) -> bool:
+    """Whether this is the kit's own SEEDED prose — the text that describes the kit.
+
+    Narrower than `is_kit_authored`, and the two are not interchangeable. A document
+    the deterministic path generated is the kit's to replace, but it describes the
+    PROJECT; only this one describes the kit itself, and only it justifies telling an
+    operator that their overview is about somebody else's software.
+    """
+    lowered = text.lower()
+    return any(hint.lower() in lowered for hint in _TEMPLATE_MARKERS)
+
+
 def classify_document(root: Path, rel: str) -> DocState:
     path = safe_path(root, root / rel)
     if not path.is_file():
@@ -102,11 +133,22 @@ def classify_document(root: Path, rel: str) -> DocState:
 
 
 def find_description(root: Path) -> str | None:
-    """The project's own description file, if it has one."""
+    """The project's own description file, if it has one.
+
+    A symlinked `README.md` — ordinary in a monorepo, and in the `README.md ->
+    docs/README.md` layout — used to raise `UnsafePathError` out of here and kill the
+    command with a traceback. Not finding a description is a state this flow already
+    handles (it prints advice and continues); refusing to read one is not a reason to
+    stop. The stricter rule stays: a symlink is not followed, it is simply not treated
+    as the project's description.
+    """
     for rel in DESCRIPTION_CANDIDATES:
-        candidate = safe_path(root, root / rel)
-        if candidate.is_file() and candidate.read_text(encoding="utf-8", errors="replace").strip():
-            return rel
+        try:
+            candidate = safe_path(root, root / rel)
+            if candidate.is_file() and candidate.read_text(encoding="utf-8", errors="replace").strip():
+                return rel
+        except (UnsafePathError, OSError):
+            continue
     return None
 
 
@@ -325,7 +367,7 @@ def draft_documents(root: Path, plan: AuthoringPlan, provider) -> list[DocumentP
         if not isinstance(body, str) or not body.strip():
             raise RuntimeError(f"the assistant returned no content for {doc.rel}")
         proposals.append(
-            DocumentProposal(doc.rel, "draft", content=_render(doc.marker, body.strip(), unknowns))
+            DocumentProposal(doc.rel, "draft", content=render_document(doc.marker, body.strip(), unknowns))
         )
     return proposals
 
@@ -360,11 +402,18 @@ def review_documents(root: Path, plan: AuthoringPlan, provider) -> list[Document
     return proposals
 
 
-def _render(marker: str, body: str, unknowns: list[str]) -> str:
+def render_document(marker: str, body: str, unknowns: list[str]) -> str:
     """Wrap drafted prose in the document shape, with the flag left at ``no``.
 
     The flag stays ``no`` in the proposal on purpose: it only becomes ``yes`` in
     ``confirm_document``, after the operator has said the document is right.
+
+    Public because the deterministic adoption path renders the same two documents.
+    It used to build them itself, with ``- project_context_ready: yes`` written into
+    the literal — a machine opening the Start Gate over content nobody had read, with
+    the unresolved questions listed three lines below the claim. One renderer means
+    one place decides what a readiness document looks like, and that place cannot
+    declare readiness.
     """
     title = "Software Overview" if marker == "project_context_ready" else "Agent Operational Limits"
     lines = [f"# {title}", "", "## Metadata", "", f"- {marker}: no", "", body.rstrip(), ""]

@@ -1,0 +1,148 @@
+{
+  "_comment": "Free, OpenAI-compatible models the kit may offer an operator. Derived from littlelm-proxy's catalog by scripts/refresh-llm-catalog.py — do not hand-edit: what makes this file trustworthy is that it was read off a source, not typed. Only models advertising `tools` are kept; the authoring flow needs them.",
+  "schema_version": 1,
+  "generated_at": "2026-08-03T15:08:34+00:00",
+  "derived_from": "/home/esteban/Sync/Projects/littlelm-proxy/catalog/free-models.json",
+  "sources": {
+    "openrouter": "https://openrouter.ai/api/v1/models"
+  },
+  "policy": "Free does not mean keyless. A candidate is not selected automatically: the operator obtains a key, configures it, and runs a proxy smoke test.",
+  "access": {
+    "openrouter": {
+      "requires_api_key": true,
+      "signup_url": "https://openrouter.ai/keys",
+      "rate_limit_note": "Free tier is rate limited; see provider pricing before use."
+    }
+  },
+  "provider_candidates": [
+    {
+      "provider": "nvidia",
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "status": "requires-account-validation",
+      "signup_url": "https://build.nvidia.com/",
+      "requires_api_key": true,
+      "reason": "Availability, credits, models, and API compatibility are account-dependent."
+    },
+    {
+      "provider": "gemini",
+      "status": "requires-account-validation",
+      "signup_url": "https://aistudio.google.com/apikey",
+      "requires_api_key": true,
+      "reason": "Google free-tier access is limited to selected models and rate limits."
+    }
+  ],
+  "models": [
+    {
+      "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "name": "NVIDIA: Nemotron 3 Ultra (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 1000000,
+      "status": "verified-free"
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it:free",
+      "name": "Google: Gemma 4 26B A4B  (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 262144,
+      "status": "verified-free"
+    },
+    {
+      "id": "google/gemma-4-31b-it:free",
+      "name": "Google: Gemma 4 31B (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 262144,
+      "status": "verified-free"
+    },
+    {
+      "id": "inclusionai/ling-3.0-flash:free",
+      "name": "Ling-3.0-flash (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 262144,
+      "status": "verified-free"
+    },
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "name": "NVIDIA: Nemotron 3 Super (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 262144,
+      "status": "verified-free"
+    },
+    {
+      "id": "poolside/laguna-s-2.1:free",
+      "name": "Poolside: Laguna S 2.1 (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 262144,
+      "status": "verified-free"
+    },
+    {
+      "id": "poolside/laguna-xs-2.1:free",
+      "name": "Poolside: Laguna XS 2.1 (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 262144,
+      "status": "verified-free"
+    },
+    {
+      "id": "cohere/north-mini-code:free",
+      "name": "Cohere: North Mini Code (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 256000,
+      "status": "verified-free"
+    },
+    {
+      "id": "nvidia/nemotron-3-nano-30b-a3b:free",
+      "name": "NVIDIA: Nemotron 3 Nano 30B A3B (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 256000,
+      "status": "verified-free"
+    },
+    {
+      "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "name": "NVIDIA: Nemotron 3 Nano Omni (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 256000,
+      "status": "verified-free"
+    },
+    {
+      "id": "openrouter/free",
+      "name": "Free Models Router",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 200000,
+      "status": "verified-free"
+    },
+    {
+      "id": "openai/gpt-oss-20b:free",
+      "name": "OpenAI: gpt-oss-20b (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 131072,
+      "status": "verified-free"
+    },
+    {
+      "id": "nvidia/nemotron-nano-12b-v2-vl:free",
+      "name": "NVIDIA: Nemotron Nano 12B 2 VL (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 128000,
+      "status": "verified-free"
+    },
+    {
+      "id": "nvidia/nemotron-nano-9b-v2:free",
+      "name": "NVIDIA: Nemotron Nano 9B V2 (free)",
+      "provider": "openrouter",
+      "api_base": "https://openrouter.ai/api/v1",
+      "context_length": 128000,
+      "status": "verified-free"
+    }
+  ]
+}

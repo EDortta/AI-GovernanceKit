@@ -9,10 +9,11 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .path_safety import UnsafePathError, safe_path
+from .path_safety import UnsafePathError, safe_path, safe_regular_file
 
 REPO = "EDortta/AI-Agents"
 # Pinned to a tagged release (not the mutable "main" branch) so installs are
@@ -100,7 +101,6 @@ _FRESH_PATHS: list[str] = [
     *_PROJECT_SEED_PATHS,
     "handoff.md",
     "new-tag.sh",
-    "scripts/install-agents-kit.sh",
     "scripts/agent-worktree.sh",
 ]
 # `templates` is deliberately NOT installed, and the reason is worth keeping.
@@ -117,8 +117,9 @@ _FRESH_PATHS: list[str] = [
 #
 # The self-upgrade path it was meant to repair is degraded, not blocked, and the first
 # cut of this comment overstated it. The shipped shell installer reads
-# `.credentials/identity.json` while this installer writes identity to
-# `.gk/operator.json`, so the two do not share the operator's answers: with stdin closed
+# `.credentials/identity.json` while this installer writes identity to the local
+# state half (`.gk/manifest.override.json` since AC-29; `.gk/operator.json` before
+# it), so the two do not share the operator's answers: with stdin closed
 # the shell run exits 8, but on a TTY — how an operator actually self-upgrades — it
 # prompts and completes. So the entry did buy something; it just did not buy enough to
 # be worth claiming the project's own directory. The silent bail is fixed where it belongs: the shell
@@ -138,7 +139,6 @@ _UPGRADE_PATHS: list[str] = [
     ".github/copilot-instructions.md",
     ".amazonq/rules/ai-agents.md",
     "new-tag.sh",
-    "scripts/install-agents-kit.sh",
     "scripts/agent-worktree.sh",
     *_KIT_DOC_PATHS,
 ]
@@ -165,6 +165,13 @@ _DOCS_PATHS = _KIT_DOC_PATHS
 # for another twenty days. AGENTS.md is the first file every agent is told to read,
 # so it is the first place anyone writes a project rule.
 _PROTECTED_FILES: tuple[str, ...] = ("AGENTS.md",)
+
+# The project's own directory, seeded but never claimed. It holds the programmer's
+# identity file, their GitHub/Jira tokens and the LLM keys `scope_conversation` writes
+# to `.credentials/llm/<provider>.key`. The kit adds what is missing and touches
+# nothing else — the shell installer's `seed_dir_missing`, ported.
+_CREDENTIALS_DIR = ".credentials"
+_SEED_ONLY_PATHS: frozenset[str] = frozenset({_CREDENTIALS_DIR})
 
 # The project's documentation territory. Created on fresh install, never overwritten.
 _PROJECT_DOCS_DIR = "docs"
@@ -231,23 +238,30 @@ _CONFIG_FILE = ".governancekit"
 # ships and deletes NOTHING. Safe by default — the cost is that a file genuinely
 # retired upstream lingers until the first state-backed upgrade records it.
 _STATE_DIR = ".gk"
-# Split by who may read it, because the three halves have different requirements.
+# Split by who may read it. Two halves, one rule (operator decision, 2026-08-13,
+# PLANO-UNIFICADO of epic 014): the manifest says what the kit IS in this project;
+# the override says what THIS MACHINE knows.
 #
-# manifest.json is COMMITTED: file hashes are not secret, and a team sharing a
-# checkout must share them — that is what makes every programmer's upgrade decide
-# ownership the same way. Only project-wide answers (org, repo owner) belong here.
+# manifest.json is COMMITTED: file hashes of impersonal kit files are not secret, and
+# a team sharing a checkout must share them — that is what makes every programmer's
+# upgrade decide ownership the same way. Only project-wide answers (org, repo owner)
+# belong here. Nothing derived from personal data does — not the values, and not the
+# hash of a file rendered with them (AC-22: the template is public and the candidate
+# set is the team, so a hash of the rendered result is a confirmation oracle).
 #
-# operator.json is GITIGNORED: per-programmer / per-machine identity answers such
-# as operator name, SMTP account, and local absolute paths. These must never be
-# shared through the repository, or every clone would inherit the previous
-# programmer's identity.
+# manifest.override.json is GITIGNORED, per-machine, mode 0600: per-programmer
+# identity answers (operator name, local absolute paths), anything sensitive, and the
+# hashes of files whose rendered content carries such a value. It merges over the
+# manifest on read and never reaches it on write. If a team genuinely needs to share
+# these values, encrypt a copy to the RECIPIENTS' public keys (sops/age) — never
+# "encrypt with the origin machine's private key", which only signs.
 #
-# secrets.json is GITIGNORED: sensitive local values such as PIX payloads and
-# wallet addresses. If a team genuinely needs to share these, encrypt this file to
-# the RECIPIENTS' public keys (sops/age) — never "encrypt with the origin machine's
-# private key", which only signs and leaves the content readable to anyone holding
-# the public key.
+# operator.json and secrets.json are the LEGACY local halves (same gitignored rules).
+# They are still read, and the next write migrates their content into the override
+# and deletes them — reading them forever while writing elsewhere would leave two
+# sources of truth, which is the defect class AC-30 just retired an installer over.
 _STATE_FILE = f"{_STATE_DIR}/manifest.json"
+_OVERRIDE_FILE = f"{_STATE_DIR}/manifest.override.json"
 _OPERATOR_FILE = f"{_STATE_DIR}/operator.json"
 _SECRETS_FILE = f"{_STATE_DIR}/secrets.json"
 _STATE_VERSION = 1
@@ -268,13 +282,34 @@ _OPERATOR_PLACEHOLDERS: frozenset[str] = frozenset({
 
 # Answers that must never be committed because they are sensitive. Everything else
 # is shareable project context.
-_SENSITIVE_PLACEHOLDERS: frozenset[str] = frozenset({
+# Empty by decision, 2026-08-13: every name that lived here was a donation slot, and
+# the operator's ruling was "não pode haver referência alguma". They were residue from
+# `a228889` — the public release scrubbed the author's OWN donation page into tokens and
+# the tokens became declared slots. Measured before removing: no shipped file carried
+# any of them, and `.gk/secrets.json` existed in no governed project. Kept as an empty
+# set rather than deleted so `_write_state`'s three-way split still reads as three ways.
+_SENSITIVE_PLACEHOLDERS: frozenset[str] = frozenset()
+
+# Withdrawn, and DISCARDED on sight — not merely unclassified.
+#
+# The first cut of the removal emptied `_SENSITIVE_PLACEHOLDERS` and stopped there. That
+# did not delete anything: `shareable` is "everything not in the two sets", so the six
+# names fell through to the SHARED half and `_write_state` wrote a stored PIX payload and
+# a person's full name into `.gk/manifest.json` — the file `.gk/.gitignore` marks
+# "intentionally NOT ignored — the team must share it" — while deleting the gitignored
+# `secrets.json` in the same pass. The operator asked for "não pode haver referência
+# alguma" and the implementation produced publication.
+#
+# Erasing a value's CLASSIFICATION does not erase the value; it decides where it goes.
+# So the names stay, in the one list whose meaning is "drop this, wherever it came from",
+# and the eliminação `AC-21` owes the operator happens here for these six by construction.
+_DISCARDED_PLACEHOLDERS: frozenset[str] = frozenset({
     "PIX_KEY_UUID",
     "PIX_HOLDER_NAME",
     "PIX_PAYLOAD",
     "PIX_QR_BASE64",
-    "ETH_WALLET_ADDRESS",
     "KOFI_HANDLE",
+    "ETH_WALLET_ADDRESS",
 })
 
 _GITIGNORE_BEGIN = "# AI-Agents kit — managed by governancekit install-agents"
@@ -304,6 +339,10 @@ class InstallResult:
     # kit installed. The project's version stayed; the kit's waits as <file>.kit-new
     # and is NOT recorded in the manifest until a human merges it.
     drifted_paths: list[str] = field(default_factory=list)
+    # Files added into a directory the project owns (`.credentials/`), and the ones
+    # already there that this run left alone. Reported: an operator who is told
+    # "installed 26 paths" and nothing else cannot know their tokens survived.
+    seeded_paths: list[str] = field(default_factory=list)
     # Files replaced this run whose previous content was copied to .gk/pre-upgrade/.
     # Reported: insurance nobody knows about is insurance nobody uses, and the
     # directory is cleared at the start of the next upgrade.
@@ -433,8 +472,11 @@ def run_install_agents(
         # anything is compared or copied. Without this the comparison is rigged: the
         # target holds `Esteban` where the download still holds `{{OPERATOR_NAME}}`,
         # so a file the kit itself rendered can never read as identical to the kit.
+        # One run, one warning per token: what the source pass says about a
+        # composing slot must not be repeated verbatim by the target pass.
+        composing_reported: set[tuple[str, str]] = set()
         result.substitutions_prerendered = _prerender_source(
-            src_root, _state_metadata(state)
+            src_root, _state_metadata(state), reported=composing_reported
         )
 
         if docs_only or upgrade:
@@ -452,7 +494,10 @@ def run_install_agents(
                 clear_backups=not docs_only,
             )
         else:
-            result.paths_installed = _do_fresh(src_root, root, force=force)
+            result.paths_installed = _do_fresh(
+                src_root, root, force=force,
+                seeded=result.seeded_paths, preserved=result.preserved_paths,
+            )
 
         # Idempotent: seeds docs/ on fresh install and lets existing installs adopt
         # it on --upgrade / --docs-only without overwriting it.
@@ -476,8 +521,18 @@ def run_install_agents(
             result.gitignore_updated = True
             result.gitignore_path = gitignore_path
 
+    withdrawn = _remove_withdrawn(root)
+    if withdrawn:
+        print(
+            "\nRemoved file(s) this kit no longer ships: " + ", ".join(withdrawn)
+            + "\n  They were installed by an older kit and are not documentation this "
+            "project needs."
+        )
+        result.migration_notes.extend(f"removed withdrawn {rel}" for rel in withdrawn)
+
     metadata = _fill_placeholders(
-        root, result.paths_installed, known=_state_metadata(state)
+        root, result.paths_installed, known=_state_metadata(state),
+        already_reported=composing_reported,
     )
     result.metadata_known = sorted(metadata)
     # Written last: hashes must describe the files as they stand AFTER substitution,
@@ -490,6 +545,7 @@ def run_install_agents(
         metadata=metadata,
         prune_missing=upgrade and not docs_only,
         preserved=result.preserved_paths,
+        seeded=result.seeded_paths,
     )
 
     if install_awt and _dest_rel("scripts/agent-worktree.sh") in result.paths_installed:
@@ -601,10 +657,64 @@ def _safe_extractall(tf: tarfile.TarFile, dest: Path) -> None:
 _CONFLICT_FORCE_THRESHOLD = 0.10  # suggest --force when conflicts exceed this ratio
 
 
-def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
+def _seed_dir_missing(src_dir: Path, dst_dir: Path, root: Path) -> tuple[list[str], list[str]]:
+    """Copy only what is absent, file by file. Never replaces, never deletes.
+
+    Mirrors `seed_dir_missing` in the shell installer, whose comment is the whole
+    specification: `.credentials/` holds the programmer's real tokens and their
+    identity file, so the directory belongs to the project even though the kit seeds
+    scaffolding into it.
+
+    This runtime did the opposite until today: `.credentials` was an ordinary conflict,
+    so answering `y` — or passing `--force`, which never asks — ran `shutil.rmtree` over
+    the operator's tokens and LLM keys and copied the kit's scaffolding in their place.
+    """
+    if dst_dir.exists() and not dst_dir.is_dir():
+        # The project has a FILE (or a broken link) where the kit ships a directory.
+        # Nothing here may replace it — this whole function exists because that path
+        # belongs to the project — and crashing the install over it helps nobody. The
+        # old code reached `unlink()`; the seed-only branch jumps over that, so without
+        # this the first `mkdir` raised FileExistsError and killed the run.
+        return [], [dst_dir.relative_to(root).as_posix()]
+    seeded: list[str] = []
+    preserved: list[str] = []
+    for src_file in sorted(p for p in src_dir.rglob("*") if p.is_file()):
+        rel = src_file.relative_to(src_dir)
+        target = safe_path(root, dst_dir / rel)
+        if target.exists():
+            preserved.append(target.relative_to(root).as_posix())
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_file, target)
+        seeded.append(target.relative_to(root).as_posix())
+    for existing in sorted(p for p in dst_dir.rglob("*") if p.is_file()):
+        rel_to_root = existing.relative_to(root).as_posix()
+        if rel_to_root not in seeded and rel_to_root not in preserved:
+            preserved.append(rel_to_root)
+    return seeded, sorted(preserved)
+
+
+def _do_fresh(
+    src: Path,
+    dst: Path,
+    *,
+    force: bool,
+    seeded: list[str] | None = None,
+    preserved: list[str] | None = None,
+) -> list[str]:
     available = [rel for rel in _FRESH_PATHS if _resolve_src(src, rel).exists()]
     # Conflicts are checked against the DESTINATION path (docs/ → .docs/).
-    conflicts = [rel for rel in available if (dst / _dest_rel(rel)).exists()]
+    #
+    # Two families are never conflicts, because they are never the kit's to replace:
+    # `.credentials/` (tokens, identity, LLM keys) and the two readiness documents the
+    # project writes. `--force` is documented as "overwrite existing KIT files"; these
+    # are the project's. The shell installer has guarded both since it grew the
+    # protection, and this is that convergence.
+    protected = {rel for rel in available if rel in _SEED_ONLY_PATHS or rel in _PROJECT_SEED_PATHS}
+    conflicts = [
+        rel for rel in available
+        if rel not in protected and (dst / _dest_rel(rel)).exists()
+    ]
 
     skip: set[str] = set()
 
@@ -632,12 +742,33 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
                 skip.add(rel)
 
     installed: list[str] = []
+    # Readiness documents that were already on disk when this run started. The reset
+    # below lowers only what this run seeded, and "already there" is the honest test —
+    # deriving it from what the SOURCE ships would demote a confirmed document whenever
+    # a release happened not to carry that file.
+    kept_readiness = {
+        _dest_rel(rel) for rel in _PROJECT_SEED_PATHS
+        if (dst / _dest_rel(rel)).exists()
+    }
     for rel in available:
         if rel in skip:
             continue
         src_path = _resolve_src(src, rel)
         dst_path = safe_path(dst, dst / _dest_rel(rel))
         dst_path.parent.mkdir(parents=True, exist_ok=True)
+        if rel in _SEED_ONLY_PATHS and src_path.is_dir():
+            was_seeded, was_kept = _seed_dir_missing(src_path, dst_path, dst)
+            if seeded is not None:
+                seeded.extend(was_seeded)
+            if preserved is not None:
+                preserved.extend(was_kept)
+            # Deliberately NOT appended to `installed`: that list becomes the manifest,
+            # and the manifest is tracked. See `_write_state`.
+            continue
+        if rel in _PROJECT_SEED_PATHS and dst_path.exists():
+            if preserved is not None:
+                preserved.append(_dest_rel(rel))
+            continue
         if dst_path.exists():
             if dst_path.is_dir():
                 shutil.rmtree(dst_path)
@@ -649,27 +780,39 @@ def _do_fresh(src: Path, dst: Path, *, force: bool) -> list[str]:
             shutil.copy2(src_path, dst_path)
         installed.append(_dest_rel(rel))
 
-    _reset_readiness_flags(dst)
+    # Only what this run just SEEDED. A readiness document the project already had was
+    # preserved three lines above; lowering its flag would demote an answer the operator
+    # gave — in the same run whose report says "kept" — and shut the Start Gate over
+    # content nobody changed. Found by the council's migrator lens.
+    _reset_readiness_flags(dst, skip=kept_readiness)
     return installed
 
 
-def _reset_readiness_flags(root: Path) -> None:
-    for rel, pattern, replacement in [
-        (
-            "docs/software-overview.md",
-            "- project_context_ready: yes",
-            "- project_context_ready: no",
-        ),
-        (
-            "docs/limits.md",
-            "- limits_ready: yes",
-            "- limits_ready: no",
-        ),
-    ]:
+def _reset_readiness_flags(root: Path, *, skip: set[str] | None = None) -> None:
+    """Lower both readiness flags on a fresh install, as a metadata LINE.
+
+    Anchored, like every other reader and writer of these flags. A plain `replace`
+    matches mid-line, and the seeded documents explain the flag in a sentence — the
+    same prose that made the adoption gate skip its write for eight days.
+    """
+    for rel, marker in (
+        ("docs/software-overview.md", "project_context_ready"),
+        ("docs/limits.md", "limits_ready"),
+    ):
+        if skip and rel in skip:
+            continue
         path = safe_path(root, root / rel)
-        if path.is_file():
-            text = path.read_text(encoding="utf-8", errors="replace")
-            path.write_text(text.replace(pattern, replacement), encoding="utf-8")
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        lowered = re.sub(
+            rf"^(-?[ \t]*{re.escape(marker)}[ \t]*:[ \t]*)yes[ \t]*$",
+            lambda m: f"{m.group(1)}no",
+            text,
+            flags=re.MULTILINE,
+        )
+        if lowered != text:
+            path.write_text(lowered, encoding="utf-8")
 
 
 # ── upgrade ────────────────────────────────────────────────────────────────────
@@ -751,7 +894,126 @@ def persist_placeholder_values(root: Path, values: dict[str, str]) -> None:
     )
 
 
-def _prerender_source(src_root: Path, known: dict[str, str]) -> int:
+def unset_placeholder_values(
+    root: Path, keys: list[str]
+) -> tuple[dict[str, list[str]], list[str], dict[str, list[str]]]:
+    """AC-21 — eliminate stored answers, and say exactly what was done.
+
+    Returns ``({key: [state files it was removed from]}, [unreadable state
+    files], {key: [identity carriers still holding it]})``. An empty list for a
+    key means it was stored in no state file — said, not silently absorbed,
+    because a mistyped token would otherwise report the same success as a real
+    elimination. The second element exists for the same reason one layer down:
+    ``_read_json`` folds a corrupt file into ``{}``, and without it a truncated
+    ``operator.json`` still holding the value byte-for-byte was answered with
+    "nothing to eliminate" — an affirmation the disk contradicts, reproduced by
+    the security lens of this delivery's pre-commit critique.
+
+    The third element is the sweep lens's round-1 finding: "where the kit stores
+    the operator" is not only ``.gk/`` — ``.credentials/identity.json`` and
+    ``.governancekit-identity.json`` hold the same data, this command does NOT
+    edit them (the credential store is a no-write zone for cleanup commands; the
+    host identity file is the §8b contract), and ``configure`` re-inherits from
+    them — so an unset that stayed silent about them reported an elimination the
+    next command would undo. Named, so the operator can finish the job by hand.
+
+    Three deliberate boundaries, all from the issue's ARO:
+    - **State only.** Files already rendered with the value are not rewritten:
+      un-rendering is an edit to project files this command has no mandate for.
+    - **The git history is not touched.** A value that was ever committed is not
+      eliminable by this kit, and claiming otherwise would be the class of
+      affirmation-without-artifact this epic audits.
+    - The override/legacy file is DELETED when its last key goes: an empty local
+      state file would keep saying "there is local state here".
+    """
+    root = root.resolve()
+    # Deduplicated, order kept: the same key twice in one invocation (an operator
+    # retry, a script with a duplicated argument) made the second `del` raise
+    # KeyError AFTER the first had mutated the dict and BEFORE anything was
+    # written — the elimination command crashed without eliminating. Found by the
+    # second-caller lens, round 1.
+    keys = list(dict.fromkeys(keys))
+    removed: dict[str, list[str]] = {key: [] for key in keys}
+    unreadable: list[str] = []
+    for state_rel in (_STATE_FILE, _OVERRIDE_FILE, _OPERATOR_FILE, _SECRETS_FILE):
+        path = safe_path(root, root / state_rel)
+        if path.is_file() and not _read_json(path):
+            # Present, but `_read_json` saw nothing in it. Only a literal empty
+            # object is benign; a parse error OR a non-dict payload (an array
+            # can carry the value just as well) means the value may still be
+            # inside, and "nothing to eliminate" would be false.
+            benign = False
+            try:
+                benign = json.loads(path.read_text(encoding="utf-8")) == {}
+            except (OSError, json.JSONDecodeError):
+                pass
+            if not benign:
+                unreadable.append(state_rel)
+            continue
+        data = _read_json(path)
+        meta = data.get("metadata")
+        if not isinstance(meta, dict):
+            continue
+        hit = [key for key in keys if key in meta]
+        if not hit:
+            continue
+        for key in hit:
+            del meta[key]
+            removed[key].append(state_rel)
+        if state_rel == _STATE_FILE:
+            # The shared manifest survives: it holds the file table and the ref,
+            # which are not the operator's data.
+            path.write_text(
+                json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+        elif meta or _state_files(data):
+            path.write_text(
+                json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            path.chmod(0o600)
+        else:
+            path.unlink()
+
+    # Identity carriers outside the state files, still holding an equivalent
+    # value after this run. Detection only, never edits — see the docstring.
+    #
+    # Read the way `identity.py` reads the same files: `safe_regular_file`, which
+    # SKIPS a symlink instead of raising. The first cut used `safe_path`, which
+    # raises `UnsafePathError` on the symlinked `.credentials/` layout the repo
+    # itself documents as intentional — and it raised AFTER the state files had
+    # been mutated and BEFORE the report printed: the elimination happened and
+    # the command said nothing. Round-2 regression hunter, reproduced. A carrier
+    # this cannot read safely is simply not reported; the state-file work above
+    # is already done and must always be reported.
+    def _carrier_json(rel: str) -> dict:
+        path = root / rel
+        if not safe_regular_file(root, path):
+            return {}
+        return _read_json(path)
+
+    carrier_field = {"OPERATOR_NAME": "operator_name"}
+    cred = _carrier_json(".credentials/identity.json")
+    cred_values = cred.get("values")
+    host = _carrier_json(".governancekit-identity.json")
+    elsewhere: dict[str, list[str]] = {}
+    for key in keys:
+        spots: list[str] = []
+        if isinstance(cred_values, dict) and str(cred_values.get(key) or "").strip():
+            spots.append(".credentials/identity.json")
+        field = carrier_field.get(key)
+        if field and str(host.get(field) or "").strip():
+            spots.append(".governancekit-identity.json")
+        if spots:
+            elsewhere[key] = spots
+    return removed, unreadable, elsewhere
+
+
+def _prerender_source(
+    src_root: Path,
+    known: dict[str, str],
+    *,
+    reported: set[tuple[str, str]] | None = None,
+) -> int:
     """Substitute stored answers into the downloaded source; return substitutions made.
 
     This runs BEFORE the first comparison, and the ordering is the whole point. Every
@@ -775,56 +1037,37 @@ def _prerender_source(src_root: Path, known: dict[str, str]) -> int:
     Binary files (the shipped icons) and symlinks are never rewritten — an undecodable
     file is skipped, exactly as the shell's pass does.
 
-    Two properties are load-bearing, and the first cut had neither.
-
-    **One pass.** Substitution is a single regex sweep, so a value can never be
-    re-substituted. Sequential ``str.replace`` calls over one buffer let a value that
-    *contains* a token be expanded by a later round: with ``ORG_NAME`` set to
-    ``{{PIX_PAYLOAD}}`` in the manifest — the half a team SHARES, and which a
-    teammate or a pull request can set — the next pass expanded the victim's local
-    secret into the text the first pass had injected, wrote it into a kit file, and
-    recorded its hash. Under ``--track`` that file is git-tracked.
-
-    **Known tokens only.** The table is filtered to the placeholders this kit
-    declares, exactly as ``_fill_placeholders`` filters. Without it the kit did not
-    even need to ship the token: the injected text supplied it.
-
-    Both were found by the council's adversarial-user lens, against a mechanism that
-    is not reachable at the pinned release and was one shareable placeholder away
-    from being reachable at the next one.
+    What may be substituted is decided by ``_render_table`` and applied by
+    ``_render_text``, which every writer in the pipeline shares — see their docstrings
+    for the four rules and for why the fourth one is the only one that closes the
+    two-stage chain. This function used to carry its own copy of two of those rules,
+    which is how the chain stayed open: each stage was correct alone.
     """
-    tokens = {
-        key: value
-        for key, value in (known or {}).items()
-        if value
-        and (key in _PLACEHOLDER_DESCRIPTIONS or key in _RETIRED_PLACEHOLDERS)
-        # A stored value is text this process did not author. Capping it costs nothing
-        # a real answer needs (the longest declared slot is an e-mail address) and
-        # bounds the memory a hostile manifest can make this pass allocate.
-        and len(value) <= _MAX_PLACEHOLDER_VALUE
-    }
-    if not tokens:
+    tokens, refused = _render_table(known)
+    if not tokens and not refused:
         return 0
+
+    # One read of the tree. Each file decides for itself which of its own tokens
+    # compose; nothing a defective file does reaches its neighbours.
+    needed: set[str] = set()
+    dropped: dict[str, set[str]] = {}
     substitutions = 0
-    for path in sorted(src_root.rglob("*")):
-        if path.is_symlink() or not path.is_file():
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-
-        def _substitute(match: re.Match[str]) -> str:
-            nonlocal substitutions
-            replacement = tokens.get(match.group(1))
-            if replacement is None:
-                return match.group(0)
-            substitutions += 1
-            return replacement
-
-        rendered = _PLACEHOLDER_RE.sub(_substitute, text)
+    for path, text in _text_files(src_root):
+        needed.update(_PLACEHOLDER_RE.findall(text))
+        rendered, made, blocked = _render_file_text(text, tokens)
+        if blocked:
+            dropped[str(path.relative_to(src_root))] = blocked
         if rendered != text:
             path.write_text(rendered, encoding="utf-8")
+        substitutions += made
+
+    reported_here = _report_composing_tokens(dropped, prefix="the kit's own ")
+    if reported is not None:
+        reported.update(reported_here)
+    # Reported after the sweep, so only the tokens some file actually carries are
+    # named: a warning about a slot no shipped file uses is noise that costs the
+    # reader's attention on the run where it is not noise.
+    _report_refused_values(refused, needed=needed)
     return substitutions
 
 
@@ -969,7 +1212,7 @@ def _sync_dir(
             d.rmdir()
 
 
-# ── install state (.gk/state.json) ─────────────────────────────────────────────
+# ── install state (.gk/manifest.json + .gk/manifest.override.json) ─────────────────────────────────────────────
 
 def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -986,7 +1229,9 @@ def _read_json(path: Path) -> dict:
 
 
 def _read_state(root: Path) -> dict:
-    """Load ``.gk/state.json``; an absent or corrupt file yields an empty state.
+    """Load the split state (manifest + override + legacy pair) as one dict.
+
+    An absent or corrupt file yields an empty contribution.
 
     Empty means "nothing is provably kit-owned and nothing is known about the
     operator" — which makes the upgrade preserve files and ask questions, never
@@ -995,26 +1240,36 @@ def _read_state(root: Path) -> dict:
     state = _read_json(safe_path(root, root / _STATE_FILE))
     operator = _read_json(safe_path(root, root / _OPERATOR_FILE))
     secrets = _read_json(safe_path(root, root / _SECRETS_FILE))
+    override = _read_json(safe_path(root, root / _OVERRIDE_FILE))
     # Legacy manifests may still carry operator-local fields from before
     # operator.json existed. Ignore them here so a clone never inherits another
     # programmer's identity; the next write strips them from the manifest.
     manifest_meta = {
         k: v for k, v in _state_metadata(state).items() if k not in _OPERATOR_PLACEHOLDERS
     }
-    if not operator and not secrets:
+    if not operator and not secrets and not override:
         if manifest_meta != _state_metadata(state):
             merged = dict(state)
             merged["metadata"] = manifest_meta
             return merged
         return state
     # Present the split files to callers as one logical state; only _write_state
-    # knows they are stored apart.
+    # knows they are stored apart. The override wins: it is what this machine
+    # answered, while the legacy pair and the manifest are what it inherited.
     merged = dict(state)
     merged["metadata"] = {
         **manifest_meta,
         **_state_metadata(operator),
         **_state_metadata(secrets),
+        **_state_metadata(override),
     }
+    override_files = _state_files(override)
+    if override_files:
+        # File hashes routed local by `_write_state` (a rendered file carrying a
+        # local value). Merged here so ownership judgement on THIS machine still
+        # sees them; a clone without the override simply preserves those files,
+        # which is the safe direction an absent state already means.
+        merged["files"] = {**_state_files(state), **override_files}
     return merged
 
 
@@ -1037,6 +1292,7 @@ def _write_state(
     metadata: dict[str, str],
     prune_missing: bool = False,
     preserved: list[str] | None = None,
+    seeded: list[str] | None = None,
 ) -> None:
     """Persist file hashes and operator answers.
 
@@ -1067,12 +1323,31 @@ def _write_state(
         # pre-.docs paths must not survive forever as fake managed files. Narrow
         # documentation refreshes deliberately do not prune outside their scope.
         files = {rel: digest for rel, digest in files.items() if (root / rel).is_file()}
+    # `.gk/manifest.json` is TRACKED on purpose — a team must judge file ownership from
+    # the same baseline. So nothing under `.credentials/` may appear in it: a SHA-256 of
+    # a low-entropy token is a confirmation oracle, and the paths alone say which
+    # providers a programmer holds keys for. Until today the directory was rmtree'd
+    # before this ran, so only kit scaffolding was ever hashed; making the seeding
+    # non-destructive would otherwise have started committing the real thing. The
+    # filter runs over the MERGED dict, so a project that already carries those entries
+    # loses them on its next run of any mode.
+    files = {
+        rel: digest for rel, digest in files.items()
+        if not rel.startswith(f"{_CREDENTIALS_DIR}/") and rel != _CREDENTIALS_DIR
+    }
+
     unclaimed = set(preserved or ())
+    # The rels whose digest THIS run computed from the file on disk. The routing
+    # below may only reclassify a previously-local entry on the strength of a
+    # digest that provably describes content it just read — a merged entry from a
+    # previous state describes bytes nobody looked at in this run.
+    rehashed: set[str] = set()
     for rel in installed:
         target = safe_path(root, root / rel)
         if target.is_file():
             if rel not in unclaimed:
                 files[rel] = _file_sha256(target)
+                rehashed.add(rel)
         elif target.is_dir():
             for f in sorted(p for p in target.rglob("*") if p.is_file()):
                 rel_to_root = f.relative_to(root).as_posix()
@@ -1082,14 +1357,86 @@ def _write_state(
                     files.pop(rel_to_root, None)
                     continue
                 files[rel_to_root] = _file_sha256(f)
+                rehashed.add(rel_to_root)
 
     merged_meta = {**_state_metadata(previous), **metadata}
+    # Dropped BEFORE the split, so no branch below can receive them. Putting the filter
+    # after the split is what published them: `shareable` is a negative set, so a name
+    # removed from every positive list lands in the shared half by default.
+    discarded = sorted(k for k in merged_meta if k in _DISCARDED_PLACEHOLDERS)
+    if discarded:
+        print(
+            "\nWithdrawn value(s) dropped from this project's state, not carried "
+            "forward: " + ", ".join(discarded)
+        )
+    merged_meta = {k: v for k, v in merged_meta.items() if k not in _DISCARDED_PLACEHOLDERS}
     shareable = {
         k: v for k, v in merged_meta.items()
         if k not in _OPERATOR_PLACEHOLDERS and k not in _SENSITIVE_PLACEHOLDERS
     }
-    operator_local = {k: v for k, v in merged_meta.items() if k in _OPERATOR_PLACEHOLDERS}
-    sensitive = {k: v for k, v in merged_meta.items() if k in _SENSITIVE_PLACEHOLDERS}
+    local_meta = {
+        k: v for k, v in merged_meta.items()
+        if k in _OPERATOR_PLACEHOLDERS or k in _SENSITIVE_PLACEHOLDERS
+    }
+
+    # AC-22, resolved by the manifest/override split rather than by a smarter hash:
+    # a file whose RENDERED content carries a local value must not have its digest in
+    # the committed half. The template is public and ships at the ref the manifest
+    # itself records, so for such a file the digest's only unknown is the personal
+    # value — hashing it publishes a confirmation oracle whose candidate set is the
+    # team. Two rules, in order of authority:
+    #
+    # 1. **Provenance is sticky.** An entry already in the override describes content
+    #    that carried a local value WHEN IT WAS HASHED. The first cut tested the file
+    #    as it sits on disk today, and a council lens measured what that publishes:
+    #    delete the file and the personalized digest fell through to the tracked
+    #    manifest; rewrite it clean and the OLD digest — still derived from the
+    #    personal value — fell through the same way. A previously-local entry may
+    #    move to the shared half only on fresh evidence: this run re-hashed the file
+    #    (`rehashed`), there are stored values to test against, and the content
+    #    provably carries none of them. No evidence, no reclassification.
+    # 2. **New placement is by content.** For everything else the digest just
+    #    computed describes the bytes just read, so the scan decides. Over-routing
+    #    is the safe direction — an entry missing from the shared half reads as
+    #    "preserve, ask" — and unreadable is unknowable: never publish on a guess.
+    #
+    # `files` starts from the MERGED previous state, so entries a legacy tracked
+    # manifest already carries migrate out of it on this write.
+    local_values = [v for v in local_meta.values() if isinstance(v, str) and v]
+    previously_local = set(
+        _state_files(_read_json(safe_path(root, root / _OVERRIDE_FILE)))
+    )
+
+    def _content_carries_local_value(rel: str) -> bool | None:
+        """True/False from the file's current bytes; None when there is no evidence
+        (missing file, unreadable file, or no stored values to test against)."""
+        if not local_values:
+            return None
+        target = safe_path(root, root / rel)
+        if not target.is_file():
+            return None
+        try:
+            text = target.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        return any(value in text for value in local_values)
+
+    def _routes_local(rel: str) -> bool:
+        verdict = _content_carries_local_value(rel)
+        if rel in previously_local:
+            # Sticky: only a fresh hash of provably clean content may downgrade.
+            return not (rel in rehashed and verdict is False)
+        if verdict is None:
+            # No evidence. A digest computed THIS run from a file the scan could
+            # not read must not be published while stored values exist that it
+            # may carry; a merged entry keeps the placement the team already had.
+            return bool(local_values) and rel in rehashed
+        return verdict
+
+    local_files: dict[str, str] = {
+        rel: digest for rel, digest in files.items() if _routes_local(rel)
+    }
+    files = {rel: digest for rel, digest in files.items() if rel not in local_files}
 
     state_dir = safe_path(root, root / _STATE_DIR)
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -1100,6 +1447,12 @@ def _write_state(
     safe_path(root, state_dir / ".gitignore").write_text(
         "# Managed by governancekit.\n"
         "# manifest.json is intentionally NOT ignored — the team must share it.\n"
+        "# manifest.override.json is what THIS MACHINE knows: identity answers and\n"
+        "# hashes derived from them. It must never be committed.\n"
+        "manifest.override.json\n"
+        # The legacy local pair stays listed: a mixed-version fleet still writes
+        # them, and an un-migrated target must not have them one `git add -A`
+        # from tracked just because a newer kit rewrote this file first.
         "operator.json\n"
         "secrets.json\n"
         "context-telemetry.jsonl\n"
@@ -1122,15 +1475,36 @@ def _write_state(
         encoding="utf-8",
     )
 
+    # What the kit seeded into `.credentials/`, by NAME. Not under `files` and never
+    # with a digest: the names are this kit's own scaffolding, identical in every
+    # project, while a hash of anything in that directory is the thing that must not be
+    # written. Without this record `remove-agents` had no evidence of kit authorship
+    # there at all, and de-adoption left the kit's own README and examples behind.
+    previous_seeded = previous.get("seeded_credentials")
+    seeded_credentials = sorted({
+        *(previous_seeded if isinstance(previous_seeded, list) else []),
+        *(Path(rel).name for rel in (seeded or []) if rel.startswith(f"{_CREDENTIALS_DIR}/")),
+    })
+
+    # Written ONLY when there is something to record. Stamping `[]` looks harmless and
+    # is not: `remove-agents` distinguishes an ABSENT key (no information, fall back to
+    # byte-identity) from a present one (a list to narrow by). An empty list read as a
+    # record says "the kit seeded nothing here", which is false for every legacy target
+    # — and every legacy target got one on its next `configure`. A council measured the
+    # repair surviving exactly until the next ordinary command, then failing for good.
+    state_payload: dict[str, object] = {
+        "state_version": _STATE_VERSION,
+        "repo": repo,
+        "ref": ref,
+        "metadata": shareable,
+        "files": files,
+    }
+    if seeded_credentials:
+        state_payload["seeded_credentials"] = seeded_credentials
+
     safe_path(root, root / _STATE_FILE).write_text(
         json.dumps(
-            {
-                "state_version": _STATE_VERSION,
-                "repo": repo,
-                "ref": ref,
-                "metadata": shareable,
-                "files": files,
-            },
+            state_payload,
             indent=2,
             sort_keys=True,
         )
@@ -1138,42 +1512,92 @@ def _write_state(
         encoding="utf-8",
     )
 
-    operator_path = safe_path(root, root / _OPERATOR_FILE)
-    if operator_local:
-        operator_path.write_text(
-            json.dumps(
-                {"state_version": _STATE_VERSION, "metadata": operator_local},
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
+    # One local file, not two. Written only when there is something local to record,
+    # so a project with no local answers never grows a confusing empty file.
+    override_path = safe_path(root, root / _OVERRIDE_FILE)
+    if local_meta or local_files:
+        override_payload: dict[str, object] = {"state_version": _STATE_VERSION}
+        if local_meta:
+            override_payload["metadata"] = local_meta
+        if local_files:
+            override_payload["files"] = local_files
+        if not override_path.exists():
+            # Created restrictive BEFORE the content lands. write_text-then-chmod
+            # left a window where a fresh file held the values under the umask's
+            # default mode — raised as a question by the block council's claim
+            # auditor. `touch(mode=...)` opens with 0600 & ~umask, so the file is
+            # never wider than 0600 at any point of its life.
+            override_path.touch(mode=0o600)
+        override_path.write_text(
+            json.dumps(override_payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        operator_path.chmod(0o600)
-    elif operator_path.exists():
-        operator_path.unlink()
+        override_path.chmod(0o600)
+    elif override_path.exists():
+        override_path.unlink()
 
-    # Written only when there is something to write, so a project with no secrets
-    # never grows a confusing empty file.
-    if sensitive:
-        secrets_path = safe_path(root, root / _SECRETS_FILE)
-        secrets_path.write_text(
-            json.dumps(
-                {"state_version": _STATE_VERSION, "metadata": sensitive},
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        secrets_path.chmod(0o600)
-    else:
-        secrets_path = root / _SECRETS_FILE
-        if secrets_path.exists():
-            secrets_path.unlink()
+    # Migration of the legacy pair, and it happens HERE, after the override is on
+    # disk. `previous` was read through `_read_state`, which merges both legacy
+    # files, so everything they held is already inside `local_meta` — deleting them
+    # loses nothing and leaves ONE local source of truth. Deleting before the
+    # override write would have a crash window where the answers exist nowhere.
+    for legacy_rel in (_OPERATOR_FILE, _SECRETS_FILE):
+        legacy_path = safe_path(root, root / legacy_rel)
+        if legacy_path.exists():
+            legacy_path.unlink()
 
 
 # ── legacy layout migration ──────────────────────────────────────────────────────
+
+# Files an older kit installed into every target and that this kit withdraws. Removed
+# on install and on upgrade, not merely stopped — the operator's ruling on the donation
+# data was that "não pode haver referência alguma", and a file already sitting in three
+# projects is a reference that stopping the copy does not undo.
+#
+# `.docs/index.html` is the kit's landing page. It was never documentation a governed
+# project needs: it carries the author's own donation section with a real PIX key, a BR
+# Code containing his civil name and city, an Ethereum address and a Ko-fi link, plus an
+# outbound request to a QR service. The Python installer already refused to ship it; the
+# shell installer copied it (`copy_file_replace ".docs/index.html"`), and the shell
+# installer is being retired. Withdrawing it here reaches the targets that already have
+# it, which stopping the copy cannot.
+#
+# `scripts/install-agents-kit.sh` (AC-30, folding AC-6 and AC-10): the operator decided
+# the shell installer retires rather than gets reconciled with this one. Two installers
+# writing the same manifest and the same managed `.gitignore` block, with no shared
+# source of truth, produced two concrete defects (AC-6: the shell's `write_manifest`
+# drops any key the Python side added that it does not itself know about; AC-10: the
+# shell's `.gitignore` rewrite drops suffixes — `*.kit-new`, `*.pre-draft` — that guard
+# the operator's own name and prose) and is a standing source of more of the same class.
+# Removing it from `_FRESH_PATHS`/`_UPGRADE_PATHS` stops this kit from re-seeding it;
+# withdrawing it here reaches every project that already has a copy, the same way
+# `.docs/index.html` was reached. The source repository (AI-Agents) retiring its own
+# copy of the script — and the docs that tell an operator to run it — is separate,
+# tracked work: this kit's withdrawal does not wait on it, because a stale local copy
+# left on disk after the source stops shipping it is exactly the kind of drift this
+# mechanism exists to close.
+_WITHDRAWN_PATHS: tuple[str, ...] = (
+    ".docs/index.html",
+    "scripts/install-agents-kit.sh",
+)
+
+
+def _remove_withdrawn(root: Path) -> list[str]:
+    """Delete files this kit no longer ships, and say which. Never silently."""
+    removed: list[str] = []
+    for rel in _WITHDRAWN_PATHS:
+        target = root / rel
+        # A symlink here is the project's own decision about its own path; unlinking
+        # the link would be removing something the kit did not put there.
+        if target.is_symlink() or not target.is_file():
+            continue
+        try:
+            target.unlink()
+        except OSError:
+            continue
+        removed.append(rel)
+    return removed
+
 
 def _migrate_legacy_layout(root: Path) -> tuple[bool, list[str]]:
     """Migrate a legacy install (kit in ``docs/``, project in ``docs/project/``).
@@ -1466,11 +1890,75 @@ def _resolve_track_kit_docs(root: Path, cli_value: bool | None) -> bool:
 
 _PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]+)\}\}")
 
+# Text file extensions worth scanning for placeholders. Kept deliberately small —
+# the kit's templates are Markdown / dotfiles / shell.
+_TEXT_SUFFIXES: frozenset[str] = frozenset({
+    ".md", ".txt", ".sh", ".bash", ".html", ".json", ".toml", ".cfg", ".ini",
+    ".yml", ".yaml", ".py", ".rules",
+})
+
+# Dotfiles (no suffix) that the kit ships with placeholders.
+_TEXT_NAMES: frozenset[str] = frozenset({
+    ".cursorrules", ".windsurfrules",
+})
+
+
+def _is_text_file(path: Path) -> bool:
+    return path.suffix in _TEXT_SUFFIXES or path.name in _TEXT_NAMES
+
+
+def _iter_scan_targets(
+    root: Path, rel_paths: Iterable[str], *, exclude: frozenset[str] = frozenset()
+) -> Iterator[Path]:
+    """Walk every text file under *rel_paths*, one scope for every placeholder reader.
+
+    Shared by ``install-agents``, ``configure`` and ``doctor`` (AI-GovernanceKit#8):
+    before this, each had its own list and its own walk, and only ``configure``'s
+    actually descended into directories. ``_do_upgrade``/``_do_fresh`` return
+    directory entries as single items (``['AGENTS.md', '.docs']``), and
+    ``install-agents``/``doctor`` both stopped there without reading anything below
+    — so a raw ``{{TOKEN}}`` under ``.docs/workflows/`` passed both the fill pass and
+    the doctor check that was supposed to catch what the fill pass missed, while
+    `configure`'s independent `rglob` scan (the only one of the three that walked)
+    saw it correctly. A directory is walked with ``rglob``; a symlink anywhere in the
+    tree is refused, matching the guard ``configure`` already applied on its own.
+    """
+    for rel in rel_paths:
+        if rel in exclude:
+            continue
+        path = root / rel
+        if path.is_dir():
+            safe_path(root, path)
+            candidates: Iterable[Path] = path.rglob("*")
+        elif path.is_file():
+            candidates = (path,)
+        else:
+            continue
+        for candidate in candidates:
+            if candidate.is_symlink():
+                raise UnsafePathError(f"refusing symlink in managed kit path: {candidate}")
+            if not safe_regular_file(root, candidate) or not _is_text_file(candidate):
+                continue
+            yield candidate
+
 # A stored answer is text this process did not author: it comes from `.gk/manifest.json`,
-# the half of the state a team shares and commits. Nothing a real slot holds comes close
-# to this (the longest declared one is an e-mail address), so the cap costs nothing and
-# bounds what a hostile or mistaken value can make the render pass allocate.
-_MAX_PLACEHOLDER_VALUE = 4096
+# the half of the state a team shares and commits. The cap exists for ONE reason — to
+# bound what a hostile or mistaken value can make a render pass allocate. It is not a
+# validity rule, and treating it as one broke a working slot.
+#
+# It was 4096, justified in a comment by "the longest declared slot is an e-mail
+# address". That was false when written: a declared slot then held a
+# base64 PNG. Worse, 4096 lived only in `_prerender_source`, which renders the
+# downloaded SOURCE; carrying it to the writers that render the TARGET turned a
+# working answer into a refusal, and the council measured the consequence — an upgrade
+# UN-RENDERED a file the previous release had rendered, `doctor` flipped to FAIL, and
+# the verdict oscillated run by run against a host with an older wheel.
+#
+# 1 MiB is a DoS bound, not a guess about content: a base64 PNG of a bank-app QR
+# screenshot measured 98,848 characters, so every plausible answer fits with an order
+# of magnitude to spare, while a shared manifest still cannot make this pass allocate
+# without limit. A value over it is refused BY NAME, with the remedy.
+_MAX_PLACEHOLDER_VALUE = 1_048_576
 
 # Tokens no longer COLLECTED (they are gone from _PLACEHOLDER_DESCRIPTIONS, so nothing
 # prompts for them) but still SUBSTITUTED when a stored value exists. Without this a
@@ -1495,14 +1983,254 @@ _PLACEHOLDER_DESCRIPTIONS: dict[str, str] = {
     "GITHUB_OWNER": "GitHub username or organisation that owns the repo",
     "PROJECT_SLUG": "short identifier for this project (used in work_ids and logs, e.g. my-app)",
     "ORG_NAME": "organisation or company name",
-    "PIX_KEY_UUID": "PIX random key UUID (Brazil payment system)",
-    "PIX_HOLDER_NAME": "full name registered with the PIX key",
-    "PIX_PAYLOAD": "full PIX copy-and-paste payload string",
-    "PIX_QR_BASE64": "base64-encoded PNG of the PIX QR code",
     "PROJECT_ROOT": "absolute path to the project root on this machine",
-    "KOFI_HANDLE": "Ko-fi username (e.g. yourhandle)",
-    "ETH_WALLET_ADDRESS": "Ethereum wallet address for donations (0x...)",
 }
+
+
+def _render_table(known: dict[str, str] | None) -> tuple[dict[str, str], list[tuple[str, str]]]:
+    """Filter stored answers down to what may be substituted into kit text.
+
+    Returns the usable table and the declared tokens that were REFUSED, with the
+    reason for each, so the caller can say so. A refusal nobody reports is how a
+    leak becomes a silence, and this delivery already shipped that mistake once:
+    round 2 found a `try` that turned a traceback into a silently empty provider list.
+
+    These rules bound the input. They do NOT close the injection chain on their own —
+    `_render_text` does that, and its docstring says why the difference matters. The
+    first cut of this gate claimed otherwise and was wrong in a way that is worth
+    keeping in writing, because the claim was measurable and nobody measured it.
+
+    1. **Declared tokens only.** A token the kit does not ship cannot be filled by a
+       value the kit did not ask for. Unknown keys are dropped without a word — the
+       state carries ordinary metadata too, and reporting it would bury the signal.
+    2. **Text only.** JSON permits numbers, lists and objects; a hostile shared
+       manifest used to abort an install with a raw `TypeError` from the regex.
+    3. **Bounded length**, as a denial-of-service bound and nothing else. See
+       `_MAX_PLACEHOLDER_VALUE`: reading it as a validity rule broke a working slot.
+    4. **A value may not itself carry placeholder syntax.** Cheap, early, and it
+       catches the obvious carrier — but only the obvious one. A value is not where
+       the property lives.
+
+    The refused value is left in the state and not deleted. It arrived from
+    `.gk/manifest.json` (the half a team shares) or from the local override;
+    dropping the victim's copy would not
+    remove it from the source and would silently discard whatever else it holds.
+    """
+    table: dict[str, str] = {}
+    refused: list[tuple[str, str]] = []
+    for key, value in (known or {}).items():
+        if key not in _PLACEHOLDER_DESCRIPTIONS and key not in _RETIRED_PLACEHOLDERS:
+            continue
+        if value is None:
+            # Absence, not a hostile value: `null` is how a hand-edited manifest says
+            # "not set", and it belongs in the same branch as "".
+            continue
+        if not isinstance(value, str):
+            refused.append((key, f"stored value is {type(value).__name__}, not text"))
+            continue
+        if not value:
+            continue
+        if len(value) > _MAX_PLACEHOLDER_VALUE:
+            refused.append(
+                (key, f"stored value is longer than {_MAX_PLACEHOLDER_VALUE} characters")
+            )
+            continue
+        if "{{" in value or "}}" in value:
+            # Braces, not "a complete token". Refusing only a full `{{TOKEN}}` left the
+            # pieces legal, and a council measured what pieces do: `{{SECRET_SLOT` in
+            # one slot and `}}` in the adjacent one compose into a live token during a
+            # single sweep. Every declared slot holds a name, handle, slug, path,
+            # address or payload; none of them needs a brace, so the cheap rule is also
+            # the complete one for values.
+            refused.append(
+                (key, "stored value contains {{ or }}, which no declared slot needs "
+                      "and which composes into placeholder syntax during a render")
+            )
+            continue
+        table[key] = value
+    return table, refused
+
+
+def _render_text(text: str, table: dict[str, str]) -> tuple[str, int, list[str]]:
+    """Render *text*; return the result, the substitution count, and any COMPOSING tokens.
+
+    The runtime backstop of a three-layer defence. The other two are cheaper and sit
+    where the problem starts: `_render_table` refuses a value carrying a brace, and
+    `tests/test_render_gate.py` refuses a SHIPPED FILE whose own text could compose.
+    This layer answers the question neither can: did THIS render, on THIS text,
+    manufacture placeholder syntax?
+
+    Four designs were tried for that question, and the first three read plausibly:
+
+    1. *one sweep* — cannot re-substitute its own output. True per stage, and the
+       pipeline has three stages; what one writes, the next reads as ordinary text.
+    2. *the value may not carry a complete token* — true about the value, and the
+       braces can come from the template instead.
+    3. *the output may not contain a token the input lacked* — compares SETS, so a
+       render that MOVES a secret into a new position inside a file that already
+       carried that token passes. Two councils measured it independently, one of them
+       landing a stored secret in a document title.
+    4. this one: **no placeholder match in the output may overlap text that came from
+       a substituted value.**
+
+    Only the fourth is about the mechanism that does the harm — a value contributing
+    characters to a live token — instead of about a symptom of it. It needs the
+    positions, which is why this builds the output by hand rather than calling `sub`.
+
+    Callers reach this through `_render_file_text`, which owns the response to a
+    composing token; its docstring carries the account of why the response is per
+    file AND per token. This one describes only the detection, deliberately: two
+    adjacent docstrings narrating the same mechanism differently is how the `{2,}`
+    against `+` regex drift started in `doctor.py`.
+    """
+    parts: list[str] = []
+    spans: list[tuple[int, int, str]] = []
+    pos = out = substitutions = 0
+    for match in _PLACEHOLDER_RE.finditer(text):
+        replacement = table.get(match.group(1))
+        if replacement is None:
+            continue
+        literal = text[pos:match.start()]
+        parts.append(literal)
+        out += len(literal)
+        parts.append(replacement)
+        spans.append((out, out + len(replacement), match.group(1)))
+        out += len(replacement)
+        pos = match.end()
+        substitutions += 1
+    parts.append(text[pos:])
+    rendered = "".join(parts)
+    if not substitutions:
+        return text, 0, []
+    # Every match, not the first: two composable shapes in one file are ordinary, and
+    # returning early meant the second token was never detected — the caller dropped
+    # the first, rendered again, hit the second, and silently left the whole file raw.
+    composing: set[str] = set()
+    for match in _PLACEHOLDER_RE.finditer(rendered):
+        composing.update(
+            t for start, end, t in spans if start < match.end() and match.start() < end
+        )
+    if composing:
+        # Only the tokens whose inserted text actually overlaps a manufactured match.
+        # An earlier cut blamed every token the file carried, which named innocent
+        # slots — including personal-data ones — in a security message.
+        return text, 0, sorted(composing)
+    return rendered, substitutions, []
+
+
+def _render_file_text(text: str, table: dict[str, str]) -> tuple[str, int, set[str]]:
+    """Render *text*, dropping only the tokens that compose IN THIS TEXT.
+
+    Two responses to a composable template were tried and both damaged the target:
+
+    * **skip the file** — its innocent slots stayed raw while the same slots rendered
+      in sibling files, so source and target disagreed and the next upgrade read the
+      kit's own substitution as operator intent;
+    * **drop the token for the whole run** — that removed the sibling asymmetry and
+      replaced it with blast radius: one composable file anywhere in the downloaded
+      tree un-rendered every file carrying that token, freezing `AGENTS.md` for any
+      target without a manifest entry, permanently.
+
+    The narrowest response is both: drop the composing token, in the file where it
+    composes, and nowhere else. The kit's defective file keeps a raw slot; every other
+    file, and every other slot in the defective file, renders exactly as before.
+
+    Loops to a fixed point because dropping one token can reveal a second.
+    """
+    dropped: set[str] = set()
+    while True:
+        current = {k: v for k, v in table.items() if k not in dropped}
+        if not current:
+            return text, 0, dropped
+        rendered, made, composing = _render_text(text, current)
+        if not composing:
+            return rendered, made, dropped
+        dropped.update(composing)
+
+
+def _report_refused_values(
+    refused: list[tuple[str, str]], *, needed: set[str] | None = None
+) -> None:
+    """Name every refused value that this render actually needed, with the way out.
+
+    *needed* is the set of tokens the text being rendered carries. Without it the
+    installer warned about slots no shipped file uses, and warned twice per run (once
+    for the source pass, once for the target pass) with identical wording — which
+    trains the reader to skip exactly the block that matters.
+
+    The remedy is named here rather than left to the operator to infer. The council
+    measured what happens without it: `doctor` fails, tells them to run `configure`,
+    `configure` refuses the same stored value again, and the natural way out is to
+    paste the value into the kit file by hand — a git-tracked file, which is the one
+    place the operator/secrets split exists to keep it out of.
+    """
+    if needed is not None:
+        refused = [(t, r) for t, r in refused if t in needed]
+    if not refused:
+        return
+    print("\nWarning: stored value(s) refused and NOT substituted:")
+    for token, reason in sorted(refused):
+        print(f"  {{{{{token}}}}} — {reason}")
+    print(
+        "  Stored answers live in .gk/manifest.json (shared) and "
+        ".gk/manifest.override.json (local).\n"
+        "  Replace one with: governancekit --root <project> configure "
+        "--set <TOKEN>=<value>"
+    )
+
+
+def _report_composing_tokens(
+    dropped: dict[str, set[str]],
+    *,
+    prefix: str = "",
+    already: set[tuple[str, str]] | None = None,
+) -> set[tuple[str, str]]:
+    """Name each slot left raw AND the file that made it so; return what was reported.
+
+    *dropped* maps a file label to the tokens dropped in it. Naming the file is the
+    whole point: the message tells the operator to report a template defect, and the
+    first cut did not say which file — the caller had the paths and did not pass them.
+
+    *already* suppresses tokens a previous pass in the same run reported. Without it
+    an upgrade printed this block twice, byte-identical, once from the source pass and
+    once from the target pass — the repetition `_report_refused_values` says "trains
+    the reader to skip exactly the block that matters".
+
+    The remedy is deliberately NOT `configure --set`: the braces come from text the
+    kit ships, so no answer the operator can type changes the outcome.
+    """
+    already = already or set()
+    fresh = {
+        rel: sorted(t for t in tokens if (rel, t) not in already)
+        for rel, tokens in dropped.items()
+        if any((rel, t) not in already for t in tokens)
+    }
+    if not fresh:
+        return set()
+    print(
+        "\nWarning: slot(s) left raw — the kit's own text around them would have "
+        "combined with the stored value into new placeholder syntax:"
+    )
+    for rel in sorted(fresh):
+        for token in fresh[rel]:
+            print(f"  {{{{{token}}}}} in {prefix}{rel}")
+    print(
+        "  The braces come from the file's own text, not from your answer, so "
+        "`configure --set`\n  will not change this. If the file is the kit's, report "
+        "it; if it is yours, edit it."
+    )
+    return {(rel, t) for rel, tokens in fresh.items() for t in tokens}
+
+
+def _text_files(root: Path) -> Iterator[tuple[Path, str]]:
+    """Every readable UTF-8 regular file under *root*. Symlinks and binaries skipped."""
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            yield path, path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
 
 
 def _fill_placeholders(
@@ -1510,6 +2238,7 @@ def _fill_placeholders(
     installed_paths: list[str],
     *,
     known: dict[str, str] | None = None,
+    already_reported: set[tuple[str, str]] | None = None,
 ) -> dict[str, str]:
     """Scan installed files for known placeholder tokens and fill them in.
 
@@ -1518,19 +2247,18 @@ def _fill_placeholders(
     ``[MANDATORY]`` are policy vocabulary, not personalization slots. Mirrors
     ``configure.py``.
 
-    *known* carries answers from previous runs (``.gk/state.json``). They are offered
+    *known* carries answers from previous runs (the merged ``.gk`` state). They are offered
     as the default so the operator confirms with Enter instead of retyping, and they
     are applied without any prompt when there is no terminal — which is what gives an
     unattended ``--upgrade`` continuity across the template overwrite.
 
     Returns every value in force after this run, for the caller to persist.
     """
-    # Collect all unique placeholders across installed files
+    # Collect all unique placeholders across installed files. `installed_paths` can
+    # (and does) carry directory entries such as `.docs` — `_iter_scan_targets` walks
+    # into them instead of skipping them; see its docstring for the bug this closes.
     placeholder_files: dict[str, list[Path]] = {}
-    for rel in installed_paths:
-        path = root / rel
-        if not path.is_file():
-            continue
+    for path in _iter_scan_targets(root, installed_paths):
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -1584,6 +2312,12 @@ def _fill_placeholders(
                 continue
             desc = _PLACEHOLDER_DESCRIPTIONS.get(token, "")
             current = remembered.get(token)
+            # A stored value the gate would refuse is never offered as the default.
+            # It used to be: the prompt read `{{ORG_NAME}} [{{OTHER_SLOT}}]: ` and
+            # Enter re-submitted it, so the tool recommended the attacker's payload
+            # and then refused what it had recommended.
+            if current and not _render_table({token: current})[0]:
+                current = None
             prompt = f"  {{{{{token}}}}}"
             if desc:
                 prompt += f"  ({desc})"
@@ -1601,23 +2335,49 @@ def _fill_placeholders(
             print("\nNo values provided — placeholders left as-is.")
             return dict(known)
 
-    # Apply substitutions
+    # Apply substitutions through the same table and the same sweep the source pass
+    # uses. They used to run different rules, and the gap between them was the leak:
+    # this side had neither the one-pass sweep nor the length cap, and neither side
+    # refused a value that carried placeholder syntax.
+    table, refused = _render_table(values)
+    _report_refused_values(refused, needed=set(placeholder_files))
+
+    targets = sorted({p for token in table for p in placeholder_files.get(token, [])})
+
     changed: list[str] = []
-    seen_paths: set[Path] = set()
-    for token, val in values.items():
-        for path in placeholder_files.get(token, []):
-            if path not in seen_paths:
-                seen_paths.add(path)
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            new_text = text
-            for t, v in values.items():
-                new_text = new_text.replace(f"{{{{{t}}}}}", v)
-            if new_text != text:
-                path.write_text(new_text, encoding="utf-8")
-                changed.append(str(path.relative_to(root)))
+    dropped: dict[str, set[str]] = {}
+    for path in targets:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        new_text, _, blocked = _render_file_text(text, table)
+        if blocked:
+            dropped[str(path.relative_to(root))] = blocked
+        if new_text != text:
+            path.write_text(new_text, encoding="utf-8")
+            changed.append(str(path.relative_to(root)))
+    # `already` suppresses what the source pass just said about the same tokens: the
+    # block used to print twice per upgrade, byte-identical, once from each pass.
+    _report_composing_tokens(dropped, already=already_reported)
+    # Prune ONLY tokens that composed in EVERY file carrying them. Pruning the union
+    # took the blast radius out of the rendering and left it in the accounting: a
+    # token written successfully into one file vanished from the report and from the
+    # state, so the kit rendered a target and recorded nothing about it. That is the
+    # freeze `persist_placeholder_values` was written to prevent, arriving by the
+    # bookkeeping instead of by the render.
+    handled = {str(p.relative_to(root)) for p in targets}
+    table = {
+        k: v for k, v in table.items()
+        if not (
+            placeholder_files.get(k)
+            and all(
+                k in dropped.get(str(p.relative_to(root)), set())
+                for p in placeholder_files[k]
+                if str(p.relative_to(root)) in handled
+            )
+        )
+    }
 
     if changed:
         print("\nPlaceholders filled in: " + ", ".join(sorted(set(changed))))
@@ -1627,9 +2387,11 @@ def _fill_placeholders(
     # no longer exists. The guard was added to `unknown` and to the prompt loop and
     # missed here, because the test's fixture held only the retired token and the
     # function returned before reaching this line. Council round 2 of GK#7.
+    # `table`, not `values`: a token whose value was refused above is still unfilled,
+    # and saying otherwise would report a substitution that did not happen.
     unfilled = [
         t for t in placeholder_files
-        if t not in values and t not in _RETIRED_PLACEHOLDERS
+        if t not in table and t not in _RETIRED_PLACEHOLDERS
     ]
     if unfilled:
         print(
@@ -1637,7 +2399,11 @@ def _fill_placeholders(
                 + ", ".join(f"{{{{{t}}}}}" for t in sorted(unfilled))
         )
 
-    return {**known, **values}
+    # Only what passed the gate is carried forward. A refused value that came from the
+    # state stays there untouched (it is still in `known`); a refused value TYPED this
+    # run is not adopted. That falls out of the table without tracking where each value
+    # came from, which would be a second code path to keep in step.
+    return {**known, **table}
 
 
 # ── .gitignore management ──────────────────────────────────────────────────────
@@ -1719,6 +2485,16 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
         elif dest.startswith(_SRC_DOC_PREFIX):
             # Project-owned docs/ files: keep tracked.
             continue
+        elif dest == _CREDENTIALS_DIR:
+            # The secret patterns below already cover this directory, as `.credentials/*`
+            # plus re-includes for the scaffolding. Emitting the bare directory name here
+            # too silently wins over them: git does not descend into an excluded
+            # directory, so `!.credentials/README*` never fires and every file the kit
+            # seeds there is permanently untrackable. The comment above
+            # CREDENTIALS_DOC_NAMES has said so since the patterns were written; this
+            # branch was quietly contradicting it, and the gitignore test never ran the
+            # real path list.
+            continue
         else:
             entries.append(dest)
     # The legacy-migration backup is a full copy of the pre-migration docs/ tree and
@@ -1729,6 +2505,8 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     # different baseline. Only the local operator/secrets halves and the stash are
     # ignored, unconditionally — unlike .docs/, this is not subject to the
     # track-kit-docs choice.
+    entries.append(_OVERRIDE_FILE)
+    # The legacy pair stays listed for the un-migrated and mixed-version fleet.
     entries.append(_OPERATOR_FILE)
     entries.append(_SECRETS_FILE)
     entries.append(f"{_STATE_DIR}/context-telemetry.jsonl")
@@ -1736,6 +2514,16 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     entries.append(f"{_STATE_DIR}/pre-upgrade/")
     entries.append(f"{_STATE_DIR}/pre-migrate/")
     entries.append(f"{_STATE_DIR}/remove-agents-backup/")
+    # The removal PLAN, not just its backups. It records a verdict per path — including
+    # `remove` at confidence 1.0 with review dispensed — and `apply` acts on the file,
+    # not on a fresh analysis. Committed, it travels to every clone and can be applied
+    # by a teammate whose target does not match the one it was built against; kept
+    # across an upgrade, it applies decisions the new code has since corrected. It sat
+    # outside the managed block while every sibling artefact of `.gk/` was inside it.
+    entries.append(f"{_STATE_DIR}/remove-agents-plan.json")
+    # The refused context draft: the kit wrote it, but it is a proposal about the
+    # project's own documents and has no business in the history of a clone.
+    entries.append(f"{_STATE_DIR}/context-proposal/")
     # The parked copy of a protected file. It is rendered with the operator's stored
     # answers — that is what makes it mergeable — which means it carries the very
     # value `_OPERATOR_PLACEHOLDERS` keeps out of the tracked state. `AGENTS.md`
@@ -1743,6 +2531,10 @@ def _gitignore_entries(paths: list[str], *, track_kit_docs: bool = False) -> lis
     # in `git status` as untracked and one `git add -A` from committing the operator's
     # name. Introduced by rendering the source, caught by the council's second round.
     entries.append("*.kit-new")
+    # Same reason, other artifact: `<file>.pre-draft` is the copy taken when an accepted
+    # draft replaces text the project wrote. It holds the operator's own prose, and it
+    # was the one stash of this kit that git could see.
+    entries.append("*.pre-draft")
     entries.extend(SECRET_IGNORE_PATTERNS)
     return entries
 

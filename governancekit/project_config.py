@@ -147,6 +147,26 @@ def parse_provider_specs(specs: list[str]) -> list[ProviderConfig]:
     return providers
 
 
+def is_llm_eligible(provider: ProviderConfig) -> bool:
+    """Whether this provider can actually be called for an LLM-assisted step.
+
+    Declared twice before today — in `adoption._primary_provider` and inline in
+    `scope_conversation` — which is the shape of defect that has cost this ecosystem
+    more than any other. It lives here because this module defines what a provider is.
+
+    Stricter than `provider_warnings`: a warning-free config can still be uncallable,
+    because the CLI's `--provider NAME:MODE:REF:ROLE` grammar cannot express a
+    base_url or a model.
+    """
+    return bool(
+        provider.role == "primary"
+        and provider.mode in {"env", "file-ref"}
+        and provider.base_url
+        and provider.model
+        and provider.credential_ref
+    )
+
+
 def provider_warnings(providers: list[ProviderConfig]) -> list[str]:
     warnings: list[str] = []
     for provider in providers:
@@ -154,6 +174,19 @@ def provider_warnings(providers: list[ProviderConfig]) -> list[str]:
             warnings.append(
                 f"provider {provider.name} uses mode {provider.mode} but has no credential_ref"
             )
+    for provider in providers:
+        # A provider that can never be used is worse than none: the operator believes
+        # the project is configured, and every LLM-assisted step skips it in silence.
+        if provider.mode != "manual" and provider.role == "primary" and not is_llm_eligible(provider):
+            missing = [
+                name for name, value in (("base_url", provider.base_url), ("model", provider.model))
+                if not value
+            ]
+            if missing:
+                warnings.append(
+                    f"provider {provider.name} has no {' or '.join(missing)} and cannot be used "
+                    "for LLM-assisted steps; complete it with config-session"
+                )
     configured = [provider for provider in providers if provider.name != "manual"]
     if configured and len([provider for provider in configured if provider.role == "primary"]) != 1:
         warnings.append("provider configuration must have exactly one primary provider")

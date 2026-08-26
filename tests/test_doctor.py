@@ -244,6 +244,46 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("governancekit --root", check.message)
             self.assertIn("configure", check.message)
 
+    def test_placeholder_remedy_closes_the_loop_without_a_tty(self) -> None:
+        # AC-15: bare `configure` prompts for nothing and exits 0 off a TTY, so the
+        # remedy this check named could never close the loop in CI / an unattended
+        # agent. `--set KEY=VALUE` (`run_configure(..., interactive=False)`) does.
+        from governancekit.configure import run_configure
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / "AGENTS.md").write_text("owner: {{OPERATOR_NAME}}\n", encoding="utf-8")
+
+            before = run_doctor(root)
+            check = next(c for c in before.checks if c.name == "unfilled placeholders")
+            self.assertFalse(check.passed)
+            self.assertIn("--set", check.message)
+
+            run_configure(root, preset={"OPERATOR_NAME": "Esteban"}, interactive=False)
+
+            after = run_doctor(root)
+            self.assertNotIn("unfilled placeholders", failed_check_names(after))
+
+    def test_unfilled_placeholder_under_a_kit_owned_directory_fails(self) -> None:
+        # AI-GovernanceKit#8: the old scan was a fixed list of six root files and
+        # never descended into `.docs/`, so a raw `{{TOKEN}}` left under
+        # `.docs/workflows/` passed this check while `configure` (the only one of
+        # the three callers that walked directories) would have caught it.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_valid_repo(root)
+            (root / ".docs" / "workflows").mkdir(parents=True, exist_ok=True)
+            (root / ".docs" / "workflows" / "git-delivery.md").write_text(
+                "operador (`{{OPERATOR_NAME}}`)\n", encoding="utf-8"
+            )
+
+            result = run_doctor(root)
+
+            check = next(c for c in result.checks if c.name == "unfilled placeholders")
+            self.assertFalse(check.passed)
+            self.assertIn(".docs/workflows/git-delivery.md", check.message)
+
     def test_missing_project_config_is_advisory_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -450,3 +490,30 @@ def failed_check_names(result) -> set[str]:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlaceholderRuleIsSharedTest(unittest.TestCase):
+    """`doctor` carried its own idea of what a placeholder is.
+
+    `{2,}` here against `+` in the installer: a minimum of three characters against
+    two. A `{{AB}}` slot the installer fills was invisible to the check whose whole
+    job is to report unfilled slots. Same shape as the `.gitignore` defect this
+    repository already fixed once — two gates over one contract read one list, or
+    the newer one drifts and the tool disagrees with itself.
+    """
+
+    def test_the_two_modules_use_the_same_rule_object(self) -> None:
+        from governancekit import doctor as dr
+        from governancekit import install_agents as ia
+
+        self.assertIs(dr._PLACEHOLDER_RE, ia._PLACEHOLDER_RE)
+
+    def test_a_two_character_slot_is_reported_as_unfilled(self) -> None:
+        # The installer fills `{{AB}}`; the doctor used not to see it.
+        from governancekit import doctor as dr
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "AGENTS.md").write_text("x {{AB}}\n", encoding="utf-8")
+
+            self.assertIn("AB", dr._PLACEHOLDER_RE.findall((root / "AGENTS.md").read_text()))

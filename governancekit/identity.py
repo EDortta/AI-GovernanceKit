@@ -105,6 +105,9 @@ def read_existing_operator_name(root: Path) -> str:
     """Read an existing local operator value without following credential links."""
     root = root.resolve()
     candidates = (
+        # The override first: it is where `_write_state` migrates the legacy pair,
+        # so on a migrated target it is the only local file left.
+        (root / ".gk" / "manifest.override.json", ("metadata", "OPERATOR_NAME")),
         (root / ".gk" / "operator.json", ("metadata", "OPERATOR_NAME")),
         (root / ".credentials" / "identity.json", ("values", "OPERATOR_NAME")),
     )

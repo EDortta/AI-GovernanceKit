@@ -7,6 +7,7 @@ directions that actually happened or nearly happened on 2026-08-11.
 
 from __future__ import annotations
 
+from governancekit import kit_drift
 import unittest
 from pathlib import Path
 
@@ -186,3 +187,68 @@ class ProtectedFileParityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SnapshotStaysLoadableWithoutTheNewFieldTest(unittest.TestCase):
+    """`seeded_credentials` is optional on purpose.
+
+    Making it required turned a snapshot written before the field existed into an
+    unloadable snapshot for EVERY consumer — `doctor` included, which then degrades to
+    an advisory pass and quietly stops checking. Adding a required key to a persisted
+    artefact without a version is the defect AC-12 names, and the fix for it must not
+    commit it.
+    """
+
+    def _snapshot_without_the_field(self) -> dict:
+        import json
+        from pathlib import Path as _P
+        raw = json.loads(
+            (_P(kit_drift.__file__).with_name("_kit_snapshot.json")).read_text()
+        )
+        raw.pop("seeded_credentials", None)
+        return raw
+
+    def test_a_snapshot_written_before_the_field_still_loads(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path as _P
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _P(tmp) / "_kit_snapshot.json"
+            path.write_text(json.dumps(self._snapshot_without_the_field()))
+
+            snapshot = kit_drift.KitSnapshot.load(path)
+
+            self.assertEqual(snapshot.seeded_credentials, {})
+            self.assertTrue(snapshot.agents_ref)
+
+    def test_a_malformed_table_does_not_escape_as_a_raw_exception(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path as _P
+
+        for bad in ([1, 2], "nope", {"README.md": 7}):
+            with tempfile.TemporaryDirectory() as tmp:
+                path = _P(tmp) / "_kit_snapshot.json"
+                raw = self._snapshot_without_the_field()
+                raw["seeded_credentials"] = bad
+                path.write_text(json.dumps(raw))
+
+                snapshot = kit_drift.KitSnapshot.load(path)
+
+                self.assertEqual(snapshot.seeded_credentials, {}, bad)
+
+    def test_the_old_single_digest_shape_is_read_as_a_one_item_history(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path as _P
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _P(tmp) / "_kit_snapshot.json"
+            raw = self._snapshot_without_the_field()
+            raw["seeded_credentials"] = {"README.md": "a" * 64}
+            path.write_text(json.dumps(raw))
+
+            snapshot = kit_drift.KitSnapshot.load(path)
+
+            self.assertEqual(snapshot.seeded_credentials, {"README.md": ("a" * 64,)})

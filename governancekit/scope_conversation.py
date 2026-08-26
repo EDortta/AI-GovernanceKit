@@ -6,12 +6,13 @@ import json
 import os
 import re
 import getpass
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
+from . import llm_catalog
 from .agent_scope import ScopeProposal, propose_project_scope, supported_scope_agents
 from .discover import run_discover
-from .project_config import ProviderConfig, ProjectConfig, _CONFIG_VERSION, _config_from_existing, load_project_config
+from .project_config import ProviderConfig, ProjectConfig, _CONFIG_VERSION, _config_from_existing, is_llm_eligible, load_project_config
 
 _MANDATORY_SOURCES = (
     "AGENTS.md",
@@ -22,11 +23,27 @@ _MANDATORY_SOURCES = (
 _BACKTICK_PATH_RE = re.compile(r"`((?:\.docs|docs)/[^`]+|AGENTS\.md)`")
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _ROLES = ("primary", "fallback", "optional")
-_LLM_PRESETS = {
-    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash-lite", "GEMINI_API_KEY"),
-    "openai": ("https://api.openai.com/v1", "gpt-5-mini", "OPENAI_API_KEY"),
-    "nvidia": ("https://integrate.api.nvidia.com/v1", "nvidia/nemotron-3-super-120b-a12b", "NVIDIA_API_KEY"),
-}
+# Derived from `_llm_catalog.json`, never typed here. Three model names used to sit in
+# this file with no document anywhere saying why those three; now every entry carries an
+# origin and a date, and `scripts/refresh-llm-catalog.py --check` can prove it current.
+#
+# Resolved on FIRST USE, not at import. A data file that fails to load must never make a
+# module unimportable: binding this at import time meant a wheel missing the catalog took
+# `config-session`, `author-context` and `remove-agents --with-llm` down with it, with a
+# traceback instead of a message. Two council lenses reproduced that from a built wheel.
+# Which provider is preferred when a project holds several keys. Stated, stable, and
+# deliberately NOT derived from the catalog: the catalog answers "what exists", and
+# this answers "what this kit reaches for first", which must not move when a model is
+# added upstream. The order is the historical one, so an existing project's routing
+# does not change under an upgrade.
+_PRIMARY_PREFERENCE: tuple[str, ...] = ("gemini", "openai", "nvidia", "openrouter")
+
+
+def _llm_presets() -> dict[str, tuple[str, str, str]]:
+    try:
+        return llm_catalog.presets()
+    except llm_catalog.CatalogError:
+        return {}
 
 
 @dataclass(frozen=True)
@@ -294,26 +311,54 @@ def _print_provider_help(locale: str) -> None:
     print("  optional - available, but outside the default route.")
 
 
+def _provider_catalog_lines(locale: str = "en") -> list[str]:
+    """One line per provider the kit can suggest, derived from the catalog.
+
+    Hand-written in three locales until today, which is how `openrouter` — the entry
+    that carries every free model and the whole reason the catalog exists — could be
+    offered to the operator on one screen and be missing as an accepted answer on the
+    next. Found by the council's sweep lens, in the delivery whose thesis is that the
+    operator must not be left unaware of what is available.
+    """
+    from . import llm_catalog
+
+    try:
+        offers = {offer.name: offer for offer in llm_catalog.provider_offers()}
+    except llm_catalog.CatalogError:
+        offers = {}
+    free = {
+        "pt-BR": "{n} modelos gratuitos com uma única chave",
+        "es": "{n} modelos gratuitos con una sola clave",
+    }.get(locale, "{n} free models behind one key")
+    suggests = {
+        "pt-BR": "sugere URL, modelo e o nome da credencial",
+        "es": "sugiere URL, modelo y el nombre de la credencial",
+    }.get(locale, "suggests its URL, model and credential name")
+    key_at = {"pt-BR": "chave em", "es": "clave en"}.get(locale, "key at")
+
+    lines = []
+    for name in _llm_presets():
+        offer = offers.get(name)
+        body = free.format(n=offer.free_models) if offer and offer.free_models else suggests
+        where = f"; {key_at} {offer.signup_url}" if offer and offer.signup_url else "."
+        lines.append(f"  {name:<10} - {body}{where}")
+    return lines
+
+
 def _print_provider_catalog(locale: str) -> None:
-    if locale == "pt-BR":
-        print("\nProvedores pré-configurados, compatíveis com a API OpenAI:")
-        print("  gemini - Google Gemini; URL, modelo e GEMINI_API_KEY sugeridos automaticamente.")
-        print("  nvidia - NVIDIA NIM; URL, modelo Nemotron e NVIDIA_API_KEY sugeridos automaticamente.")
-        print("  openai - OpenAI; URL, modelo e OPENAI_API_KEY sugeridos automaticamente.")
-        print("  outro  - qualquer endpoint compatível; informe URL, modelo e a referência da credencial.")
-        return
-    if locale == "es":
-        print("\nProveedores preconfigurados compatibles con la API OpenAI:")
-        print("  gemini - Google Gemini; URL, modelo y GEMINI_API_KEY sugeridos automáticamente.")
-        print("  nvidia - NVIDIA NIM; URL, modelo Nemotron y NVIDIA_API_KEY sugeridos automáticamente.")
-        print("  openai - OpenAI; URL, modelo y OPENAI_API_KEY sugeridos automáticamente.")
-        print("  otro   - cualquier endpoint compatible; indique URL, modelo y referencia de credencial.")
-        return
-    print("\nPreconfigured OpenAI-compatible providers:")
-    print("  gemini - Google Gemini; suggests its URL, model, and GEMINI_API_KEY.")
-    print("  nvidia - NVIDIA NIM; suggests its URL, Nemotron model, and NVIDIA_API_KEY.")
-    print("  openai - OpenAI; suggests its URL, model, and OPENAI_API_KEY.")
-    print("  other  - any compatible endpoint; provide its URL, model, and credential reference.")
+    header = {
+        "pt-BR": "\nProvedores pré-configurados, compatíveis com a API OpenAI:",
+        "es": "\nProveedores preconfigurados compatibles con la API OpenAI:",
+    }.get(locale, "\nPreconfigured OpenAI-compatible providers:")
+    tail = {
+        "pt-BR": "  outro  - qualquer endpoint compatível; informe URL, modelo e a referência da credencial.",
+        "es": "  otro   - cualquier endpoint compatible; indique URL, modelo y referencia de credencial.",
+    }.get(locale, "  other  - any compatible endpoint; provide its URL, model, and credential reference.")
+    print(header)
+    for line in _provider_catalog_lines(locale):
+        print(line)
+    print(tail)
+    return
 
 
 def _print_project_agent_help(locale: str) -> None:
@@ -469,7 +514,7 @@ def _detected_providers(root: Path) -> list[ProviderConfig]:
     """Discover known local credential references without opening their secrets."""
     root = root.resolve()
     providers: list[ProviderConfig] = []
-    for index, (name, (base_url, model, env_name)) in enumerate(_LLM_PRESETS.items()):
+    for name, (base_url, model, env_name) in _llm_presets().items():
         references = [Path(".credentials/llm") / f"{name}.key", Path(".credentials") / f"{name}.key"]
         mode = ""
         credential_ref = ""
@@ -496,10 +541,19 @@ def _detected_providers(root: Path) -> list[ProviderConfig]:
                     mode=mode,
                     credential_ref=credential_ref,
                     validation="reference-required",
-                    role="primary" if index == 0 else "fallback",
+                    role="fallback",
                 )
             )
     if providers:
+        # Which detected key becomes primary is decided HERE, by a stated rule, not by
+        # the order a dict happens to have. It used to be `index == 0` over the presets
+        # mapping — hand-written and ordered gemini, openai, nvidia. Deriving that
+        # mapping from the catalog silently reordered it, so a project holding two keys
+        # had its routing change on upgrade with nothing said. Found by the council's
+        # sweep lens.
+        providers.sort(key=lambda item: _PRIMARY_PREFERENCE.index(item.name)
+                       if item.name in _PRIMARY_PREFERENCE else len(_PRIMARY_PREFERENCE))
+        providers[0] = replace(providers[0], role="primary")
         primary = providers[0]
         providers[0] = ProviderConfig(
             name=primary.name,
@@ -610,7 +664,7 @@ def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) 
         if not name:
             break
         purpose = _ask(_message(locale, "provider_purpose"), "general", gap=False)
-        preset = _LLM_PRESETS.get(name.lower())
+        preset = _llm_presets().get(name.lower())
         while True:
             role = _ask(_message(locale, "provider_role"), "primary" if not providers else "fallback", gap=False)
             if role in _ROLES and not (role == "primary" and any(item.role == "primary" for item in providers)):
@@ -686,7 +740,7 @@ def run_scope_conversation(
         print("\n" + _message(locale, "llm_title"))
     providers = _collect_providers(root, locale, existing)
     api_provider = next(
-        (item for item in providers if item.role == "primary" and item.mode in {"env", "file-ref"} and item.base_url and item.model and item.credential_ref),
+        (item for item in providers if is_llm_eligible(item)),
         None,
     )
     if api_provider:

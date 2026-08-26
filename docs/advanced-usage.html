@@ -68,6 +68,7 @@ governancekit --root /project install-agents --upgrade</code></pre>
   --assigned-ports "3000,8000" --branch-ownership "feature/my-branch"</code></pre>
     <table><thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
       <tr><td><code>--set KEY=VALUE</code></td><td>No</td><td>Fills a legacy placeholder; repeatable.</td></tr>
+      <tr><td><code>--unset KEY</code></td><td>No</td><td>Eliminates a stored answer from the kit's state files (<code>.gk/manifest.json</code>, <code>.gk/manifest.override.json</code>, the legacy pair); repeatable. Files already rendered with the value, and the git history, are not touched.</td></tr>
       <tr><td><code>--operator-name NAME</code></td><td>Yes</td><td>Human operator name.</td></tr>
       <tr><td><code>--host-id ID</code></td><td>Yes</td><td>Stable machine or instance identifier.</td></tr>
       <tr><td><code>--instance-path PATH</code></td><td>Yes</td><td>Absolute path of this checkout.</td></tr>
@@ -212,10 +213,23 @@ governancekit context telemetry prune --manifest PATH</code></pre>
   </section>
 
   <section>
+    <h2><code>mail</code></h2>
+    <p>The operator's own mailbox: send from it, and review what arrived. The kit stores
+    the address and the <em>path</em> to a credential, never the credential itself.
+    Endpoints are derived from the domain, and a derived guess says so.</p>
+    <pre><code>governancekit --root /project mail setup operator@empresa-exemplo.com.br --write
+governancekit --root /project mail send --to alguem@example.org --subject "Assunto" --body - --dry-run
+governancekit --root /project mail inbox --limit 10 --mailbox INBOX</code></pre>
+    <p><code>--dry-run</code> renders and validates the message and the route without
+    connecting: email cannot be recalled, so the check comes before the send.
+    <code>--body -</code> reads the message from stdin. <code>inbox</code> lists headers
+    only and never downloads a body.</p>
+
     <h2><code>remove-agents</code></h2>
     <pre><code>governancekit --root /project remove-agents plan --with-llm --json
 governancekit --root /project remove-agents apply --plan .gk/remove-agents-plan.json --accept-project-extractions</code></pre>
     <p>Only an unchanged file matching the installation manifest is removed. With <code>--with-llm</code>, a configured primary provider may propose splitting project-specific text from a modified kit file. Review the exact plan first: applying an extraction requires <code>--accept-project-extractions</code>, writes it beneath <code>docs/project-rules/</code>, indexes it in required reading, and backs up every affected file under <code>.gk/remove-agents-backup/</code>.</p>
+    <p>The plan names the local state files that survive <code>apply</code> — <code>.gk/manifest.override.json</code> and the legacy pair carry the operator's identity answers. <code>apply --purge-state</code> eliminates them explicitly (never by default: they permit regret). Not covered by the purge: the git history — a value ever committed stays in it — and the backup the same run just wrote, which is announced whenever it contains the operator's rendered data.</p>
   </section>
 
   <section>

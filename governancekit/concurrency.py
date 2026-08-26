@@ -53,7 +53,7 @@ class OpenItem:
     kind: str  # "worktree" | "branch"
     branch: str
     path: str | None
-    unmerged: int
+    unmerged: int | None  # None: the local git read failed — never guessed as 0
     is_current: bool = False
     prunable: bool = False
 
@@ -124,16 +124,27 @@ def _integration_branch(root: Path) -> str:
     return ""
 
 
-def _unmerged_count(root: Path, branch: str, integration: str) -> int:
+def _unmerged_count(root: Path, branch: str, integration: str) -> int | None:
+    """Commits *branch* has that *integration* lacks, or ``None`` if the read failed.
+
+    ``None`` on failure, never ``0``: a count of 0 is exactly ``OpenItem.removable``'s
+    trigger ("merged — this worktree can be removed"), so folding a git error into 0
+    turns "could not read" into "confirmed nothing to lose" — the fail-open direction
+    that matters, since it is the line an operator acts on directly. This is also a
+    purely local read: ``integration`` is the local ref, not its remote-tracking
+    counterpart, so a stale local integration branch under-reports real unmerged work
+    without the read itself failing. ``format_survey`` labels the whole table as
+    local-only rather than trying to guess when that gap matters.
+    """
     if not integration or branch == integration:
         return 0
     out = _git(root, "rev-list", "--count", f"{integration}..{branch}")
     if out is None:
-        return 0
+        return None
     try:
         return int(out.strip())
     except ValueError:
-        return 0
+        return None
 
 
 def _parse_worktrees(porcelain: str) -> list[dict[str, str | bool]]:
@@ -302,6 +313,8 @@ def format_survey(survey: ConcurrencySurvey, *, moment: str = "start") -> str:
         note = ""
         if item.is_current:
             note = "this session"
+        elif item.unmerged is None:
+            note = "unmerged count unknown — local git read failed"
         elif item.removable:
             note = "merged — this worktree can be removed"
         elif item.unmerged:
@@ -328,6 +341,11 @@ def format_survey(survey: ConcurrencySurvey, *, moment: str = "start") -> str:
     if survey.removable:
         names = ", ".join(item.path or item.branch for item in survey.removable)
         lines.append(f"  Removable now (nothing unmerged): {names}")
+    if survey.worktrees:
+        lines.append(
+            "  (unmerged counts are local reads against the local integration branch; "
+            "`git fetch` before trusting them against the remote)"
+        )
     return "\n".join(lines)
 
 
