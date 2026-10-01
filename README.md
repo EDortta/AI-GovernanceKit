@@ -48,6 +48,13 @@ Three CLI commands are available:
 
 - **`governancekit doctor`** — validates the governance scaffold (required files, readiness flags, active issue, secret tracking). Fix every `[FAIL]` before starting work. `[HINT]` lines are advisory — address when convenient. Use `--json` for CI integration: `governancekit doctor --json | jq '.ok'`
 
+- **`governancekit change-gate`** — AI-Agents v2 write-boundary gate. It validates a project-owned change contract and rejects changed files outside `write_scope`, any file in `forbidden_scope`, malformed contracts, and undeclared cross-domain writes.
+
+```bash
+governancekit change-gate --contract docs/ai-governance/changes/WK-20261001-example.yaml
+governancekit change-gate --contract docs/ai-governance/changes/WK-20261001-example.yaml --staged --json
+```
+
 - **`governancekit map`** — generates `docs/codemap.md`: a Markdown index of the project's file tree, entry points, and Python symbol index. AI agents read this file at session start instead of re-scanning the codebase. Run after significant changes and commit the result.
 
 - **`governancekit discover`** — inspects a repository read-only and reports whether
