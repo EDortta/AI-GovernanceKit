@@ -77,6 +77,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output results as JSON (useful for CI scripts).",
     )
 
+    change_gate_parser = subparsers.add_parser(
+        "change-gate",
+        help="Validate current writes against an AI-Agents v2 change contract.",
+    )
+    change_gate_parser.add_argument(
+        "--contract",
+        type=Path,
+        required=True,
+        help="Project-relative path to docs/ai-governance/changes/<work_id>.yaml.",
+    )
+    change_gate_parser.add_argument(
+        "--staged",
+        action="store_true",
+        help="Validate only the staged diff instead of all working-tree changes.",
+    )
+    change_gate_parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="Output the gate result as JSON.",
+    )
+
     concurrency_parser = subparsers.add_parser(
         "concurrency",
         help="Report how many worktrees and unmerged branches are open in this repository.",
@@ -557,6 +579,31 @@ def _run_doctor(args) -> int:
         print(format_doctor_json(result))
     else:
         print(format_doctor(result))
+    return 0 if result.ok else 1
+
+
+def _run_change_gate(args) -> int:
+    from .change_gate import ChangeGateError, evaluate_change_gate
+
+    try:
+        result = evaluate_change_gate(args.root, args.contract, staged_only=args.staged)
+    except ChangeGateError as exc:
+        if getattr(args, "as_json", False):
+            print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+        else:
+            print(f"Change gate error: {exc}")
+        return 2
+
+    if getattr(args, "as_json", False):
+        print(json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False))
+    else:
+        print(f"Change gate: {'PASS' if result.ok else 'FAIL'}")
+        print(f"  contract: {result.contract}")
+        print(f"  changed files: {len(result.changed_files)}")
+        for warning in result.warnings:
+            print(f"  warning: {warning}")
+        for violation in result.violations:
+            print(f"  violation: {violation}")
     return 0 if result.ok else 1
 
 
@@ -1416,6 +1463,7 @@ _COMMANDS = {
     "concurrency": _run_concurrency,
     "council": _run_council,
     "doctor": _run_doctor,
+    "change-gate": _run_change_gate,
     "discover": _run_discover,
     "map": _run_map,
     "resume": _run_resume,
