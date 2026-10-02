@@ -244,11 +244,23 @@ def build_parser() -> argparse.ArgumentParser:
     adoption_sources.add_argument(
         "--source", action="append", default=[], help="Project-relative file or directory; repeat as needed."
     )
+    adoption_sources.add_argument(
+        "--select", default=None, help="Select numbered discovery entries, e.g. 1,3-5."
+    )
     adoption_commands.add_parser(
         "analyze", help="Rank the complete AI-Agents governance catalog from selected project sources."
     )
-    adoption_commands.add_parser(
+    adoption_apply = adoption_commands.add_parser(
         "apply", help="Copy only modules marked selected=true in the reviewed adoption plan."
+    )
+    managed_tracking = adoption_apply.add_mutually_exclusive_group()
+    managed_tracking.add_argument(
+        "--track-managed", action="store_true", dest="track_managed", default=None,
+        help="Keep managed AI-Agents files visible to git."
+    )
+    managed_tracking.add_argument(
+        "--no-track-managed", action="store_false", dest="track_managed", default=None,
+        help="Ignore managed AI-Agents files while leaving project overrides trackable."
     )
     adoption_commands.add_parser(
         "reassess", help="Repeat analysis using the previously selected documentation sources."
@@ -741,10 +753,16 @@ def _run_adoption(args) -> int:
                 print(format_documentation_sources(discover_documentation(args.root)))
                 return 0
             if args.adoption_command == "sources":
-                if not args.source:
-                    print("Adoption sources error: pass one or more --source FILE_OR_DIRECTORY values")
-                    return 2
-                selected = save_selected_sources(args.root, args.source)
+                from .adoption_flow import parse_source_selection
+                selections = list(args.source)
+                discovered = discover_documentation(args.root)
+                if args.select:
+                    selections.extend(parse_source_selection(args.select, discovered))
+                if not selections:
+                    print(format_documentation_sources(discovered))
+                    answer = input("Select documentation [e.g. 1,3-5]: ").strip()
+                    selections.extend(parse_source_selection(answer, discovered))
+                selected = save_selected_sources(args.root, selections)
                 print("AI GovernanceKit adoption sources saved")
                 for path in selected:
                     print(f"  - {path}")
@@ -753,7 +771,11 @@ def _run_adoption(args) -> int:
                 modules = analyze_adoption(args.root, development=args.development)
                 print(format_ranked_modules(modules))
                 return 0
-            written = apply_adoption(args.root, development=args.development)
+            written = apply_adoption(
+                args.root,
+                development=args.development,
+                track_managed=getattr(args, "track_managed", None),
+            )
             print("AI GovernanceKit selective adoption applied")
             for path in written:
                 print(f"  wrote: {path}")
