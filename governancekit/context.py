@@ -187,6 +187,29 @@ def _excluded(path: str, patterns: Sequence[str]) -> bool:
     return any(candidate.match(pattern) for pattern in patterns)
 
 
+def _with_project_override(root: Path, rel: str, text: str) -> tuple[str, tuple[str, ...]]:
+    """Compose a managed governance module with a project-owned addendum.
+
+    Managed AI-Agents files stay immutable. A project can augment one by creating
+    docs/ai-governance/overrides/<basename>. The addendum never replaces the base.
+    """
+    if not (rel == "AGENTS.md" or rel.startswith(".docs/agents/") or rel.startswith(".docs/workflows/")):
+        return text, ()
+    override = root / "docs/ai-governance/overrides" / Path(rel).name
+    if not override.is_file() or override.is_symlink():
+        return text, ()
+    try:
+        override.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise ContextError(f"project governance override escapes repository root: {override}") from exc
+    addition = override.read_text(encoding="utf-8")
+    if not addition.strip():
+        return text, ()
+    return text.rstrip() + "\n\n# Project Addendum\n\n" + addition.strip() + "\n", (
+        f"project-override:{override.relative_to(root).as_posix()}",
+    )
+
+
 def _markdown_sections(text: str) -> list[tuple[str, int, int, str]]:
     matches = list(re.finditer(r"(?m)^(#{1,6})\s+(.+?)\s*$", text))
     sections: list[tuple[str, int, int, str]] = []
@@ -412,6 +435,7 @@ def build_context(
             warnings.append(message)
             continue
         text = path.read_text(encoding="utf-8")
+        text, override_provenance = _with_project_override(root, rel, text)
         content, provenance = _select_content(
             text,
             str(entry["mode"]),
@@ -431,7 +455,15 @@ def build_context(
         if category not in category_budgets or category == "reserve":
             raise ContextError(f"source {rel} references unbudgeted category: {category}")
         candidates.append(
-            Source(rel, category, tokens, required, str(entry["mode"]), content, provenance)
+            Source(
+                rel,
+                category,
+                tokens,
+                required,
+                str(entry["mode"]),
+                content,
+                tuple(provenance) + override_provenance,
+            )
         )
         seen_paths.add(path)
 
