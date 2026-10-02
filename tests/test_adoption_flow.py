@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from governancekit.adoption_flow import (
+    MANIFEST_FILE,
+    PLAN_FILE,
+    SOURCES_FILE,
+    analyze_adoption,
+    apply_adoption,
+    discover_documentation,
+    save_selected_sources,
+)
+
+
+def test_discover_documentation_finds_common_doc_roots(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Demo\n", encoding="utf-8")
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "architecture.md").write_text("# Architecture\nSystem definition\n", encoding="utf-8")
+    debates = docs / "agents"
+    debates.mkdir()
+    (debates / "debate.md").write_text("history\n", encoding="utf-8")
+
+    found = discover_documentation(tmp_path)
+    paths = {item.path for item in found}
+
+    assert "README.md" in paths
+    assert "docs/" in paths
+
+
+def test_selected_sources_expand_directories_and_are_repeatable(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("a\n", encoding="utf-8")
+    (docs / "b.md").write_text("b\n", encoding="utf-8")
+
+    selected = save_selected_sources(tmp_path, ["docs/"])
+    selected_again = save_selected_sources(tmp_path, ["docs/"])
+
+    assert selected == ["docs/a.md", "docs/b.md"]
+    assert selected_again == selected
+    assert json.loads((tmp_path / SOURCES_FILE).read_text())["sources"] == selected
+
+
+def test_analyze_writes_complete_ranked_plan_with_token_cost(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "README.md").write_text("# Demo\nPython app\n", encoding="utf-8")
+    save_selected_sources(tmp_path, ["README.md"])
+
+    config = tmp_path / ".gk/project-config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(json.dumps({"providers": [{
+        "name": "test",
+        "purpose": "governance-adoption",
+        "base_url": "https://example.invalid/v1",
+        "model": "model",
+        "mode": "env",
+        "credential_ref": "TEST_KEY",
+        "validation": "reference-required",
+        "role": "primary",
+    }]}), encoding="utf-8")
+
+    kit = tmp_path.parent / "kit"
+    (kit / ".docs/agents").mkdir(parents=True)
+    (kit / "AGENTS.md").write_text("# Core\nbase governance\n", encoding="utf-8")
+    (kit / ".docs/agents/security.md").write_text("# Security\nsecure changes\n", encoding="utf-8")
+
+    monkeypatch.setattr("governancekit.adoption_flow._download", lambda *_a, **_k: kit)
+    monkeypatch.setattr("governancekit.adoption_flow.request_completion", lambda *_a, **_k: json.dumps({
+        "modules": [
+            {"path": "AGENTS.md", "priority": "core", "reason": "base contract", "condition": None},
+            {"path": ".docs/agents/security.md", "priority": "on-demand", "reason": "security work", "condition": "when changing security-sensitive code"},
+        ]
+    }))
+
+    modules = analyze_adoption(tmp_path, development=True)
+
+    assert [item.priority for item in modules] == ["core", "on-demand"]
+    assert all(item.estimated_tokens > 0 for item in modules)
+    plan = json.loads((tmp_path / PLAN_FILE).read_text())
+    assert len(plan["modules"]) == 2
+    assert all("estimated_tokens" in item for item in plan["modules"])
+
+
+def test_apply_copies_only_selected_and_keeps_overrides_project_owned(tmp_path: Path, monkeypatch) -> None:
+    kit = tmp_path.parent / "kit"
+    (kit / ".docs/agents").mkdir(parents=True)
+    (kit / "AGENTS.md").write_text("# Core\n", encoding="utf-8")
+    (kit / ".docs/agents/security.md").write_text("# Security\n", encoding="utf-8")
+
+    plan_path = tmp_path / PLAN_FILE
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text(json.dumps({
+        "ai_agents_ref": "feature/v2-change-governance",
+        "modules": [
+            {"path": "AGENTS.md", "selected": True},
+            {"path": ".docs/agents/security.md", "selected": False},
+        ],
+    }), encoding="utf-8")
+    monkeypatch.setattr("governancekit.adoption_flow._download", lambda *_a, **_k: kit)
+
+    written = apply_adoption(tmp_path, development=True)
+
+    assert (tmp_path / "AGENTS.md").is_file()
+    assert not (tmp_path / ".docs/agents/security.md").exists()
+    assert (tmp_path / "docs/ai-governance/overrides/README.md").is_file()
+    manifest = json.loads((tmp_path / MANIFEST_FILE).read_text())
+    assert set(manifest["files"]) == {"AGENTS.md"}
+    assert "docs/ai-governance/overrides/README.md" in written
+
+
+def test_apply_refuses_modified_managed_module(tmp_path: Path, monkeypatch) -> None:
+    kit = tmp_path.parent / "kit"
+    kit.mkdir()
+    (kit / "AGENTS.md").write_text("new kit\n", encoding="utf-8")
+
+    plan_path = tmp_path / PLAN_FILE
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text(json.dumps({
+        "ai_agents_ref": "feature/v2-change-governance",
+        "modules": [{"path": "AGENTS.md", "selected": True}],
+    }), encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("local edit\n", encoding="utf-8")
+    monkeypatch.setattr("governancekit.adoption_flow._download", lambda *_a, **_k: kit)
+
+    try:
+        apply_adoption(tmp_path, development=True)
+    except RuntimeError as exc:
+        assert "refusing to overwrite unowned or modified module" in str(exc)
+    else:
+        raise AssertionError("managed-module overwrite must be refused")
