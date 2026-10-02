@@ -25,7 +25,7 @@ def test_main_without_command_prints_expanded_help() -> None:
 
     output = stdout.getvalue()
     assert code == 2
-    assert "usage: governancekit [-h] [--root ROOT] [--version]" in output
+    assert "usage: governancekit [-h] [--root ROOT] [--development] [--version]" in output
     assert "positional arguments:" in output
     assert "doctor              Validate required governance files and readiness" in output
     assert "install-agents      Install AI-Agents kit" in output
