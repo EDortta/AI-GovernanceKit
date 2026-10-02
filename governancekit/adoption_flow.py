@@ -138,6 +138,34 @@ def _expand_source(root: Path, value: str) -> list[str]:
     return files
 
 
+def parse_source_selection(spec: str, sources: list[DocumentationSource]) -> list[str]:
+    chosen: list[str] = []
+    for token in (part.strip() for part in spec.split(",")):
+        if not token:
+            continue
+        if "-" in token:
+            left, right = token.split("-", 1)
+            try:
+                start, end = int(left), int(right)
+            except ValueError as exc:
+                raise RuntimeError(f"invalid documentation selection: {token}") from exc
+            indexes = range(start, end + 1)
+        else:
+            try:
+                indexes = [int(token)]
+            except ValueError as exc:
+                raise RuntimeError(f"invalid documentation selection: {token}") from exc
+        for index in indexes:
+            if index < 1 or index > len(sources):
+                raise RuntimeError(f"documentation selection is out of range: {index}")
+            path = sources[index - 1].path
+            if path not in chosen:
+                chosen.append(path)
+    if not chosen:
+        raise RuntimeError("select at least one documentation source")
+    return chosen
+
+
 def save_selected_sources(root: Path, selections: list[str]) -> list[str]:
     root = root.resolve()
     expanded: list[str] = []
@@ -368,7 +396,12 @@ def _seed_project_context(root: Path) -> list[str]:
     return written
 
 
-def apply_adoption(root: Path, *, development: bool = False) -> list[str]:
+def apply_adoption(
+    root: Path,
+    *,
+    development: bool = False,
+    track_managed: bool | None = None,
+) -> list[str]:
     root = root.resolve()
     try:
         plan = json.loads((root / PLAN_FILE).read_text(encoding="utf-8"))
@@ -493,4 +526,32 @@ def apply_adoption(root: Path, *, development: bool = False) -> list[str]:
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     written.append(MANIFEST_FILE)
+
+    if track_managed is not None:
+        ignore = root / ".gitignore"
+        begin = "# AI-Agents selective adoption - managed"
+        end = "# end AI-Agents selective adoption"
+        existing = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
+        lines = existing.splitlines()
+        cleaned: list[str] = []
+        inside = False
+        for line in lines:
+            if line == begin:
+                inside = True
+                continue
+            if line == end:
+                inside = False
+                continue
+            if not inside:
+                cleaned.append(line)
+        if not track_managed:
+            cleaned.extend([
+                begin,
+                ".docs/",
+                "AGENTS.md",
+                end,
+            ])
+        ignore.write_text("\n".join(cleaned).rstrip() + "\n", encoding="utf-8")
+        written.append(".gitignore")
+
     return written
