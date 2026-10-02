@@ -253,6 +253,12 @@ def build_parser() -> argparse.ArgumentParser:
     adoption_commands.add_parser(
         "reassess", help="Repeat analysis using the previously selected documentation sources."
     )
+    adoption_remove = adoption_commands.add_parser(
+        "remove", help="Plan or apply conservative removal of managed AI-Agents files."
+    )
+    adoption_remove.add_argument(
+        "--apply", action="store_true", help="Apply the reviewed removal plan after creating a backup."
+    )
     adoption_plan = adoption_commands.add_parser(
         "plan", help="Legacy read-only one-shot adoption recommendation."
     )
@@ -697,6 +703,30 @@ def _run_llm(args) -> int:
 
 
 def _run_adoption(args) -> int:
+    if args.adoption_command == "remove":
+        from .remove_agents import (
+            apply_removal_plan,
+            build_removal_plan,
+            format_removal_plan,
+            write_removal_plan,
+        )
+        try:
+            plan = build_removal_plan(args.root)
+            plan_path = write_removal_plan(args.root, plan)
+            if not args.apply:
+                print(format_removal_plan(plan))
+                print(f"plan: {plan_path.relative_to(args.root.resolve())}")
+                return 0
+            result = apply_removal_plan(args.root, plan)
+            print("AI GovernanceKit adoption removal applied")
+            print(f"  backup: {result.backup_dir.relative_to(args.root.resolve())}")
+            for path in result.removed:
+                print(f"  removed: {path}")
+            return 0
+        except (RuntimeError, ValueError) as exc:
+            print(f"Adoption remove error: {exc}")
+            return 2
+
     if args.adoption_command in {"discover", "sources", "analyze", "apply", "reassess"}:
         from .adoption_flow import (
             analyze_adoption,
