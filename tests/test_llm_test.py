@@ -86,3 +86,59 @@ def test_cli_llm_test_returns_failure_when_provider_probe_fails(tmp_path: Path, 
 
     assert code == 1
     assert "FAIL gemini / model: HTTP 404" in output
+
+
+def test_select_external_provider_tests_before_persisting_and_uses_symlink(tmp_path: Path, monkeypatch) -> None:
+    from governancekit.llm_select import select_well_known_provider
+
+    credentials = tmp_path / "personal"
+    credentials.mkdir()
+    external = credentials / "openai.key"
+    external.write_text("external-secret\n", encoding="utf-8")
+    project = tmp_path / "project"
+    project.mkdir()
+
+    monkeypatch.setattr(
+        "governancekit.llm_select._probe",
+        lambda *_args, **_kwargs: LlmTestResult("openai", "gpt-5-mini", True, "reachable"),
+    )
+
+    provider, written = select_well_known_provider(
+        project, "openai", credentials, development=True
+    )
+
+    link = project / ".credentials/llm/openai.key"
+    assert link.is_symlink()
+    assert link.resolve() == external.resolve()
+    assert provider.role == "primary"
+    assert provider.validation == "tested-external-reference"
+    assert ".gk/project-config.json" in written
+    data = json.loads((project / ".gk/project-config.json").read_text())
+    serialized = json.dumps(data)
+    assert "external-secret" not in serialized
+    assert str(external) not in serialized
+
+
+def test_select_external_provider_does_not_write_on_failed_probe(tmp_path: Path, monkeypatch) -> None:
+    from governancekit.llm_select import select_well_known_provider
+
+    credentials = tmp_path / "personal"
+    credentials.mkdir()
+    (credentials / "openai.key").write_text("secret\n", encoding="utf-8")
+    project = tmp_path / "project"
+    project.mkdir()
+
+    monkeypatch.setattr(
+        "governancekit.llm_select._probe",
+        lambda *_args, **_kwargs: LlmTestResult("openai", "gpt-5-mini", False, "HTTP 401"),
+    )
+
+    try:
+        select_well_known_provider(project, "openai", credentials, development=True)
+    except RuntimeError as exc:
+        assert "failed validation before selection" in str(exc)
+    else:
+        raise AssertionError("failed provider must not be selected")
+
+    assert not (project / ".credentials").exists()
+    assert not (project / ".gk").exists()
