@@ -131,3 +131,57 @@ def test_llm_show_reports_reference_without_reading_secret(tmp_path: Path, capsy
     assert code == 0
     assert ".credentials/llm/openai.key" in output
     assert "super-secret-value" not in output
+
+
+def test_adoption_plan_uses_configured_provider_and_never_writes_project(tmp_path: Path, monkeypatch) -> None:
+    from governancekit.adoption_selection import build_adoption_selection_plan
+
+    (tmp_path / "README.md").write_text("# Demo\nPython automation project.\n", encoding="utf-8")
+    state = tmp_path / ".gk"
+    state.mkdir()
+    (state / "project-config.json").write_text(
+        json.dumps({
+            "providers": [{
+                "name": "test",
+                "purpose": "governance-adoption",
+                "base_url": "https://example.invalid/v1",
+                "model": "model",
+                "mode": "env",
+                "credential_ref": "TEST_KEY",
+                "validation": "reference-required",
+                "role": "primary",
+            }]
+        }),
+        encoding="utf-8",
+    )
+
+    kit = tmp_path.parent / "kit"
+    (kit / ".docs/agents").mkdir(parents=True)
+    (kit / "AGENTS.md").write_text("# Core\ncore rules\n", encoding="utf-8")
+    (kit / ".docs/agents/programmer.md").write_text("# Programmer\nprogramming rules\n", encoding="utf-8")
+
+    monkeypatch.setattr("governancekit.adoption_selection._download", lambda *_args, **_kwargs: kit)
+
+    def fake_completion(*_args, **_kwargs):
+        return json.dumps({
+            "decisions": [
+                {"path": "AGENTS.md", "action": "include", "reason": "core governance", "condition": None},
+                {
+                    "path": ".docs/agents/programmer.md",
+                    "action": "conditional",
+                    "reason": "only during implementation",
+                    "condition": "when changing code",
+                },
+            ]
+        })
+
+    monkeypatch.setattr("governancekit.adoption_selection.request_completion", fake_completion)
+
+    before = sorted(str(path.relative_to(tmp_path)) for path in tmp_path.rglob("*"))
+    plan = build_adoption_selection_plan(tmp_path, development=True)
+    after = sorted(str(path.relative_to(tmp_path)) for path in tmp_path.rglob("*"))
+
+    assert before == after
+    assert plan.ai_agents_ref == "feature/v2-change-governance"
+    assert plan.provider == "test / model"
+    assert len(plan.decisions) == 2
