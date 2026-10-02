@@ -9,7 +9,7 @@ from governancekit.integration import inspect_integration_contract
 def write_contract(
     root: Path,
     *,
-    version_range: str = ">=0.2.2,<0.4.0",
+    version_range: str = ">=2.3.0,<3.0.0",
     repo: str = "EDortta/AI-Agents",
 ) -> None:
     path = root / ".docs" / "governancekit-integration.json"
