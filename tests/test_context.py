@@ -311,3 +311,21 @@ def test_estimate_all_tasks_reports_every_profile_without_writes(tmp_path: Path)
     assert "implementation" in rendered
     assert "estimated tokens:" in rendered
     assert "usage:" in rendered
+
+
+def test_project_override_augments_managed_module_without_replacing_base(tmp_path: Path) -> None:
+    from governancekit.context import _with_project_override
+
+    override = tmp_path / "docs/ai-governance/overrides/security.md"
+    override.parent.mkdir(parents=True)
+    override.write_text("# Local Security\nNever send customer data externally.\n", encoding="utf-8")
+
+    content, provenance = _with_project_override(
+        tmp_path,
+        ".docs/agents/security.md",
+        "# Security\nBase kit rule.\n",
+    )
+
+    assert "Base kit rule." in content
+    assert "Never send customer data externally." in content
+    assert provenance == ("project-override:docs/ai-governance/overrides/security.md",)
