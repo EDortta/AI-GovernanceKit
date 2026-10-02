@@ -495,6 +495,58 @@ def build_context(
     return result
 
 
+def estimate_all_tasks(
+    root: Path,
+    *,
+    manifest_path: Path | None = None,
+    counter: TokenCounter | None = None,
+) -> list[ContextResult]:
+    """Estimate every declared task profile without writing telemetry or content."""
+    root = root.resolve()
+    counter = counter or DeterministicTokenCounter()
+    manifest = load_manifest(root, manifest_path)
+    tasks = manifest.get("tasks", {})
+    if not isinstance(tasks, dict) or not tasks:
+        raise ContextError("context manifest declares no tasks")
+    return [
+        build_context(
+            root,
+            str(task),
+            manifest_path=manifest_path,
+            counter=counter,
+            write_telemetry=False,
+            strict=False,
+        )
+        for task in tasks
+    ]
+
+
+def format_context_estimate(results: Sequence[ContextResult], *, source: str) -> str:
+    lines = [f"Context estimate ({source})"]
+    for result in results:
+        usage = (result.total_tokens / result.budget * 100) if result.budget else 0.0
+        base = result.category_tokens.get("base_contracts", 0)
+        lines.extend([
+            "",
+            result.task,
+            f"  estimated tokens: {result.total_tokens}",
+            f"  budget: {result.budget}",
+            f"  usable budget: {result.usable_budget}",
+            f"  usage: {usage:.1f}%",
+            f"  base contracts: {base}",
+            f"  sources: {len(result.sources)}",
+            f"  exceeded: {'yes' if result.exceeded else 'no'}",
+        ])
+        largest = sorted(result.sources, key=lambda item: item.tokens, reverse=True)[:5]
+        if largest:
+            lines.append("  largest contributors:")
+            for item in largest:
+                lines.append(f"    - {item.path}: {item.tokens}")
+        for violation in result.hard_violations:
+            lines.append(f"  violation: {violation}")
+    return "\n".join(lines)
+
+
 def _work_id(issue: Path | None) -> str:
     if issue and issue.is_file():
         match = re.search(r"WK-\d{8}-[\w-]+", issue.read_text(encoding="utf-8"))
