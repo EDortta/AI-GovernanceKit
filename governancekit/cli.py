@@ -59,6 +59,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Repository root to inspect. Defaults to the current directory.",
     )
     parser.add_argument(
+        "--development",
+        action="store_true",
+        help=(
+            "Use the unreleased AI-Agents v2 development line explicitly. "
+            "Development provenance is persisted in project configuration."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="store_true",
         dest="show_version",
@@ -223,13 +231,16 @@ def build_parser() -> argparse.ArgumentParser:
         "install-agents",
         help="Install AI-Agents kit (github.com/EDortta/AI-Agents) into the project.",
     )
-    from .install_agents import DEFAULT_REF, REPO
+    from .install_agents import DEFAULT_REF, DEVELOPMENT_REF, REPO
 
     install_parser.add_argument(
         "--ref",
         default=DEFAULT_REF,
         metavar="REF",
-        help=f"Git ref (branch, tag, or commit) to download. Default: {DEFAULT_REF} (checksum-verified).",
+        help=(
+            f"Git ref (branch, tag, or commit) to download. Default: {DEFAULT_REF} "
+            f"(checksum-verified); with --development: {DEVELOPMENT_REF}."
+        ),
     )
     install_parser.add_argument(
         "--repo",
@@ -667,11 +678,18 @@ def _run_install_agents(args) -> int:
     if sum(bool(m) for m in modes) > 1:
         parser.error("--force, --upgrade, and --docs-only are mutually exclusive.")
     print(f"AI GovernanceKit {__version__} · install-agents")
-    from .install_agents import run_install_agents
+    from .install_agents import DEFAULT_REF, DEVELOPMENT_REF, run_install_agents
+    selected_ref = (
+        DEVELOPMENT_REF
+        if args.development and args.ref == DEFAULT_REF
+        else args.ref
+    )
+    if args.development:
+        print(f"development mode: AI-Agents ref {selected_ref}")
     try:
         result = run_install_agents(
             args.root,
-            ref=args.ref,
+            ref=selected_ref,
             repo=args.repo,
             force=args.force,
             upgrade=args.upgrade,
@@ -679,6 +697,7 @@ def _run_install_agents(args) -> int:
             migrate_content=args.migrate_content,
             track=args.track,
             install_awt=args.install_awt,
+            allow_unverified=args.development,
         )
     except RuntimeError as exc:
         print(f"ERROR: {exc}", flush=True)
@@ -1000,6 +1019,7 @@ def _run_configure_project(args) -> int:
         capabilities=args.capabilities,
         agents=args.agents,
         provider_names=args.providers,
+        development=args.development,
     )
     if args.project_command == "plan":
         if getattr(args, "as_json", False):
