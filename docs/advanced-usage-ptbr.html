@@ -224,5 +224,7 @@ scripts/validate-governance.sh "$GITHUB_WORKSPACE"</code></pre>
 <footer><main>AI GovernanceKit · documentação de uso avançado · <a href="./index.html">voltar à landing page</a></main></footer>
 <p><code>llm test --credentials-dir PATH</code>: testa provedores conhecidos usando arquivos de credenciais de um diretório externo, sem copiar os segredos para o projeto.</p>
 <p><code>adoption sources --source FILE_OR_DIRECTORY</code>: salva uma ou mais fontes de documentação escolhidas pelo operador para a análise seletiva; repita <code>--source</code> para arquivos ou diretórios adicionais.</p>
+<p><code>adoption sources --select 1,3-5</code>: seleciona entradas numeradas da descoberta; sem <code>--source</code> ou <code>--select</code>, o comando abre a seleção interativa.</p>
+<p><code>adoption apply --track-managed</code> / <code>--no-track-managed</code>: escolhe se os módulos gerenciados do AI-Agents entram no git; regras próprias em <code>docs/ai-governance/overrides/</code> continuam pertencendo ao projeto.</p>
 </body>
 </html>
