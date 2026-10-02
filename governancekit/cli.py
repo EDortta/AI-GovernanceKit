@@ -206,6 +206,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also move ~/Sync/agent-log.md to XDG state (refused if a canonical log exists).",
     )
 
+    llm_parser = subparsers.add_parser(
+        "llm", help="Configure and inspect the project's LLM analysis provider."
+    )
+    llm_commands = llm_parser.add_subparsers(dest="llm_command", required=True)
+    llm_commands.add_parser("configure", help="Configure a project-local LLM provider and credential reference.")
+    llm_commands.add_parser("show", help="Show configured LLM providers without reading secrets.")
+
+    adoption_parser = subparsers.add_parser(
+        "adoption", help="Plan selective AI-Agents adoption for this project."
+    )
+    adoption_commands = adoption_parser.add_subparsers(dest="adoption_command", required=True)
+    adoption_plan = adoption_commands.add_parser(
+        "plan", help="Ask the configured LLM which AI-Agents components this project needs."
+    )
+    adoption_plan.add_argument("--json", action="store_true", dest="as_json")
+
     context_parser = subparsers.add_parser(
         "context", help="Advanced: deterministic task context tools (see below)."
     )
@@ -550,6 +566,74 @@ def format_resume(result) -> str:
         lines += ["", f"Note: {result.warning}"]
 
     return "\n".join(lines)
+
+
+def _run_llm(args) -> int:
+    from .project_config import apply_project_config_plan, build_project_config_plan, load_project_config
+    from .scope_conversation import _collect_providers, resolve_locale
+
+    root = args.root.resolve()
+    if args.llm_command == "show":
+        config = load_project_config(root)
+        providers = [] if config is None else [p for p in config.providers if p.mode != "manual"]
+        print("AI GovernanceKit LLM configuration")
+        if not providers:
+            print("  no LLM provider configured")
+            return 1
+        for provider in providers:
+            print(
+                f"  {provider.role}: {provider.name} / {provider.model or '(unset)'} "
+                f"[{provider.mode}: {provider.credential_ref or '(unset)'}]"
+            )
+        return 0
+
+    existing = load_project_config(root)
+    locale = resolve_locale(root=root)
+    try:
+        providers = _collect_providers(root, locale, existing)
+    except (EOFError, KeyboardInterrupt, RuntimeError) as exc:
+        print(f"LLM configuration stopped: {exc}")
+        return 2
+    plan = build_project_config_plan(
+        root,
+        provider_configs=providers,
+        development=args.development,
+    )
+    written = apply_project_config_plan(plan)
+    print("AI GovernanceKit LLM configuration saved")
+    for path in written:
+        print(f"  wrote: {path}")
+    for provider in plan.config.providers:
+        if provider.mode != "manual":
+            print(
+                f"  {provider.role}: {provider.name} / {provider.model or '(unset)'} "
+                f"[credential ref: {provider.credential_ref or '(unset)'}]"
+            )
+    return 0
+
+
+def _run_adoption(args) -> int:
+    from .adoption_selection import (
+        build_adoption_selection_plan,
+        format_adoption_selection_plan,
+    )
+
+    if args.adoption_command != "plan":
+        print(f"Unknown adoption command: {args.adoption_command}")
+        return 2
+    try:
+        plan = build_adoption_selection_plan(args.root, development=args.development)
+    except RuntimeError as exc:
+        if getattr(args, "as_json", False):
+            print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+        else:
+            print(f"Adoption plan error: {exc}")
+        return 2
+    if getattr(args, "as_json", False):
+        print(json.dumps(plan.as_dict(), sort_keys=True, ensure_ascii=False))
+    else:
+        print(format_adoption_selection_plan(plan))
+    return 0
 
 
 def _run_context(args) -> int:
@@ -1533,6 +1617,8 @@ def _run_council(args) -> int:
 
 _COMMANDS = {
     "context": _run_context,
+    "llm": _run_llm,
+    "adoption": _run_adoption,
     "author-context": _run_author_context,
     "concurrency": _run_concurrency,
     "council": _run_council,
