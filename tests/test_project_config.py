@@ -48,7 +48,7 @@ def test_build_plan_uses_discovery_defaults(tmp_path: Path) -> None:
     assert plan.config.project_state == "existing"
     assert plan.config.governancekit_version == __version__
     assert plan.config.governancekit_mode == "release"
-    assert plan.config.ai_agents_ref is None
+    assert plan.config.ai_agents_installed_ref is None
     assert "react" in plan.config.domains
     assert "react-runtime" in plan.config.capabilities
     assert "openai-agents" in plan.config.agents
@@ -135,8 +135,9 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
     assert "configure-project plan" in output
     assert f"governancekit runtime: {__version__}" in output
     assert "governancekit config snapshot:" in output
-    assert "ai-agents project:" in output
-    assert "ai-agents default:" in output
+    assert "ai-agents installed:" in output
+    assert "ai-agents target:" in output
+    assert "ai-agents stable default:" in output
     assert "backend" in output
 
     code = cli.main(
@@ -163,7 +164,8 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
     current = json.loads(capsys.readouterr().out)
     assert current["project_name"] == "Sample"
     assert current["governancekit_version"] == __version__
-    assert "ai_agents_ref" in current
+    assert "ai_agents_installed_ref" in current
+    assert "ai_agents_target_ref" in current
     assert current["domains"] == ["backend"]
     assert current["providers"][0]["credential_ref"] == "OPENAI_API_KEY"
 
@@ -175,8 +177,10 @@ def test_development_plan_records_unreleased_v2_provenance(tmp_path: Path) -> No
 
     assert plan.config.governancekit_version == __version__
     assert plan.config.governancekit_mode == "development"
-    assert plan.config.ai_agents_ref == DEVELOPMENT_REF
-    assert plan.config.ai_agents_repo == REPO
+    assert plan.config.ai_agents_installed_ref is None
+    assert plan.config.ai_agents_installed_repo is None
+    assert plan.config.ai_agents_target_ref == DEVELOPMENT_REF
+    assert plan.config.ai_agents_target_repo == REPO
 
 
 def test_cli_development_plan_is_explicit(tmp_path: Path, capsys) -> None:
@@ -189,4 +193,19 @@ def test_cli_development_plan_is_explicit(tmp_path: Path, capsys) -> None:
     assert code == 0
     output = capsys.readouterr().out
     assert "governancekit mode: development" in output
-    assert "ai-agents project: feature/v2-change-governance" in output
+    assert "ai-agents installed: (not installed)" in output
+    assert "ai-agents target: feature/v2-change-governance" in output
+
+
+def test_existing_install_is_reported_separately_from_development_target(tmp_path: Path) -> None:
+    manifest = tmp_path / ".gk" / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps({"repo": "EDortta/AI-Agents", "ref": "v1.2.1"}),
+        encoding="utf-8",
+    )
+
+    plan = build_project_config_plan(tmp_path, development=True)
+
+    assert plan.config.ai_agents_installed_ref == "v1.2.1"
+    assert plan.config.ai_agents_target_ref == "feature/v2-change-governance"
