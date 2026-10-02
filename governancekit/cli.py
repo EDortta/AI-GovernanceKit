@@ -212,6 +212,14 @@ def build_parser() -> argparse.ArgumentParser:
     llm_commands = llm_parser.add_subparsers(dest="llm_command", required=True)
     llm_commands.add_parser("configure", help="Configure a project-local LLM provider and credential reference.")
     llm_commands.add_parser("show", help="Show configured LLM providers without reading secrets.")
+    llm_test = llm_commands.add_parser("test", help="Test configured LLM providers without exposing credentials.")
+    llm_test.add_argument(
+        "--credentials-dir",
+        type=Path,
+        default=None,
+        help="Optionally test well-known providers using credential files from this external directory.",
+    )
+    llm_test.add_argument("--json", action="store_true", dest="as_json")
 
     adoption_parser = subparsers.add_parser(
         "adoption", help="Plan selective AI-Agents adoption for this project."
@@ -573,6 +581,30 @@ def _run_llm(args) -> int:
     from .scope_conversation import _collect_providers, resolve_locale
 
     root = args.root.resolve()
+    if args.llm_command == "test":
+        from .llm_test import format_llm_test, test_configured_providers, test_well_known_from_directory
+
+        try:
+            results = (
+                test_well_known_from_directory(args.credentials_dir)
+                if args.credentials_dir is not None
+                else test_configured_providers(root)
+            )
+        except RuntimeError as exc:
+            if getattr(args, "as_json", False):
+                print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+            else:
+                print(f"LLM test error: {exc}")
+            return 2
+        if getattr(args, "as_json", False):
+            print(json.dumps({
+                "ok": all(item.ok for item in results) if results else False,
+                "providers": [item.as_dict() for item in results],
+            }, sort_keys=True, ensure_ascii=False))
+        else:
+            print(format_llm_test(results))
+        return 0 if results and all(item.ok for item in results) else 1
+
     if args.llm_command == "show":
         config = load_project_config(root)
         providers = [] if config is None else [p for p in config.providers if p.mode != "manual"]
