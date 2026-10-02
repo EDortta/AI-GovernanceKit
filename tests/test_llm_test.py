@@ -142,3 +142,36 @@ def test_select_external_provider_does_not_write_on_failed_probe(tmp_path: Path,
 
     assert not (project / ".credentials").exists()
     assert not (project / ".gk").exists()
+
+
+def test_configured_test_allows_only_explicitly_tested_external_reference(tmp_path: Path, monkeypatch) -> None:
+    state = tmp_path / ".gk"
+    state.mkdir()
+    (state / "project-config.json").write_text(
+        json.dumps({
+            "providers": [{
+                "name": "openai",
+                "purpose": "governance-adoption",
+                "base_url": "https://api.openai.com/v1",
+                "model": "gpt-5-mini",
+                "mode": "file-ref",
+                "credential_ref": ".credentials/llm/openai.key",
+                "validation": "tested-external-reference",
+                "role": "primary",
+            }]
+        }),
+        encoding="utf-8",
+    )
+
+    seen = {}
+
+    def fake_probe(provider, root, *, allow_symlink=False):
+        seen["allow_symlink"] = allow_symlink
+        return LlmTestResult(provider.name, provider.model, True, "reachable")
+
+    monkeypatch.setattr("governancekit.llm_test._probe", fake_probe)
+
+    results = check_configured_providers(tmp_path)
+
+    assert results[0].ok
+    assert seen["allow_symlink"] is True
