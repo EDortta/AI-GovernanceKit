@@ -10,6 +10,7 @@ from . import __version__
 from .discover import DiscoveryReport, run_discover
 from .integration import inspect_integration_contract
 from .version import get_version_info
+from .install_agents import DEVELOPMENT_REF, REPO
 
 _PROJECT_CONFIG_FILE = ".gk/project-config.json"
 _CONFIG_VERSION = 5
@@ -33,6 +34,7 @@ class ProviderConfig:
 class ProjectConfig:
     config_version: int
     governancekit_version: str
+    governancekit_mode: str
     ai_agents_ref: str | None
     ai_agents_repo: str | None
     project_name: str
@@ -209,6 +211,7 @@ def _config_from_existing(data: dict) -> ProjectConfig | None:
         return ProjectConfig(
             config_version=int(data.get("config_version", _CONFIG_VERSION)),
             governancekit_version=str(data.get("governancekit_version", "unknown")),
+            governancekit_mode=str(data.get("governancekit_mode", "release")),
             ai_agents_ref=(str(data.get("ai_agents_ref")) if data.get("ai_agents_ref") else None),
             ai_agents_repo=(str(data.get("ai_agents_repo")) if data.get("ai_agents_repo") else None),
             project_name=str(data.get("project_name", "")),
@@ -273,6 +276,7 @@ def build_project_config_plan(
     capability_domains: dict[str, str] | None = None,
     required_reading: list[str] | None = None,
     scope_summary: str | None = None,
+    development: bool = False,
 ) -> ProjectConfigPlan:
     root = root.resolve()
     discovery = run_discover(root)
@@ -318,8 +322,15 @@ def build_project_config_plan(
     config = ProjectConfig(
         config_version=_CONFIG_VERSION,
         governancekit_version=__version__,
-        ai_agents_ref=version_info.agents_project,
-        ai_agents_repo=version_info.agents_repo,
+        governancekit_mode="development" if development else "release",
+        ai_agents_ref=(
+            version_info.agents_project
+            or (DEVELOPMENT_REF if development else None)
+        ),
+        ai_agents_repo=(
+            version_info.agents_repo
+            or (REPO if development else None)
+        ),
         project_name=project_name or (existing.project_name if existing else root.name),
         project_state=discovery.project_state,
         languages=list(discovery.languages.keys()),
@@ -380,6 +391,7 @@ def render_project_config_markdown(config: ProjectConfig) -> str:
         "# Project Configuration",
         "",
         f"- governancekit_version: {config.governancekit_version}",
+        f"- governancekit_mode: {config.governancekit_mode}",
         f"- ai_agents_ref: {config.ai_agents_ref or '(not installed)'}",
         f"- ai_agents_repo: {config.ai_agents_repo or '(not installed)'}",
         f"- project_name: {config.project_name}",
@@ -454,6 +466,7 @@ def format_project_config_plan(plan: ProjectConfigPlan) -> str:
     lines = ["AI GovernanceKit configure-project plan"]
     version_info = get_version_info(plan.root)
     lines.append(f"governancekit runtime: {__version__}")
+    lines.append(f"governancekit mode: {plan.config.governancekit_mode}")
     lines.append(f"governancekit config snapshot: {plan.config.governancekit_version}")
     lines.append(f"ai-agents project: {plan.config.ai_agents_ref or '(not installed)'}")
     lines.append(f"ai-agents default: {version_info.agents_default}")
