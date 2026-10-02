@@ -7,8 +7,8 @@ from governancekit import cli
 from governancekit.llm_test import (
     LlmTestResult,
     format_llm_test,
-    test_configured_providers,
-    test_well_known_from_directory,
+    check_configured_providers,
+    check_well_known_from_directory,
 )
 
 
@@ -39,7 +39,7 @@ def test_configured_provider_probe_uses_saved_reference(tmp_path: Path, monkeypa
         lambda *_args, **_kwargs: "OK",
     )
 
-    results = test_configured_providers(tmp_path)
+    results = check_configured_providers(tmp_path)
 
     assert len(results) == 1
     assert results[0].ok
@@ -59,7 +59,7 @@ def test_external_credentials_directory_is_not_copied_into_project(tmp_path: Pat
 
     monkeypatch.setattr("governancekit.llm_test.request_completion", fake_completion)
 
-    results = test_well_known_from_directory(credentials)
+    results = check_well_known_from_directory(credentials)
 
     assert any(item.name == "gemini" and item.ok for item in results)
     assert not any(path.name == ".credentials" for path in tmp_path.iterdir())
@@ -77,7 +77,7 @@ def test_human_output_never_contains_secret() -> None:
 
 def test_cli_llm_test_returns_failure_when_provider_probe_fails(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setattr(
-        "governancekit.llm_test.test_configured_providers",
+        "governancekit.llm_test.check_configured_providers",
         lambda _root: [LlmTestResult("gemini", "model", False, "HTTP 404")],
     )
 
