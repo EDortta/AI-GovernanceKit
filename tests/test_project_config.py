@@ -47,6 +47,7 @@ def test_build_plan_uses_discovery_defaults(tmp_path: Path) -> None:
 
     assert plan.config.project_state == "existing"
     assert plan.config.governancekit_version == __version__
+    assert plan.config.governancekit_mode == "release"
     assert plan.config.ai_agents_ref is None
     assert "react" in plan.config.domains
     assert "react-runtime" in plan.config.capabilities
@@ -66,6 +67,7 @@ def test_apply_writes_shareable_files(tmp_path: Path) -> None:
     assert loaded is not None
     assert loaded.project_name == "Demo"
     assert loaded.governancekit_version == __version__
+    assert loaded.governancekit_mode == "release"
 
 
 def test_parse_provider_specs_supports_modes_and_refs() -> None:
@@ -164,3 +166,27 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
     assert "ai_agents_ref" in current
     assert current["domains"] == ["backend"]
     assert current["providers"][0]["credential_ref"] == "OPENAI_API_KEY"
+
+
+def test_development_plan_records_unreleased_v2_provenance(tmp_path: Path) -> None:
+    from governancekit.install_agents import DEVELOPMENT_REF, REPO
+
+    plan = build_project_config_plan(tmp_path, development=True)
+
+    assert plan.config.governancekit_version == __version__
+    assert plan.config.governancekit_mode == "development"
+    assert plan.config.ai_agents_ref == DEVELOPMENT_REF
+    assert plan.config.ai_agents_repo == REPO
+
+
+def test_cli_development_plan_is_explicit(tmp_path: Path, capsys) -> None:
+    code = cli.main([
+        "--development",
+        "--root", str(tmp_path),
+        "configure-project", "plan",
+    ])
+
+    assert code == 0
+    output = capsys.readouterr().out
+    assert "governancekit mode: development" in output
+    assert "ai-agents project: feature/v2-change-governance" in output
