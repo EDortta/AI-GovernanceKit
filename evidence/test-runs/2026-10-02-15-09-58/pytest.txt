@@ -1,0 +1,52 @@
+Running pytest with the .venv interpreter
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/esteban/Sync/Projects/AI-GovernanceKit-v2
+configfile: pyproject.toml
+collected 474 items
+
+tests/test_activity_monitor.py ........                                  [  1%]
+tests/test_adoption.py .......                                           [  3%]
+tests/test_adoption_selection.py ......                                  [  4%]
+tests/test_advanced_usage_docs.py .......                                [  5%]
+tests/test_agent_scope.py ..............                                 [  8%]
+tests/test_change_gate.py ......                                         [ 10%]
+tests/test_classification.py ...                                         [ 10%]
+tests/test_cli_help.py ............                                      [ 13%]
+tests/test_codemap.py ............................                       [ 19%]
+tests/test_concurrency.py ..............                                 [ 22%]
+tests/test_config_session.py .....                                       [ 23%]
+tests/test_configure.py ................                                 [ 26%]
+tests/test_configure_identity_backed.py ....                             [ 27%]
+tests/test_context.py ............s......                                [ 31%]
+tests/test_context_authoring.py ..................                       [ 35%]
+tests/test_council.py ...............................                    [ 41%]
+tests/test_discover.py ......                                            [ 43%]
+tests/test_doctor.py ...........................                         [ 48%]
+tests/test_doctor_advisory_scan.py ......                                [ 50%]
+tests/test_doctor_gitignore.py ............s...                          [ 53%]
+tests/test_doctor_local_sources.py ..............................        [ 59%]
+tests/test_doctor_sending_email.py ................                      [ 63%]
+tests/test_doctor_tracked_secrets.py ............                        [ 65%]
+tests/test_hooks.py ....                                                 [ 66%]
+tests/test_install_agents.py ........................................... [ 75%]
+....................                                                     [ 79%]
+tests/test_install_agents_integrity.py ........                          [ 81%]
+tests/test_install_agents_safe_extract.py ...                            [ 82%]
+tests/test_integration.py ....                                           [ 82%]
+tests/test_issue_bootstrap.py ..                                         [ 83%]
+tests/test_kit_drift.py ...........                                      [ 85%]
+tests/test_project_config.py ........                                    [ 87%]
+tests/test_readiness_migration.py .......                                [ 88%]
+tests/test_remove_agents.py ......                                       [ 90%]
+tests/test_remove_agents_poisoned_manifest.py .....                      [ 91%]
+tests/test_resume.py .............                                       [ 93%]
+tests/test_root_safety.py .....                                          [ 94%]
+tests/test_scope_conversation.py .................                       [ 98%]
+tests/test_version.py .....                                              [ 99%]
+tests/test_voice.py ..                                                   [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_context.py:242: companion AI-Agents checkout is not available
+SKIPPED [1] tests/test_doctor_gitignore.py:231: companion AI-Agents checkout is not available
+======================== 472 passed, 2 skipped in 7.98s ========================

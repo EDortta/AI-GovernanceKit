@@ -1,0 +1,105 @@
+Running pytest with the .venv interpreter
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/esteban/Sync/Projects/AI-GovernanceKit-v2
+configfile: pyproject.toml
+collected 482 items
+
+governancekit/llm_test.py EE                                             [  0%]
+tests/test_activity_monitor.py ........                                  [  2%]
+tests/test_adoption.py .......                                           [  3%]
+tests/test_adoption_selection.py ......                                  [  4%]
+tests/test_advanced_usage_docs.py F......                                [  6%]
+tests/test_agent_scope.py ..............                                 [  9%]
+tests/test_change_gate.py ......                                         [ 10%]
+tests/test_classification.py ...                                         [ 10%]
+tests/test_cli_help.py ............                                      [ 13%]
+tests/test_codemap.py ............................                       [ 19%]
+tests/test_concurrency.py ..............                                 [ 22%]
+tests/test_config_session.py .....                                       [ 23%]
+tests/test_configure.py ................                                 [ 26%]
+tests/test_configure_identity_backed.py ....                             [ 27%]
+tests/test_context.py ............s......                                [ 31%]
+tests/test_context_authoring.py ..................                       [ 35%]
+tests/test_council.py ...............................                    [ 41%]
+tests/test_discover.py ......                                            [ 42%]
+tests/test_doctor.py ...........................                         [ 48%]
+tests/test_doctor_advisory_scan.py ......                                [ 49%]
+tests/test_doctor_gitignore.py ............s...                          [ 52%]
+tests/test_doctor_local_sources.py ..............................        [ 59%]
+tests/test_doctor_sending_email.py ................                      [ 62%]
+tests/test_doctor_tracked_secrets.py ............                        [ 64%]
+tests/test_hooks.py ....                                                 [ 65%]
+tests/test_install_agents.py ........................................... [ 74%]
+....................                                                     [ 78%]
+tests/test_install_agents_integrity.py ........                          [ 80%]
+tests/test_install_agents_safe_extract.py ...                            [ 81%]
+tests/test_integration.py ....                                           [ 81%]
+tests/test_issue_bootstrap.py ..                                         [ 82%]
+tests/test_kit_drift.py ...........                                      [ 84%]
+tests/test_llm_test.py EE....                                            [ 85%]
+tests/test_project_config.py ........                                    [ 87%]
+tests/test_readiness_migration.py .......                                [ 89%]
+tests/test_remove_agents.py ......                                       [ 90%]
+tests/test_remove_agents_poisoned_manifest.py .....                      [ 91%]
+tests/test_resume.py .............                                       [ 93%]
+tests/test_root_safety.py .....                                          [ 95%]
+tests/test_scope_conversation.py .................                       [ 98%]
+tests/test_version.py .....                                              [ 99%]
+tests/test_voice.py ..                                                   [100%]
+
+==================================== ERRORS ====================================
+_________________ ERROR at setup of test_configured_providers __________________
+file /home/esteban/Sync/Projects/AI-GovernanceKit-v2/governancekit/llm_test.py, line 51
+  def test_configured_providers(root: Path) -> list[LlmTestResult]:
+E       fixture 'root' not found
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, doctest_namespace, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/esteban/Sync/Projects/AI-GovernanceKit-v2/governancekit/llm_test.py:51
+_______________ ERROR at setup of test_well_known_from_directory _______________
+file /home/esteban/Sync/Projects/AI-GovernanceKit-v2/governancekit/llm_test.py, line 72
+  def test_well_known_from_directory(directory: Path) -> list[LlmTestResult]:
+E       fixture 'directory' not found
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, doctest_namespace, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/esteban/Sync/Projects/AI-GovernanceKit-v2/governancekit/llm_test.py:72
+_________________ ERROR at setup of test_configured_providers __________________
+file /home/esteban/Sync/Projects/AI-GovernanceKit-v2/governancekit/llm_test.py, line 51
+  def test_configured_providers(root: Path) -> list[LlmTestResult]:
+E       fixture 'root' not found
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, doctest_namespace, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/esteban/Sync/Projects/AI-GovernanceKit-v2/governancekit/llm_test.py:51
+_______________ ERROR at setup of test_well_known_from_directory _______________
+file /home/esteban/Sync/Projects/AI-GovernanceKit-v2/governancekit/llm_test.py, line 72
+  def test_well_known_from_directory(directory: Path) -> list[LlmTestResult]:
+E       fixture 'directory' not found
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, doctest_namespace, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/esteban/Sync/Projects/AI-GovernanceKit-v2/governancekit/llm_test.py:72
+=================================== FAILURES ===================================
+______________ test_advanced_guide_documents_every_cli_parameter _______________
+
+    def test_advanced_guide_documents_every_cli_parameter() -> None:
+        guide = GUIDE.read_text(encoding="utf-8")
+        missing = sorted(option for option in _long_options(build_parser()) if option not in guide)
+>       assert missing == []
+E       AssertionError: assert ['--credentials-dir'] == []
+E         
+E         Left contains one more item: '--credentials-dir'
+E         Use -v to get more diff
+
+tests/test_advanced_usage_docs.py:37: AssertionError
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_context.py:242: companion AI-Agents checkout is not available
+SKIPPED [1] tests/test_doctor_gitignore.py:231: companion AI-Agents checkout is not available
+ERROR governancekit/llm_test.py::test_configured_providers
+ERROR governancekit/llm_test.py::test_well_known_from_directory
+ERROR tests/test_llm_test.py::test_configured_providers
+ERROR tests/test_llm_test.py::test_well_known_from_directory
+FAILED tests/test_advanced_usage_docs.py::test_advanced_guide_documents_every_cli_parameter
+============= 1 failed, 475 passed, 2 skipped, 4 errors in 15.55s ==============

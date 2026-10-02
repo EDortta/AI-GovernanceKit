@@ -66,7 +66,11 @@ def test_the_hook_does_not_block_when_the_toolchain_is_missing(tmp_path: Path) -
     install_hook(tmp_path)
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(tmp_path / "nowhere")
-    environment["PATH"] = os.path.dirname(sys.executable) + os.pathsep + "/usr/bin:/bin"
+    # Use only the system interpreter path here. The suite itself runs inside the
+    # repository-local .venv, so keeping dirname(sys.executable) would deliberately
+    # expose the installed editable GovernanceKit and would not simulate a missing
+    # toolchain at all.
+    environment["PATH"] = "/usr/bin:/bin"
     # Emptying PATH and PYTHONPATH does not make the toolchain missing: the user
     # site directory stays on sys.path regardless, so `python3 -m governancekit`
     # keeps working from ~/.local. This kit is installed per-user by design, so
