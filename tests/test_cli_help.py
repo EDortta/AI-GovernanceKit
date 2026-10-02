@@ -222,3 +222,9 @@ def test_root_guard_runs_before_the_handler(monkeypatch, tmp_path) -> None:
         with redirect_stderr(stderr):
             assert cli.main(["--root", str(home), command]) == 2
         assert "Unsafe --root" in stderr.getvalue()
+
+
+def test_development_is_a_global_explicit_flag() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["--development", "discover"])
+    assert args.development is True
