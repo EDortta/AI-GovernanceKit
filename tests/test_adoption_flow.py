@@ -10,6 +10,7 @@ from governancekit.adoption_flow import (
     analyze_adoption,
     apply_adoption,
     discover_documentation,
+    parse_source_selection,
     save_selected_sources,
 )
 
@@ -196,3 +197,35 @@ def test_reassessed_apply_removes_only_unchanged_deselected_module(tmp_path: Pat
 
     assert not (tmp_path / ".docs/agents/security.md").exists()
     assert "removed:.docs/agents/security.md" in written
+
+
+def test_numbered_source_selection_supports_ranges(tmp_path: Path) -> None:
+    sources = [
+        type("S", (), {"path": "README.md"})(),
+        type("S", (), {"path": "docs/"})(),
+        type("S", (), {"path": "architecture/"})(),
+    ]
+    assert parse_source_selection("1,3", sources) == ["README.md", "architecture/"]
+    assert parse_source_selection("1-2", sources) == ["README.md", "docs/"]
+
+
+def test_no_track_managed_ignores_kit_but_not_project_overrides(tmp_path: Path, monkeypatch) -> None:
+    kit = tmp_path.parent / "kit-ignore"
+    (kit / ".docs/agents").mkdir(parents=True)
+    (kit / "AGENTS.md").write_text("# Core\n", encoding="utf-8")
+    _seed_kit_runtime(kit)
+    monkeypatch.setattr("governancekit.adoption_flow._download", lambda *_a, **_k: kit)
+
+    plan_path = tmp_path / PLAN_FILE
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text(json.dumps({
+        "ai_agents_ref": "feature/v2-change-governance",
+        "modules": [{"path": "AGENTS.md", "selected": True}],
+    }), encoding="utf-8")
+
+    apply_adoption(tmp_path, development=True, track_managed=False)
+    ignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+
+    assert ".docs/" in ignore
+    assert "AGENTS.md" in ignore
+    assert "docs/ai-governance/overrides" not in ignore
