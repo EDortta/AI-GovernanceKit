@@ -37,3 +37,9 @@ def test_render_group_marks_failures_and_keeps_passes_clear() -> None:
 
     assert "PASS openai / gpt: reachable" in rendered
     assert "FAIL gemini / flash [authentication]: HTTP 401" in rendered
+
+
+def test_script_prioritizes_repository_checkout_on_sys_path() -> None:
+    module = _load_script()
+    assert module.REPO_ROOT == Path(__file__).resolve().parents[1]
+    assert str(module.REPO_ROOT) in module.sys.path
