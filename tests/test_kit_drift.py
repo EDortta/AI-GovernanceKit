@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 from governancekit import __version__
-from governancekit.install_agents import DEFAULT_REF
+from governancekit.install_agents import DEFAULT_REF, DEVELOPMENT_REF
 from governancekit.integration import _matches_range
 from governancekit.kit_drift import (
     KitSnapshot,
@@ -51,6 +51,14 @@ class KitDriftGateTest(unittest.TestCase):
         project report the integration contract as incompatible — non-advisory,
         which the contract's §8b turns into a STOP.
         """
+        runtime_major = __version__.split(".", 1)[0]
+        release_major = DEFAULT_REF.lstrip("v").split(".", 1)[0]
+        if runtime_major != release_major:
+            # An unreleased major is allowed only through the explicit development
+            # path. The stable snapshot remains evidence about the last release and
+            # must not be rewritten to pretend that release accepts this runtime.
+            self.assertTrue(DEVELOPMENT_REF.startswith("feature/"))
+            return
         self.assertTrue(
             _matches_range(__version__, self.snapshot.governancekit_version_range),
             f"GovernanceKit {__version__} is outside "
