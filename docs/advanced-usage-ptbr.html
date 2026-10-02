@@ -67,6 +67,22 @@ governancekit --root /projeto install-agents --upgrade</code></pre>
     </table>
   </section>
 
+
+  <section>
+    <h2><code>change-gate</code></h2>
+    <pre><code>governancekit --root /projeto change-gate \
+  --contract docs/ai-governance/changes/WK-YYYYMMDD-exemplo.yaml
+
+governancekit --root /projeto change-gate \
+  --contract docs/ai-governance/changes/WK-YYYYMMDD-exemplo.yaml \
+  --staged --json</code></pre>
+    <table><tbody>
+      <tr><td><code>--contract PATH</code></td><td>Contrato obrigatório de mudança do AI-Agents v2, dentro do projeto.</td></tr>
+      <tr><td><code>--staged</code></td><td>Valida somente mudanças staged, em vez de toda a árvore de trabalho.</td></tr>
+      <tr><td><code>--json</code></td><td>Emite o resultado estruturado para CI.</td></tr>
+    </tbody></table>
+  </section>
+
   <section>
     <h2><code>configure</code> e identidade</h2>
     <p class="note"><strong>O arquivo canônico é <code>.governancekit-identity.json</code>.</strong> Ele é local, gitignored e gravado com modo <code>0600</code>. <code>WORKSPACE.md</code> não é exigido pelo runtime e não substitui essa identidade.</p>
