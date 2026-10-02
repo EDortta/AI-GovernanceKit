@@ -59,6 +59,22 @@ governancekit --root /project install-agents --upgrade</code></pre>
     <p>Adoption modes: <code>--review</code> is the interactive default; <code>--quick</code> applies high-confidence generated documents; <code>--advanced</code> retains the granular session flow. Automation must use <code>--non-interactive --accept-generated</code>; generated policy is never accepted implicitly.</p>
   </section>
 
+
+  <section>
+    <h2><code>change-gate</code></h2>
+    <pre><code>governancekit --root /project change-gate \
+  --contract docs/ai-governance/changes/WK-YYYYMMDD-example.yaml
+
+governancekit --root /project change-gate \
+  --contract docs/ai-governance/changes/WK-YYYYMMDD-example.yaml \
+  --staged --json</code></pre>
+    <table><tbody>
+      <tr><td><code>--contract PATH</code></td><td>Required AI-Agents v2 change contract inside the project.</td></tr>
+      <tr><td><code>--staged</code></td><td>Checks only staged changes instead of the complete working tree.</td></tr>
+      <tr><td><code>--json</code></td><td>Outputs a machine-readable gate result for CI.</td></tr>
+    </tbody></table>
+  </section>
+
   <section>
     <h2><code>configure</code> and identity</h2>
     <p class="note"><strong>The canonical file is <code>.governancekit-identity.json</code>.</strong> It is local, gitignored, and mode <code>0600</code>. <code>WORKSPACE.md</code> is not required and does not satisfy the runtime identity gate.</p>
