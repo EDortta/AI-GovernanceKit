@@ -13,7 +13,7 @@ from .version import get_version_info
 from .install_agents import DEVELOPMENT_REF, REPO
 
 _PROJECT_CONFIG_FILE = ".gk/project-config.json"
-_CONFIG_VERSION = 5
+_CONFIG_VERSION = 6
 _PROVIDER_MODES = {"manual", "env", "file-ref"}
 _PROVIDER_ROLES = {"primary", "fallback", "optional"}
 
@@ -35,8 +35,10 @@ class ProjectConfig:
     config_version: int
     governancekit_version: str
     governancekit_mode: str
-    ai_agents_ref: str | None
-    ai_agents_repo: str | None
+    ai_agents_installed_ref: str | None
+    ai_agents_installed_repo: str | None
+    ai_agents_target_ref: str | None
+    ai_agents_target_repo: str | None
     project_name: str
     project_state: str
     languages: list[str]
@@ -212,8 +214,22 @@ def _config_from_existing(data: dict) -> ProjectConfig | None:
             config_version=int(data.get("config_version", _CONFIG_VERSION)),
             governancekit_version=str(data.get("governancekit_version", "unknown")),
             governancekit_mode=str(data.get("governancekit_mode", "release")),
-            ai_agents_ref=(str(data.get("ai_agents_ref")) if data.get("ai_agents_ref") else None),
-            ai_agents_repo=(str(data.get("ai_agents_repo")) if data.get("ai_agents_repo") else None),
+            ai_agents_installed_ref=(
+                str(data.get("ai_agents_installed_ref"))
+                if data.get("ai_agents_installed_ref")
+                else (str(data.get("ai_agents_ref")) if data.get("ai_agents_ref") else None)
+            ),
+            ai_agents_installed_repo=(
+                str(data.get("ai_agents_installed_repo"))
+                if data.get("ai_agents_installed_repo")
+                else (str(data.get("ai_agents_repo")) if data.get("ai_agents_repo") else None)
+            ),
+            ai_agents_target_ref=(
+                str(data.get("ai_agents_target_ref")) if data.get("ai_agents_target_ref") else None
+            ),
+            ai_agents_target_repo=(
+                str(data.get("ai_agents_target_repo")) if data.get("ai_agents_target_repo") else None
+            ),
             project_name=str(data.get("project_name", "")),
             project_state=str(data.get("project_state", "")),
             languages=[str(item) for item in data.get("languages", []) if isinstance(item, str)],
@@ -323,14 +339,12 @@ def build_project_config_plan(
         config_version=_CONFIG_VERSION,
         governancekit_version=__version__,
         governancekit_mode="development" if development else "release",
-        ai_agents_ref=(
-            version_info.agents_project
-            or (DEVELOPMENT_REF if development else None)
+        ai_agents_installed_ref=version_info.agents_project,
+        ai_agents_installed_repo=version_info.agents_repo,
+        ai_agents_target_ref=(
+            DEVELOPMENT_REF if development else version_info.agents_default
         ),
-        ai_agents_repo=(
-            version_info.agents_repo
-            or (REPO if development else None)
-        ),
+        ai_agents_target_repo=REPO,
         project_name=project_name or (existing.project_name if existing else root.name),
         project_state=discovery.project_state,
         languages=list(discovery.languages.keys()),
@@ -392,8 +406,10 @@ def render_project_config_markdown(config: ProjectConfig) -> str:
         "",
         f"- governancekit_version: {config.governancekit_version}",
         f"- governancekit_mode: {config.governancekit_mode}",
-        f"- ai_agents_ref: {config.ai_agents_ref or '(not installed)'}",
-        f"- ai_agents_repo: {config.ai_agents_repo or '(not installed)'}",
+        f"- ai_agents_installed_ref: {config.ai_agents_installed_ref or '(not installed)'}",
+        f"- ai_agents_installed_repo: {config.ai_agents_installed_repo or '(not installed)'}",
+        f"- ai_agents_target_ref: {config.ai_agents_target_ref or '(unset)'}",
+        f"- ai_agents_target_repo: {config.ai_agents_target_repo or '(unset)'}",
         f"- project_name: {config.project_name}",
         f"- project_state: {config.project_state}",
         f"- languages: {', '.join(config.languages) or '(none)'}",
@@ -468,8 +484,13 @@ def format_project_config_plan(plan: ProjectConfigPlan) -> str:
     lines.append(f"governancekit runtime: {__version__}")
     lines.append(f"governancekit mode: {plan.config.governancekit_mode}")
     lines.append(f"governancekit config snapshot: {plan.config.governancekit_version}")
-    lines.append(f"ai-agents project: {plan.config.ai_agents_ref or '(not installed)'}")
-    lines.append(f"ai-agents default: {version_info.agents_default}")
+    lines.append(
+        f"ai-agents installed: {plan.config.ai_agents_installed_ref or '(not installed)'}"
+    )
+    lines.append(
+        f"ai-agents target: {plan.config.ai_agents_target_ref or '(unset)'}"
+    )
+    lines.append(f"ai-agents stable default: {version_info.agents_default}")
     lines.append(f"root: {plan.root}")
     lines.append(f"project: {plan.config.project_name}")
     lines.append(f"state: {plan.config.project_state}")
