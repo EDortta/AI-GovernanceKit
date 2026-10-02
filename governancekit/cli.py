@@ -582,13 +582,17 @@ def _run_llm(args) -> int:
 
     root = args.root.resolve()
     if args.llm_command == "test":
-        from .llm_test import format_llm_test, test_configured_providers, test_well_known_from_directory
+        from .llm_test import (
+            check_configured_providers,
+            check_well_known_from_directory,
+            format_llm_test,
+        )
 
         try:
             results = (
-                test_well_known_from_directory(args.credentials_dir)
+                check_well_known_from_directory(args.credentials_dir)
                 if args.credentials_dir is not None
-                else test_configured_providers(root)
+                else check_configured_providers(root)
             )
         except RuntimeError as exc:
             if getattr(args, "as_json", False):
