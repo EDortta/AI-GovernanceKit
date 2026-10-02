@@ -14,6 +14,37 @@ from governancekit.adoption_flow import (
 )
 
 
+
+def _seed_kit_runtime(kit: Path) -> None:
+    import yaml
+    (kit / ".docs/schemas").mkdir(parents=True, exist_ok=True)
+    (kit / ".docs/schemas/context-manifest.schema.json").write_text(
+        json.dumps({
+            "type": "object",
+            "required": ["$schema", "version", "base", "tasks", "budgets", "retrieval", "telemetry"],
+            "properties": {}
+        }),
+        encoding="utf-8",
+    )
+    (kit / ".docs/context-manifest.yaml").write_text(
+        yaml.safe_dump({
+            "$schema": "schemas/context-manifest.schema.json",
+            "version": 1,
+            "base": {"required": [{"path": "AGENTS.md", "mode": "full"}]},
+            "project": {"include": [{"path": "docs/project-rules.md", "mode": "full"}]},
+            "tasks": {"implementation": {"include": [{"path": ".docs/agents/security.md", "mode": "full", "required": True}]}},
+            "risks": {},
+            "budgets": {"total_input_tokens": 22000, "categories": {
+                "base_contracts": 8000, "task_contracts": 8500, "risk_contracts": 4500,
+                "project_context": 1000, "active_work": 3500, "retrieved_evidence": 1000, "reserve": 1000
+            }},
+            "retrieval": {"max_sections": 4, "max_section_tokens": 500},
+            "telemetry": {"path": ".gk/context-telemetry.jsonl", "retention_days": 30, "content_capture": False},
+        }, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
 def test_discover_documentation_finds_common_doc_roots(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("# Demo\n", encoding="utf-8")
     docs = tmp_path / "docs"
@@ -88,6 +119,7 @@ def test_apply_copies_only_selected_and_keeps_overrides_project_owned(tmp_path: 
     (kit / ".docs/agents").mkdir(parents=True)
     (kit / "AGENTS.md").write_text("# Core\n", encoding="utf-8")
     (kit / ".docs/agents/security.md").write_text("# Security\n", encoding="utf-8")
+    _seed_kit_runtime(kit)
 
     plan_path = tmp_path / PLAN_FILE
     plan_path.parent.mkdir(parents=True)
@@ -114,6 +146,7 @@ def test_apply_refuses_modified_managed_module(tmp_path: Path, monkeypatch) -> N
     kit = tmp_path.parent / "kit"
     kit.mkdir()
     (kit / "AGENTS.md").write_text("new kit\n", encoding="utf-8")
+    _seed_kit_runtime(kit)
 
     plan_path = tmp_path / PLAN_FILE
     plan_path.parent.mkdir(parents=True)
@@ -130,3 +163,36 @@ def test_apply_refuses_modified_managed_module(tmp_path: Path, monkeypatch) -> N
         assert "refusing to overwrite unowned or modified module" in str(exc)
     else:
         raise AssertionError("managed-module overwrite must be refused")
+
+
+def test_reassessed_apply_removes_only_unchanged_deselected_module(tmp_path: Path, monkeypatch) -> None:
+    kit = tmp_path.parent / "kit-reassess"
+    (kit / ".docs/agents").mkdir(parents=True)
+    (kit / "AGENTS.md").write_text("# Core\n", encoding="utf-8")
+    (kit / ".docs/agents/security.md").write_text("# Security\n", encoding="utf-8")
+    _seed_kit_runtime(kit)
+    monkeypatch.setattr("governancekit.adoption_flow._download", lambda *_a, **_k: kit)
+
+    plan_path = tmp_path / PLAN_FILE
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text(json.dumps({
+        "ai_agents_ref": "feature/v2-change-governance",
+        "modules": [
+            {"path": "AGENTS.md", "selected": True},
+            {"path": ".docs/agents/security.md", "selected": True},
+        ],
+    }), encoding="utf-8")
+    apply_adoption(tmp_path, development=True)
+    assert (tmp_path / ".docs/agents/security.md").is_file()
+
+    plan_path.write_text(json.dumps({
+        "ai_agents_ref": "feature/v2-change-governance",
+        "modules": [
+            {"path": "AGENTS.md", "selected": True},
+            {"path": ".docs/agents/security.md", "selected": False},
+        ],
+    }), encoding="utf-8")
+    written = apply_adoption(tmp_path, development=True)
+
+    assert not (tmp_path / ".docs/agents/security.md").exists()
+    assert "removed:.docs/agents/security.md" in written
