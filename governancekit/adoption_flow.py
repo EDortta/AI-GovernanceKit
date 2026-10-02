@@ -6,6 +6,8 @@ import hashlib
 import json
 import shutil
 import tempfile
+
+import yaml
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -308,6 +310,64 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _entry_path(value: object) -> str | None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict) and isinstance(value.get("path"), str):
+        return value["path"]
+    return None
+
+
+def _filtered_context_manifest(kit_root: Path, selected_paths: set[str]) -> dict:
+    source = yaml.safe_load((kit_root / ".docs/context-manifest.yaml").read_text(encoding="utf-8"))
+    if not isinstance(source, dict):
+        raise RuntimeError("AI-Agents context manifest is invalid")
+
+    source["base"]["required"] = [
+        entry for entry in source["base"]["required"]
+        if (_entry_path(entry) not in {"AGENTS.md"} or _entry_path(entry) in selected_paths)
+    ]
+
+    tasks = {}
+    for name, group in (source.get("tasks") or {}).items():
+        include = [
+            entry for entry in group.get("include", [])
+            if (_entry_path(entry) or "") in selected_paths
+        ]
+        if include:
+            tasks[name] = {"include": include}
+    source["tasks"] = tasks or {"governed": {"include": []}}
+
+    risks = {}
+    for name, group in (source.get("risks") or {}).items():
+        include = [
+            entry for entry in group.get("include", [])
+            if (_entry_path(entry) or "") in selected_paths
+        ]
+        if include:
+            risks[name] = {"include": include}
+    source["risks"] = risks
+    return source
+
+
+def _seed_project_context(root: Path) -> list[str]:
+    seeds = {
+        "docs/software-overview.md": "# Software Overview\n\nDescribe the system and its boundaries here.\n",
+        "docs/limits.md": "# Limits\n\nRecord operational and architectural limits here.\n",
+        "docs/required-reading.md": "# Required Reading\n\n- docs/project-rules.md - project-specific governance\n",
+        "docs/project-rules.md": "# Project Rules\n\nProject-owned rules and constraints live here.\n",
+    }
+    written: list[str] = []
+    for rel, content in seeds.items():
+        target = root / rel
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        written.append(rel)
+    return written
+
+
 def apply_adoption(root: Path, *, development: bool = False) -> list[str]:
     root = root.resolve()
     try:
@@ -322,6 +382,7 @@ def apply_adoption(root: Path, *, development: bool = False) -> list[str]:
     selected = [row for row in rows if isinstance(row, dict) and row.get("selected") is True]
     if not selected:
         raise RuntimeError("adoption plan selects no modules")
+    selected_paths = {str(row.get("path", "")) for row in selected}
 
     old_files: dict[str, str] = {}
     try:
@@ -331,10 +392,33 @@ def apply_adoption(root: Path, *, development: bool = False) -> list[str]:
     except (OSError, json.JSONDecodeError):
         pass
 
+    managed_support = {
+        ".docs/context-manifest.yaml",
+        ".docs/schemas/context-manifest.schema.json",
+    }
+    desired_paths = selected_paths | managed_support
+
+    # Validate removals before the first write. Reassessment may deselect modules,
+    # but only an unchanged file previously recorded by this flow may disappear.
+    to_remove: list[Path] = []
+    for rel, expected in old_files.items():
+        if rel in desired_paths:
+            continue
+        target = root / rel
+        if not target.exists():
+            continue
+        if not target.is_file() or target.is_symlink() or _sha256(target) != expected:
+            raise RuntimeError(
+                f"cannot remove deselected modified module: {rel}; "
+                f"move project additions under {OVERRIDES_DIR} first"
+            )
+        to_remove.append(target)
+
     written: list[str] = []
     hashes: dict[str, str] = {}
     with tempfile.TemporaryDirectory() as temp:
         kit_root = _download(REPO, ref, Path(temp), allow_unverified=development)
+
         for row in selected:
             rel = str(row.get("path", ""))
             source = (kit_root / rel).resolve()
@@ -357,6 +441,35 @@ def apply_adoption(root: Path, *, development: bool = False) -> list[str]:
             hashes[rel] = _sha256(destination)
             written.append(rel)
 
+        schema_source = kit_root / ".docs/schemas/context-manifest.schema.json"
+        schema_dest = root / ".docs/schemas/context-manifest.schema.json"
+        schema_dest.parent.mkdir(parents=True, exist_ok=True)
+        if schema_dest.exists():
+            expected = old_files.get(".docs/schemas/context-manifest.schema.json")
+            if not expected or _sha256(schema_dest) != expected:
+                raise RuntimeError("refusing to overwrite modified managed context schema")
+        shutil.copy2(schema_source, schema_dest)
+        hashes[".docs/schemas/context-manifest.schema.json"] = _sha256(schema_dest)
+        written.append(".docs/schemas/context-manifest.schema.json")
+
+        manifest_data = _filtered_context_manifest(kit_root, selected_paths)
+        manifest_dest = root / ".docs/context-manifest.yaml"
+        if manifest_dest.exists():
+            expected = old_files.get(".docs/context-manifest.yaml")
+            if not expected or _sha256(manifest_dest) != expected:
+                raise RuntimeError("refusing to overwrite modified managed context manifest")
+        manifest_dest.parent.mkdir(parents=True, exist_ok=True)
+        manifest_dest.write_text(yaml.safe_dump(manifest_data, sort_keys=False), encoding="utf-8")
+        hashes[".docs/context-manifest.yaml"] = _sha256(manifest_dest)
+        written.append(".docs/context-manifest.yaml")
+
+    for target in to_remove:
+        rel = target.relative_to(root).as_posix()
+        target.unlink()
+        written.append("removed:" + rel)
+
+    written.extend(_seed_project_context(root))
+
     overrides = root / OVERRIDES_DIR
     overrides.mkdir(parents=True, exist_ok=True)
     readme = overrides / "README.md"
@@ -364,7 +477,8 @@ def apply_adoption(root: Path, *, development: bool = False) -> list[str]:
         readme.write_text(
             "# Project AI Governance Overrides\n\n"
             "This directory is project-owned. Managed AI-Agents modules stay untouched.\n"
-            "To augment a managed module, create a file with the same basename here.\n",
+            "To augment a managed module, create a file with the same basename here.\n"
+            "GovernanceKit composes the base module first and this project addendum second.\n",
             encoding="utf-8",
         )
         written.append(OVERRIDES_DIR + "/README.md")
