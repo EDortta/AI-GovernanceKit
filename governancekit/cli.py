@@ -210,6 +210,11 @@ def build_parser() -> argparse.ArgumentParser:
         "context", help="Advanced: deterministic task context tools (see below)."
     )
     context_commands = context_parser.add_subparsers(dest="context_command", required=True)
+    estimate_parser = context_commands.add_parser(
+        "estimate",
+        help="Estimate all declared task profiles without modifying the project.",
+    )
+    estimate_parser.add_argument("--json", action="store_true", dest="as_json")
     for command in ("inspect", "build"):
         command_parser = context_commands.add_parser(command)
         command_parser.add_argument("--task", default="implementation")
@@ -548,6 +553,55 @@ def format_resume(result) -> str:
 
 
 def _run_context(args) -> int:
+    if args.context_command == "estimate":
+        import tempfile
+
+        from .context import (
+            DeterministicTokenCounter,
+            estimate_all_tasks,
+            format_context_estimate,
+        )
+        from .install_agents import DEFAULT_REF, DEVELOPMENT_REF, REPO, _download
+
+        target_manifest = args.root.resolve() / ".docs/context-manifest.yaml"
+        source_label = "installed project"
+        estimate_root = args.root.resolve()
+        temporary = None
+        try:
+            if not target_manifest.is_file():
+                selected_ref = DEVELOPMENT_REF if args.development else DEFAULT_REF
+                temporary = tempfile.TemporaryDirectory()
+                estimate_root = _download(
+                    REPO,
+                    selected_ref,
+                    Path(temporary.name),
+                    allow_unverified=args.development,
+                )
+                source_label = f"target AI-Agents {selected_ref} (pre-adoption)"
+            results = estimate_all_tasks(
+                estimate_root,
+                counter=DeterministicTokenCounter(),
+            )
+        except (ContextError, RuntimeError) as exc:
+            if getattr(args, "as_json", False):
+                print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+            else:
+                print(f"Context estimate error: {exc}")
+            return 2
+        finally:
+            if temporary is not None:
+                temporary.cleanup()
+
+        if getattr(args, "as_json", False):
+            print(json.dumps({
+                "ok": True,
+                "source": source_label,
+                "profiles": [result.as_dict(include_content=False) for result in results],
+            }, sort_keys=True, ensure_ascii=False))
+        else:
+            print(format_context_estimate(results, source=source_label))
+        return 1 if any(result.exceeded or result.hard_violations for result in results) else 0
+
     if args.context_command == "telemetry":
         from .context import prune_telemetry
 
