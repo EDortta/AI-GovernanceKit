@@ -235,8 +235,26 @@ def build_parser() -> argparse.ArgumentParser:
         "adoption", help="Plan selective AI-Agents adoption for this project."
     )
     adoption_commands = adoption_parser.add_subparsers(dest="adoption_command", required=True)
+    adoption_commands.add_parser(
+        "discover", help="Discover likely project documentation sources without writing project state."
+    )
+    adoption_sources = adoption_commands.add_parser(
+        "sources", help="Save the operator-selected documentation sources for adoption analysis."
+    )
+    adoption_sources.add_argument(
+        "--source", action="append", default=[], help="Project-relative file or directory; repeat as needed."
+    )
+    adoption_commands.add_parser(
+        "analyze", help="Rank the complete AI-Agents governance catalog from selected project sources."
+    )
+    adoption_commands.add_parser(
+        "apply", help="Copy only modules marked selected=true in the reviewed adoption plan."
+    )
+    adoption_commands.add_parser(
+        "reassess", help="Repeat analysis using the previously selected documentation sources."
+    )
     adoption_plan = adoption_commands.add_parser(
-        "plan", help="Ask the configured LLM which AI-Agents components this project needs."
+        "plan", help="Legacy read-only one-shot adoption recommendation."
     )
     adoption_plan.add_argument("--json", action="store_true", dest="as_json")
 
@@ -679,6 +697,41 @@ def _run_llm(args) -> int:
 
 
 def _run_adoption(args) -> int:
+    if args.adoption_command in {"discover", "sources", "analyze", "apply", "reassess"}:
+        from .adoption_flow import (
+            analyze_adoption,
+            apply_adoption,
+            discover_documentation,
+            format_documentation_sources,
+            format_ranked_modules,
+            save_selected_sources,
+        )
+        try:
+            if args.adoption_command == "discover":
+                print(format_documentation_sources(discover_documentation(args.root)))
+                return 0
+            if args.adoption_command == "sources":
+                if not args.source:
+                    print("Adoption sources error: pass one or more --source FILE_OR_DIRECTORY values")
+                    return 2
+                selected = save_selected_sources(args.root, args.source)
+                print("AI GovernanceKit adoption sources saved")
+                for path in selected:
+                    print(f"  - {path}")
+                return 0
+            if args.adoption_command in {"analyze", "reassess"}:
+                modules = analyze_adoption(args.root, development=args.development)
+                print(format_ranked_modules(modules))
+                return 0
+            written = apply_adoption(args.root, development=args.development)
+            print("AI GovernanceKit selective adoption applied")
+            for path in written:
+                print(f"  wrote: {path}")
+            return 0
+        except RuntimeError as exc:
+            print(f"Adoption {args.adoption_command} error: {exc}")
+            return 2
+
     from .adoption_selection import (
         build_adoption_selection_plan,
         format_adoption_selection_plan,
