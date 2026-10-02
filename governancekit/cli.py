@@ -212,6 +212,16 @@ def build_parser() -> argparse.ArgumentParser:
     llm_commands = llm_parser.add_subparsers(dest="llm_command", required=True)
     llm_commands.add_parser("configure", help="Configure a project-local LLM provider and credential reference.")
     llm_commands.add_parser("show", help="Show configured LLM providers without reading secrets.")
+    llm_select = llm_commands.add_parser(
+        "select", help="Select a tested well-known provider using an external credential directory."
+    )
+    llm_select.add_argument("provider", choices=["gemini", "nvidia", "openai"])
+    llm_select.add_argument(
+        "--credentials-dir",
+        type=Path,
+        required=True,
+        help="External directory containing provider credential files.",
+    )
     llm_test = llm_commands.add_parser("test", help="Test configured LLM providers without exposing credentials.")
     llm_test.add_argument(
         "--credentials-dir",
@@ -581,6 +591,26 @@ def _run_llm(args) -> int:
     from .scope_conversation import _collect_providers, resolve_locale
 
     root = args.root.resolve()
+    if args.llm_command == "select":
+        from .llm_select import select_well_known_provider
+
+        try:
+            provider, written = select_well_known_provider(
+                root,
+                args.provider,
+                args.credentials_dir,
+                development=args.development,
+            )
+        except RuntimeError as exc:
+            print(f"LLM selection error: {exc}")
+            return 2
+        print("AI GovernanceKit LLM provider selected")
+        print(f"  primary: {provider.name} / {provider.model}")
+        print(f"  credential ref: {provider.credential_ref}")
+        for path in written:
+            print(f"  wrote: {path}")
+        return 0
+
     if args.llm_command == "test":
         from .llm_test import (
             check_configured_providers,
