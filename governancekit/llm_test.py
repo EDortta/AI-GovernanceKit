@@ -54,7 +54,14 @@ def check_configured_providers(root: Path) -> list[LlmTestResult]:
     if config is None:
         return []
     providers = [provider for provider in config.providers if provider.mode != "manual"]
-    return [_probe(provider, root) for provider in providers]
+    return [
+        _probe(
+            provider,
+            root,
+            allow_symlink=(provider.validation == "tested-external-reference"),
+        )
+        for provider in providers
+    ]
 
 
 def _credential_candidate(directory: Path, name: str) -> Path | None:
