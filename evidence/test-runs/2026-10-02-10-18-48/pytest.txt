@@ -1,0 +1,76 @@
+Running pytest with the .venv interpreter
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/esteban/Sync/Projects/AI-GovernanceKit-v2
+configfile: pyproject.toml
+collected 463 items
+
+tests/test_activity_monitor.py ........                                  [  1%]
+tests/test_adoption.py .......                                           [  3%]
+tests/test_advanced_usage_docs.py .......                                [  4%]
+tests/test_agent_scope.py ..............                                 [  7%]
+tests/test_change_gate.py ......                                         [  9%]
+tests/test_classification.py ...                                         [  9%]
+tests/test_cli_help.py ...........                                       [ 12%]
+tests/test_codemap.py ............................                       [ 18%]
+tests/test_concurrency.py ..............                                 [ 21%]
+tests/test_config_session.py .....                                       [ 22%]
+tests/test_configure.py ................                                 [ 25%]
+tests/test_configure_identity_backed.py ....                             [ 26%]
+tests/test_context.py ............s.....                                 [ 30%]
+tests/test_context_authoring.py ..................                       [ 34%]
+tests/test_council.py ...............................                    [ 41%]
+tests/test_discover.py ......                                            [ 42%]
+tests/test_doctor.py ...........................                         [ 48%]
+tests/test_doctor_advisory_scan.py ......                                [ 49%]
+tests/test_doctor_gitignore.py ............s...                          [ 52%]
+tests/test_doctor_local_sources.py ..............................        [ 59%]
+tests/test_doctor_sending_email.py ................                      [ 62%]
+tests/test_doctor_tracked_secrets.py ............                        [ 65%]
+tests/test_hooks.py ....                                                 [ 66%]
+tests/test_install_agents.py ........................................... [ 75%]
+....................                                                     [ 79%]
+tests/test_install_agents_integrity.py ........                          [ 81%]
+tests/test_install_agents_safe_extract.py ...                            [ 82%]
+tests/test_integration.py ....                                           [ 83%]
+tests/test_issue_bootstrap.py ..                                         [ 83%]
+tests/test_kit_drift.py ..F........                                      [ 85%]
+tests/test_project_config.py .....                                       [ 87%]
+tests/test_readiness_migration.py .......                                [ 88%]
+tests/test_remove_agents.py ......                                       [ 89%]
+tests/test_remove_agents_poisoned_manifest.py .....                      [ 90%]
+tests/test_resume.py .............                                       [ 93%]
+tests/test_root_safety.py .....                                          [ 94%]
+tests/test_scope_conversation.py .................                       [ 98%]
+tests/test_version.py .....                                              [ 99%]
+tests/test_voice.py ..                                                   [100%]
+
+=================================== FAILURES ===================================
+_ KitDriftGateTest.test_this_runtime_satisfies_the_range_the_pinned_contract_declares _
+
+self = <test_kit_drift.KitDriftGateTest testMethod=test_this_runtime_satisfies_the_range_the_pinned_contract_declares>
+
+    def test_this_runtime_satisfies_the_range_the_pinned_contract_declares(self) -> None:
+        """The near-miss of 2026-08-11, as a red test.
+    
+        A version bump here is only publishable if the contract that ships in
+        every governed project still accepts it. Bumping to 0.3.0 against a
+        contract declaring `>=0.2.2,<0.3.0` would have made every `existing`
+        project report the integration contract as incompatible — non-advisory,
+        which the contract's §8b turns into a STOP.
+        """
+>       self.assertTrue(
+            _matches_range(__version__, self.snapshot.governancekit_version_range),
+            f"GovernanceKit {__version__} is outside "
+            f"{self.snapshot.governancekit_version_range}, the range AI-Agents "
+            f"{self.snapshot.agents_ref} declares. Publishing this pair makes every "
+            "governed project on that contract report `incompatible`.",
+        )
+E       AssertionError: False is not true : GovernanceKit 2.3.0 is outside >=0.2.2,<0.4.0, the range AI-Agents v1.2.1 declares. Publishing this pair makes every governed project on that contract report `incompatible`.
+
+tests/test_kit_drift.py:54: AssertionError
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_context.py:240: companion AI-Agents checkout is not available
+SKIPPED [1] tests/test_doctor_gitignore.py:231: companion AI-Agents checkout is not available
+FAILED tests/test_kit_drift.py::KitDriftGateTest::test_this_runtime_satisfies_the_range_the_pinned_contract_declares
+=================== 1 failed, 460 passed, 2 skipped in 6.44s ===================
