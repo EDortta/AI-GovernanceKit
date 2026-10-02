@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from governancekit import cli
+from governancekit import __version__, cli
 from governancekit.project_config import (
     _PROJECT_CONFIG_FILE,
     ProviderConfig,
@@ -46,6 +46,8 @@ def test_build_plan_uses_discovery_defaults(tmp_path: Path) -> None:
     plan = build_project_config_plan(tmp_path)
 
     assert plan.config.project_state == "existing"
+    assert plan.config.governancekit_version == __version__
+    assert plan.config.ai_agents_ref is None
     assert "react" in plan.config.domains
     assert "react-runtime" in plan.config.capabilities
     assert "openai-agents" in plan.config.agents
@@ -63,6 +65,7 @@ def test_apply_writes_shareable_files(tmp_path: Path) -> None:
     loaded = load_project_config(tmp_path)
     assert loaded is not None
     assert loaded.project_name == "Demo"
+    assert loaded.governancekit_version == __version__
 
 
 def test_parse_provider_specs_supports_modes_and_refs() -> None:
@@ -128,6 +131,10 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
     assert code == 0
     output = capsys.readouterr().out
     assert "configure-project plan" in output
+    assert f"governancekit runtime: {__version__}" in output
+    assert "governancekit config snapshot:" in output
+    assert "ai-agents project:" in output
+    assert "ai-agents default:" in output
     assert "backend" in output
 
     code = cli.main(
@@ -153,5 +160,7 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
     assert code == 0
     current = json.loads(capsys.readouterr().out)
     assert current["project_name"] == "Sample"
+    assert current["governancekit_version"] == __version__
+    assert "ai_agents_ref" in current
     assert current["domains"] == ["backend"]
     assert current["providers"][0]["credential_ref"] == "OPENAI_API_KEY"
