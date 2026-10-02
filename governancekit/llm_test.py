@@ -48,7 +48,7 @@ def _probe(provider: ProviderConfig, root: Path, *, allow_symlink: bool = False)
     )
 
 
-def test_configured_providers(root: Path) -> list[LlmTestResult]:
+def check_configured_providers(root: Path) -> list[LlmTestResult]:
     root = root.resolve()
     config = load_project_config(root)
     if config is None:
@@ -69,7 +69,7 @@ def _credential_candidate(directory: Path, name: str) -> Path | None:
     return None
 
 
-def test_well_known_from_directory(directory: Path) -> list[LlmTestResult]:
+def check_well_known_from_directory(directory: Path) -> list[LlmTestResult]:
     directory = directory.expanduser().resolve()
     if not directory.is_dir():
         raise RuntimeError(f"credentials directory does not exist: {directory}")
