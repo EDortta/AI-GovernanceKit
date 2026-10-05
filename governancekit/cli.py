@@ -798,7 +798,19 @@ def _run_adoption(args) -> int:
         if getattr(args, "as_json", False):
             print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
         else:
-            print(f"Adoption plan error: {exc}")
+            message = str(exc)
+
+            if ":" in message:
+                title, details = message.split(":", 1)
+
+                print(f"Adoption plan error: {title.strip()}")
+
+                items = [item.strip() for item in details.split(",") if item.strip()]
+                for item in items:
+                    print(f"  - {item}")
+            else:
+                print(f"Adoption plan error: {message}")
+                
         return 2
     if getattr(args, "as_json", False):
         print(json.dumps(plan.as_dict(), sort_keys=True, ensure_ascii=False))
