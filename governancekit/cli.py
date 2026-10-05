@@ -651,7 +651,7 @@ def format_resume(result) -> str:
 
 def _run_llm(args) -> int:
     from .project_config import apply_project_config_plan, build_project_config_plan, load_project_config
-    from .scope_conversation import _collect_providers, resolve_locale
+    from .scope_conversation import _collect_providers, _detected_providers, resolve_locale
 
     root = args.root.resolve()
     if args.llm_command == "select":
@@ -718,6 +718,30 @@ def _run_llm(args) -> int:
 
     existing = load_project_config(root)
     locale = resolve_locale(root=root)
+
+    saved = [] if existing is None else [p for p in existing.providers if p.mode != "manual"]
+    detected = _detected_providers(root)
+    print("AI GovernanceKit LLM configuration preflight")
+    print(f"  root: {root}")
+    if saved:
+        print("  saved configuration:")
+        for provider in saved:
+            print(
+                f"    - {provider.role}: {provider.name} / {provider.model or '(unset)'} "
+                f"[{provider.mode}: {provider.credential_ref or '(unset)'}]"
+            )
+    else:
+        print("  saved configuration: none")
+    if detected:
+        print("  detected local credentials:")
+        for provider in detected:
+            print(
+                f"    - {provider.name}: {provider.credential_ref} "
+                f"({provider.model or '(unset)'})"
+            )
+    else:
+        print("  detected local credentials: none")
+
     try:
         providers = _collect_providers(root, locale, existing)
     except (EOFError, KeyboardInterrupt, RuntimeError) as exc:
