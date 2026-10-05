@@ -21,6 +21,9 @@ STATE_DIR = ".gk/adoption"
 SOURCES_FILE = STATE_DIR + "/sources.json"
 PLAN_FILE = STATE_DIR + "/plan.json"
 MANIFEST_FILE = STATE_DIR + "/manifest.json"
+DESCRIPTION_PROPOSAL_FILE = STATE_DIR + "/description-proposal.md"
+DESCRIPTION_FACTS_FILE = STATE_DIR + "/description-facts.json"
+PROJECT_DESCRIPTION_FILE = "docs/software-overview.md"
 OVERRIDES_DIR = "docs/ai-governance/overrides"
 
 _DOC_EXTENSIONS = {".md", ".rst", ".adoc", ".txt"}
@@ -239,6 +242,88 @@ def _parse_json_object(raw: str) -> dict | None:
         except json.JSONDecodeError:
             return None
     return value if isinstance(value, dict) else None
+
+
+def build_description_proposal(
+    root: Path,
+    facts: dict[str, str],
+) -> str:
+    root = root.resolve()
+    provider = configured_adoption_provider(root)
+    if provider is None:
+        raise RuntimeError("no configured primary LLM provider")
+    cleaned = {
+        key: " ".join(value.split())
+        for key, value in facts.items()
+        if isinstance(value, str) and value.strip()
+    }
+    if not cleaned:
+        raise RuntimeError("at least one project fact is required")
+    prompt = (
+        "Create a concise project description from operator-supplied facts only. "
+        "Do not invent technologies, integrations, users, data classes, compliance, "
+        "deployment, or requirements that are not present. Return Markdown only. "
+        "Use headings when useful and preserve uncertainty explicitly.\n\n"
+        + json.dumps(cleaned, ensure_ascii=False, indent=2)
+    )
+    proposal = request_completion(
+        provider,
+        root,
+        system=(
+            "Draft only from supplied operator facts. Do not infer missing facts. "
+            "Return Markdown, not JSON."
+        ),
+        user=prompt,
+        allow_project_credential_symlinks=(
+            provider.validation == "tested-external-reference"
+        ),
+        purpose="project description proposal",
+    ).strip()
+    if not proposal:
+        raise RuntimeError("LLM returned an empty project description proposal")
+    state = root / STATE_DIR
+    state.mkdir(parents=True, exist_ok=True)
+    (root / DESCRIPTION_FACTS_FILE).write_text(
+        json.dumps({"facts": cleaned}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    (root / DESCRIPTION_PROPOSAL_FILE).write_text(proposal + "\n", encoding="utf-8")
+    return proposal
+
+
+def load_description_proposal(root: Path) -> str:
+    path = root.resolve() / DESCRIPTION_PROPOSAL_FILE
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise RuntimeError("no description proposal; run adoption describe first") from exc
+    if not text:
+        raise RuntimeError("description proposal is empty")
+    return text
+
+
+def accept_description_proposal(root: Path) -> Path:
+    root = root.resolve()
+    proposal = load_description_proposal(root)
+    target = root / PROJECT_DESCRIPTION_FILE
+    if target.exists():
+        raise RuntimeError(
+            f"refusing to overwrite existing project description: {PROJECT_DESCRIPTION_FILE}"
+        )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(proposal + "\n", encoding="utf-8")
+    return target
+
+
+def reject_description_proposal(root: Path) -> bool:
+    root = root.resolve()
+    removed = False
+    for rel in (DESCRIPTION_PROPOSAL_FILE, DESCRIPTION_FACTS_FILE):
+        path = root / rel
+        if path.exists():
+            path.unlink()
+            removed = True
+    return removed
 
 
 def analyze_adoption(root: Path, *, development: bool = False) -> list[RankedModule]:
