@@ -13,6 +13,11 @@ from governancekit.adoption_flow import (
     parse_source_selection,
     save_selected_sources,
     _parse_json_object,
+    DESCRIPTION_PROPOSAL_FILE,
+    PROJECT_DESCRIPTION_FILE,
+    accept_description_proposal,
+    build_description_proposal,
+    reject_description_proposal,
 )
 
 
@@ -383,3 +388,73 @@ def test_governance_floor_and_trigger_ceiling_for_software_project(tmp_path: Pat
     assert by_path[".docs/workflows/git-delivery.md"].priority == "high"
     assert by_path[".docs/workflows/sending-email.md"].priority == "on-demand"
     assert by_path[".docs/workflows/sending-email.md"].selected is False
+
+
+def _write_test_provider(root: Path) -> None:
+    config = root / ".gk/project-config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(json.dumps({"providers": [{
+        "name": "test",
+        "purpose": "governance-adoption",
+        "base_url": "https://example.invalid/v1",
+        "model": "model",
+        "mode": "env",
+        "credential_ref": "TEST_KEY",
+        "validation": "reference-required",
+        "role": "primary",
+    }]}), encoding="utf-8")
+
+
+def test_description_proposal_does_not_write_project_docs_until_accepted(tmp_path: Path, monkeypatch) -> None:
+    _write_test_provider(tmp_path)
+    monkeypatch.setattr(
+        "governancekit.adoption_flow.request_completion",
+        lambda *_a, **_k: "# Demo\n\nA browser outreach helper.",
+    )
+
+    proposal = build_description_proposal(
+        tmp_path,
+        {"name": "Demo", "purpose": "Assist job outreach"},
+    )
+
+    assert "browser outreach" in proposal
+    assert (tmp_path / DESCRIPTION_PROPOSAL_FILE).is_file()
+    assert not (tmp_path / PROJECT_DESCRIPTION_FILE).exists()
+
+    target = accept_description_proposal(tmp_path)
+    assert target == tmp_path / PROJECT_DESCRIPTION_FILE
+    assert target.read_text(encoding="utf-8").startswith("# Demo")
+
+
+def test_description_reject_discards_proposal_without_project_write(tmp_path: Path, monkeypatch) -> None:
+    _write_test_provider(tmp_path)
+    monkeypatch.setattr(
+        "governancekit.adoption_flow.request_completion",
+        lambda *_a, **_k: "# Demo\n\nProposal.",
+    )
+    build_description_proposal(tmp_path, {"name": "Demo"})
+
+    assert reject_description_proposal(tmp_path) is True
+    assert not (tmp_path / DESCRIPTION_PROPOSAL_FILE).exists()
+    assert not (tmp_path / PROJECT_DESCRIPTION_FILE).exists()
+
+
+def test_description_accept_refuses_to_overwrite_existing_project_description(tmp_path: Path, monkeypatch) -> None:
+    _write_test_provider(tmp_path)
+    monkeypatch.setattr(
+        "governancekit.adoption_flow.request_completion",
+        lambda *_a, **_k: "# Proposed\n",
+    )
+    build_description_proposal(tmp_path, {"name": "Demo"})
+    existing = tmp_path / PROJECT_DESCRIPTION_FILE
+    existing.parent.mkdir(parents=True, exist_ok=True)
+    existing.write_text("# Existing\n", encoding="utf-8")
+
+    try:
+        accept_description_proposal(tmp_path)
+    except RuntimeError as exc:
+        assert "refusing to overwrite existing project description" in str(exc)
+    else:
+        raise AssertionError("existing project description must not be overwritten")
+
+    assert existing.read_text(encoding="utf-8") == "# Existing\n"
