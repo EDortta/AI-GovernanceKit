@@ -227,5 +227,6 @@ scripts/validate-governance.sh "$GITHUB_WORKSPACE"</code></pre>
 <p><code>adoption sources --select 1,3-5</code>: seleciona entradas numeradas da descoberta; sem <code>--source</code> ou <code>--select</code>, o comando abre a seleção interativa.</p>
 <p><code>adoption apply --track-managed</code> / <code>--no-track-managed</code>: escolhe se os módulos gerenciados do AI-Agents entram no git; regras próprias em <code>docs/ai-governance/overrides/</code> continuam pertencendo ao projeto.</p>
 <p><code>adoption remove --apply</code>: aplica a remoção conservadora dos arquivos gerenciados após gerar o plano e o backup.</p>
+<p><code>adoption describe --fact CHAVE=VALOR</code>: gera uma proposta em <code>.gk/adoption/</code> sem alterar a documentação do projeto. Use <code>--show</code> para revisar, <code>--accept</code> para promover a proposta para <code>docs/software-overview.md</code> e <code>--reject</code> para descartá-la.</p>
 </body>
 </html>
