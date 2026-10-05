@@ -110,6 +110,7 @@ def test_analyze_writes_complete_ranked_plan_with_token_cost(tmp_path: Path, mon
     modules = analyze_adoption(tmp_path, development=True)
 
     assert [item.priority for item in modules] == ["core", "on-demand"]
+    assert [item.selected for item in modules] == [True, False]
     assert all(item.estimated_tokens > 0 for item in modules)
     plan = json.loads((tmp_path / PLAN_FILE).read_text())
     assert len(plan["modules"]) == 2
@@ -281,3 +282,41 @@ def test_analyze_retries_once_when_first_response_is_malformed_json(tmp_path: Pa
     modules = analyze_adoption(tmp_path, development=True)
 
     assert [item.priority for item in modules] == ["core", "exclude"]
+
+
+def test_language_specific_audit_is_excluded_when_language_is_not_detected(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "README.md").write_text("# Demo\nPython project\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    save_selected_sources(tmp_path, ["README.md"])
+
+    config = tmp_path / ".gk/project-config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(json.dumps({"providers": [{
+        "name": "test",
+        "purpose": "governance-adoption",
+        "base_url": "https://example.invalid/v1",
+        "model": "model",
+        "mode": "env",
+        "credential_ref": "TEST_KEY",
+        "validation": "reference-required",
+        "role": "primary",
+    }]}), encoding="utf-8")
+
+    kit = tmp_path / "kit"
+    (kit / ".docs/workflows").mkdir(parents=True)
+    (kit / "AGENTS.md").write_text("# Core\n", encoding="utf-8")
+    (kit / ".docs/workflows/php-audit.md").write_text("# PHP Audit\n", encoding="utf-8")
+    monkeypatch.setattr("governancekit.adoption_flow._download", lambda *_a, **_k: kit)
+    monkeypatch.setattr("governancekit.adoption_flow.request_completion", lambda *_a, **_k: json.dumps({
+        "modules": [
+            {"path": "AGENTS.md", "priority": "core", "reason": "base", "condition": None},
+            {"path": ".docs/workflows/php-audit.md", "priority": "high", "reason": "generic audit", "condition": None},
+        ]
+    }))
+
+    modules = analyze_adoption(tmp_path, development=True)
+    by_path = {item.path: item for item in modules}
+
+    assert by_path[".docs/workflows/php-audit.md"].priority == "exclude"
+    assert by_path[".docs/workflows/php-audit.md"].selected is False
+    assert "Excluded deterministically" in by_path[".docs/workflows/php-audit.md"].reason
