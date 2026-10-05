@@ -139,7 +139,11 @@ def test_apply_copies_only_selected_and_keeps_overrides_project_owned(tmp_path: 
     assert not (tmp_path / ".docs/agents/security.md").exists()
     assert (tmp_path / "docs/ai-governance/overrides/README.md").is_file()
     manifest = json.loads((tmp_path / MANIFEST_FILE).read_text())
-    assert set(manifest["files"]) == {"AGENTS.md"}
+    assert set(manifest["files"]) == {
+        "AGENTS.md",
+        ".docs/context-manifest.yaml",
+        ".docs/schemas/context-manifest.schema.json",
+    }
     assert "docs/ai-governance/overrides/README.md" in written
 
 
