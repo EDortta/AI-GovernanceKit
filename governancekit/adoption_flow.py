@@ -354,11 +354,56 @@ OPERATOR-SELECTED PROJECT SOURCES:
             raise RuntimeError("LLM omitted catalog modules")
 
         detected_languages = {name.casefold() for name in discovery.get("languages", {})}
+        software_project = bool(detected_languages) or bool(discovery.get("automation_commands"))
+
         language_audits = {
             ".docs/workflows/delphi-audit.md": {"delphi", "pascal"},
             ".docs/workflows/php-audit.md": {"php"},
             ".docs/workflows/typescript-audit.md": {"typescript"},
         }
+        governance_floor: dict[str, tuple[str, str]] = {
+            "AGENTS.md": (
+                "core",
+                "Required governance substrate for any AI-Agents adoption.",
+            ),
+            ".docs/agents/change-governance.md": (
+                "core",
+                "Required governance substrate for controlled changes.",
+            ),
+        }
+        if software_project:
+            governance_floor.update({
+                ".docs/agents/programmer.md": (
+                    "core",
+                    "Software project detected; implementation work requires the programmer contract.",
+                ),
+                ".docs/agents/reviewer.md": (
+                    "high",
+                    "Software project detected; independent review is part of governed delivery.",
+                ),
+                ".docs/agents/design-standards.md": (
+                    "high",
+                    "Software project detected; design standards govern implementation quality.",
+                ),
+                ".docs/workflows/delivery-loop.md": (
+                    "high",
+                    "Software project detected; governed delivery requires an explicit delivery loop.",
+                ),
+                ".docs/workflows/git-delivery.md": (
+                    "high",
+                    "Software project detected; source delivery uses git workflow controls.",
+                ),
+            })
+
+        trigger_only: dict[str, str] = {
+            ".docs/workflows/sending-email.md": "when a task actually sends email",
+            ".docs/workflows/unattended-run.md": "when unattended execution is explicitly requested",
+            ".docs/workflows/git-bare-remote.md": "when a self-hosted bare git remote is explicitly used",
+            ".docs/workflows/parallel-worktrees.md": "when parallel agent worktrees are explicitly used",
+            ".docs/workflows/session-restore.md": "when resuming previously suspended work",
+            ".docs/workflows/session-memory.md": "when durable cross-session memory is required",
+        }
+
         adjusted: list[RankedModule] = []
         for item in result:
             required = language_audits.get(item.path)
@@ -372,6 +417,30 @@ OPERATOR-SELECTED PROJECT SOURCES:
                         "in project discovery."
                     ),
                     condition=None,
+                    estimated_tokens=item.estimated_tokens,
+                    selected=False,
+                )
+            elif item.path in governance_floor:
+                priority, reason = governance_floor[item.path]
+                item = RankedModule(
+                    path=item.path,
+                    title=item.title,
+                    priority=priority,
+                    reason=reason,
+                    condition=None,
+                    estimated_tokens=item.estimated_tokens,
+                    selected=True,
+                )
+            elif item.path in trigger_only and item.priority in {"core", "high"}:
+                condition = trigger_only[item.path]
+                item = RankedModule(
+                    path=item.path,
+                    title=item.title,
+                    priority="on-demand",
+                    reason=(
+                        "Trigger-scoped workflow: relevant only under an explicit operating condition."
+                    ),
+                    condition=condition,
                     estimated_tokens=item.estimated_tokens,
                     selected=False,
                 )
