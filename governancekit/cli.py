@@ -259,6 +259,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Operator-supplied project fact. Repeat as needed.",
     )
     adoption_describe.add_argument(
+        "--from-sources",
+        action="store_true",
+        help="Infer the description from previously selected adoption sources plus deterministic discovery.",
+    )
+    adoption_describe.add_argument(
         "--show",
         action="store_true",
         help="Show the saved proposal without changing project documentation.",
@@ -769,6 +774,7 @@ def _run_adoption(args) -> int:
     if args.adoption_command == "describe":
         from .adoption_flow import (
             accept_description_proposal,
+            build_description_from_sources,
             build_description_proposal,
             load_description_proposal,
             reject_description_proposal,
@@ -777,6 +783,12 @@ def _run_adoption(args) -> int:
         modes = sum(bool(value) for value in (args.show, args.accept, args.reject))
         if modes > 1:
             print("Adoption describe error: choose only one of --show, --accept, or --reject")
+            return 2
+        if args.from_sources and args.fact:
+            print("Adoption describe error: --from-sources cannot be combined with --fact")
+            return 2
+        if args.from_sources and modes:
+            print("Adoption describe error: --from-sources cannot be combined with --show, --accept, or --reject")
             return 2
 
         try:
@@ -818,6 +830,18 @@ def _run_adoption(args) -> int:
                     "fix the provider and verify with 'governancekit --root PROJECT llm test'"
                 )
             print(f"LLM ready: {provider_label(provider)}")
+
+            if args.from_sources:
+                proposal = build_description_from_sources(args.root)
+                print("AI GovernanceKit project description proposal")
+                print()
+                print(proposal)
+                print()
+                print("proposal: .gk/adoption/description-proposal.md")
+                print("source: operator-selected adoption sources + deterministic discovery")
+                print("No project documentation was changed.")
+                print("Review/edit the proposal, then run adoption describe --accept or --reject.")
+                return 0
 
             facts: dict[str, str] = {}
             for entry in args.fact:
