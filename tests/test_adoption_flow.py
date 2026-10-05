@@ -12,6 +12,7 @@ from governancekit.adoption_flow import (
     discover_documentation,
     parse_source_selection,
     save_selected_sources,
+    _parse_json_object,
 )
 
 
@@ -233,3 +234,50 @@ def test_no_track_managed_ignores_kit_but_not_project_overrides(tmp_path: Path, 
     assert ".docs/" in ignore
     assert "AGENTS.md" in ignore
     assert "docs/ai-governance/overrides" not in ignore
+
+
+def test_parse_json_object_accepts_fenced_json() -> None:
+    raw = """```json
+{"modules": []}
+```"""
+    assert _parse_json_object(raw) == {"modules": []}
+
+
+def test_analyze_retries_once_when_first_response_is_malformed_json(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "README.md").write_text("# Demo\nPython app\n", encoding="utf-8")
+    save_selected_sources(tmp_path, ["README.md"])
+
+    config = tmp_path / ".gk/project-config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(json.dumps({"providers": [{
+        "name": "test",
+        "purpose": "governance-adoption",
+        "base_url": "https://example.invalid/v1",
+        "model": "model",
+        "mode": "env",
+        "credential_ref": "TEST_KEY",
+        "validation": "reference-required",
+        "role": "primary",
+    }]}), encoding="utf-8")
+
+    kit = tmp_path / "kit"
+    (kit / ".docs/agents").mkdir(parents=True)
+    (kit / "AGENTS.md").write_text("# Core\nbase governance\n", encoding="utf-8")
+    (kit / ".docs/agents/security.md").write_text("# Security\nsecure changes\n", encoding="utf-8")
+    monkeypatch.setattr("governancekit.adoption_flow._download", lambda *_a, **_k: kit)
+
+    responses = iter([
+        '{"modules": [',
+        json.dumps({"modules": [
+            {"path": "AGENTS.md", "priority": "core", "reason": "base contract", "condition": None},
+            {"path": ".docs/agents/security.md", "priority": "exclude", "reason": "not needed", "condition": None},
+        ]}),
+    ])
+    monkeypatch.setattr(
+        "governancekit.adoption_flow.request_completion",
+        lambda *_a, **_k: next(responses),
+    )
+
+    modules = analyze_adoption(tmp_path, development=True)
+
+    assert [item.priority for item in modules] == ["core", "exclude"]
