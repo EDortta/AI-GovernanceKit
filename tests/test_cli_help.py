@@ -228,3 +228,21 @@ def test_development_is_a_global_explicit_flag() -> None:
     parser = cli.build_parser()
     args = parser.parse_args(["--development", "discover"])
     assert args.development is True
+
+
+def test_legacy_adoption_plan_is_marked_as_legacy(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.setattr(
+        "governancekit.adoption_selection.build_adoption_selection_plan",
+        lambda *_args, **_kwargs: type("Plan", (), {"as_dict": lambda self: {}})(),
+    )
+    monkeypatch.setattr(
+        "governancekit.adoption_selection.format_adoption_selection_plan",
+        lambda _plan: "legacy-plan",
+    )
+
+    code = cli.main(["--root", str(tmp_path), "adoption", "plan"])
+    output = capsys.readouterr().out
+
+    assert code == 0
+    assert "legacy one-shot flow" in output
+    assert "adoption discover -> adoption sources -> adoption analyze -> adoption apply" in output
