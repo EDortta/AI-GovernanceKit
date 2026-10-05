@@ -16,6 +16,7 @@ from governancekit.adoption_flow import (
     DESCRIPTION_PROPOSAL_FILE,
     PROJECT_DESCRIPTION_FILE,
     accept_description_proposal,
+    build_description_from_sources,
     build_description_proposal,
     reject_description_proposal,
 )
@@ -458,3 +459,39 @@ def test_description_accept_refuses_to_overwrite_existing_project_description(tm
         raise AssertionError("existing project description must not be overwritten")
 
     assert existing.read_text(encoding="utf-8") == "# Existing\n"
+
+
+def test_description_from_sources_uses_selected_sources_and_discovery(tmp_path: Path, monkeypatch) -> None:
+    _write_test_provider(tmp_path)
+    (tmp_path / "README.md").write_text("# Demo\nA job outreach helper.\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    save_selected_sources(tmp_path, ["README.md"])
+
+    captured: dict[str, str] = {}
+
+    def fake_completion(_provider, _root, *, system, user, **_kwargs):
+        captured["system"] = system
+        captured["user"] = user
+        return "# Demo\n\nHelps with job outreach."
+
+    monkeypatch.setattr("governancekit.adoption_flow.request_completion", fake_completion)
+
+    proposal = build_description_from_sources(tmp_path)
+
+    assert "job outreach" in proposal.lower()
+    assert "README.md" in captured["user"]
+    assert "DETERMINISTIC PROJECT DISCOVERY" in captured["user"]
+    assert "OPERATOR-SELECTED PROJECT SOURCES" in captured["user"]
+    assert (tmp_path / DESCRIPTION_PROPOSAL_FILE).is_file()
+    assert not (tmp_path / PROJECT_DESCRIPTION_FILE).exists()
+
+
+def test_description_from_sources_requires_saved_sources(tmp_path: Path) -> None:
+    _write_test_provider(tmp_path)
+
+    try:
+        build_description_from_sources(tmp_path)
+    except RuntimeError as exc:
+        assert "no saved adoption sources" in str(exc)
+    else:
+        raise AssertionError("--from-sources must require adoption sources")
