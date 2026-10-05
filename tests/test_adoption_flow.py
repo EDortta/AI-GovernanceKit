@@ -93,7 +93,7 @@ def test_analyze_writes_complete_ranked_plan_with_token_cost(tmp_path: Path, mon
         "role": "primary",
     }]}), encoding="utf-8")
 
-    kit = tmp_path.parent / "kit"
+    kit = tmp_path / "kit"
     (kit / ".docs/agents").mkdir(parents=True)
     (kit / "AGENTS.md").write_text("# Core\nbase governance\n", encoding="utf-8")
     (kit / ".docs/agents/security.md").write_text("# Security\nsecure changes\n", encoding="utf-8")
@@ -116,7 +116,7 @@ def test_analyze_writes_complete_ranked_plan_with_token_cost(tmp_path: Path, mon
 
 
 def test_apply_copies_only_selected_and_keeps_overrides_project_owned(tmp_path: Path, monkeypatch) -> None:
-    kit = tmp_path.parent / "kit"
+    kit = tmp_path / "kit"
     (kit / ".docs/agents").mkdir(parents=True)
     (kit / "AGENTS.md").write_text("# Core\n", encoding="utf-8")
     (kit / ".docs/agents/security.md").write_text("# Security\n", encoding="utf-8")
@@ -144,7 +144,7 @@ def test_apply_copies_only_selected_and_keeps_overrides_project_owned(tmp_path: 
 
 
 def test_apply_refuses_modified_managed_module(tmp_path: Path, monkeypatch) -> None:
-    kit = tmp_path.parent / "kit"
+    kit = tmp_path / "kit"
     kit.mkdir()
     (kit / "AGENTS.md").write_text("new kit\n", encoding="utf-8")
     _seed_kit_runtime(kit)
