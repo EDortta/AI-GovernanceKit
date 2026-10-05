@@ -544,8 +544,9 @@ def _download(repo: str, ref: str, tmp: Path, *, allow_unverified: bool = False)
             )
     elif allow_unverified:
         print(
-            f"Warning: no known checksum for {repo}@{ref} — installing unverified "
-            "because --allow-unverified was given.",
+            f"Development AI-Agents ref: {repo}@{ref}\n"
+            "  no pinned checksum exists for this mutable development ref\n"
+            "  download allowed because development mode explicitly accepts an unpinned ref",
             file=sys.stderr,
         )
     else:
