@@ -155,7 +155,7 @@ def test_adoption_plan_uses_configured_provider_and_never_writes_project(tmp_pat
         encoding="utf-8",
     )
 
-    kit = tmp_path.parent / "kit"
+    kit = tmp_path / "kit"
     (kit / ".docs/agents").mkdir(parents=True)
     (kit / "AGENTS.md").write_text("# Core\ncore rules\n", encoding="utf-8")
     (kit / ".docs/agents/programmer.md").write_text("# Programmer\nprogramming rules\n", encoding="utf-8")
