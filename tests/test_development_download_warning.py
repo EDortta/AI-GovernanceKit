@@ -19,12 +19,15 @@ def test_development_download_warning_explains_unpinned_mutable_ref(tmp_path: Pa
 
     monkeypatch.setattr(install_agents.urllib.request, "urlretrieve", fake_urlretrieve)
 
+    download = tmp_path / "download"
+    download.mkdir()
+
     stderr = io.StringIO()
     with redirect_stderr(stderr):
         extracted = install_agents._download(
             install_agents.REPO,
             install_agents.DEVELOPMENT_REF,
-            tmp_path / "download",
+            download,
             allow_unverified=True,
         )
 
