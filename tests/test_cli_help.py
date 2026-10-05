@@ -246,3 +246,78 @@ def test_legacy_adoption_plan_is_marked_as_legacy(monkeypatch, tmp_path, capsys)
     assert code == 0
     assert "legacy one-shot flow" in output
     assert "adoption discover -> adoption sources -> adoption analyze -> adoption apply" in output
+
+
+def test_adoption_describe_checks_llm_before_prompting(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.setattr(cli.sys, "stdin", _InteractiveStdin())
+    prompted: list[str] = []
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: (prompted.append(prompt), "unexpected")[1],
+    )
+    monkeypatch.setattr(
+        "governancekit.adoption.configured_adoption_provider",
+        lambda _root: None,
+    )
+
+    code = cli.main(["--root", str(tmp_path), "adoption", "describe"])
+    output = capsys.readouterr().out
+
+    assert code == 2
+    assert prompted == []
+    assert "no configured primary LLM provider" in output
+    assert "llm test" in output
+
+
+def test_adoption_describe_checks_llm_health_before_prompting(monkeypatch, tmp_path, capsys) -> None:
+    from governancekit.llm_test import LlmTestResult
+    from governancekit.project_config import ProviderConfig
+
+    provider = ProviderConfig(
+        name="openai",
+        purpose="governance-adoption",
+        base_url="https://example.invalid/v1",
+        model="gpt-test",
+        mode="env",
+        credential_ref="TEST_KEY",
+        validation="reference-required",
+        role="primary",
+    )
+    monkeypatch.setattr(cli.sys, "stdin", _InteractiveStdin())
+    prompted: list[str] = []
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: (prompted.append(prompt), "unexpected")[1],
+    )
+    monkeypatch.setattr(
+        "governancekit.adoption.configured_adoption_provider",
+        lambda _root: provider,
+    )
+    monkeypatch.setattr(
+        "governancekit.llm_test.check_configured_providers",
+        lambda _root: [LlmTestResult("openai", "gpt-test", False, "credential unavailable")],
+    )
+
+    code = cli.main(["--root", str(tmp_path), "adoption", "describe"])
+    output = capsys.readouterr().out
+
+    assert code == 2
+    assert prompted == []
+    assert "primary LLM provider openai / gpt-test is not ready" in output
+    assert "credential unavailable" in output
+
+
+def test_adoption_describe_show_does_not_probe_llm(monkeypatch, tmp_path, capsys) -> None:
+    proposal = tmp_path / ".gk/adoption/description-proposal.md"
+    proposal.parent.mkdir(parents=True)
+    proposal.write_text("# Demo\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "governancekit.llm_test.check_configured_providers",
+        lambda _root: pytest.fail("--show must not probe the LLM"),
+    )
+
+    code = cli.main(["--root", str(tmp_path), "adoption", "describe", "--show"])
+    output = capsys.readouterr().out
+
+    assert code == 0
+    assert "# Demo" in output
