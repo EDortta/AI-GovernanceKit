@@ -636,7 +636,16 @@ def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) 
             credential_ref = _write_credential_file(root, name, secret)
         else:
             mode = "env" if method == "env" else "file-ref"
-            default_ref = preset[2] if mode == "env" and preset else ""
+            if mode == "env":
+                default_ref = preset[2] if preset else ""
+            else:
+                local_ref = Path(".credentials/llm") / f"{name}.key"
+                local_candidate = root.resolve() / local_ref
+                default_ref = (
+                    local_ref.as_posix()
+                    if local_candidate.is_file() and not local_candidate.is_symlink()
+                    else ""
+                )
             credential_ref = ""
             while not credential_ref:
                 label = "Nome da variável de ambiente" if mode == "env" and locale == "pt-BR" else _message(locale, "provider_ref")
