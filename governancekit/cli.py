@@ -773,6 +773,28 @@ def _run_adoption(args) -> int:
                 )
                 return 0
 
+            from .adoption import configured_adoption_provider, provider_label
+            from .llm_test import check_configured_providers
+
+            provider = configured_adoption_provider(args.root)
+            if provider is None:
+                raise RuntimeError(
+                    "no configured primary LLM provider; run 'governancekit --root PROJECT llm configure' "
+                    "or select a tested provider, then run 'governancekit --root PROJECT llm test'"
+                )
+            checks = check_configured_providers(args.root)
+            matching = [
+                item for item in checks
+                if item.name == provider.name and item.model == provider.model
+            ]
+            if not matching or not matching[0].ok:
+                detail = matching[0].detail if matching else "configured primary provider was not tested"
+                raise RuntimeError(
+                    f"primary LLM provider {provider_label(provider)} is not ready: {detail}; "
+                    "fix the provider and verify with 'governancekit --root PROJECT llm test'"
+                )
+            print(f"LLM ready: {provider_label(provider)}")
+
             facts: dict[str, str] = {}
             for entry in args.fact:
                 key, separator, value = entry.partition("=")
