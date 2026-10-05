@@ -64,3 +64,13 @@ def test_cli_refuses_install_agents_in_home(monkeypatch, tmp_path) -> None:
 
     assert code == 2
     assert "Unsafe --root" in stderr.getvalue()
+
+
+def test_file_cannot_be_used_as_project_root(tmp_path: Path) -> None:
+    root_file = tmp_path / "git-log-ref"
+    root_file.write_text("log\n", encoding="utf-8")
+
+    with pytest.raises(UnsafeRootError) as exc:
+        assert_governable_root(root_file)
+
+    assert "project root must be a directory" in str(exc.value)
