@@ -368,3 +368,16 @@ def test_llm_configure_preflight_shows_saved_and_detected_state(monkeypatch, tmp
     assert "primary: openai / gpt-5-mini" in output
     assert "detected local credentials:" in output
     assert ".credentials/llm/openai.key" in output
+
+
+def test_adoption_describe_from_sources_cannot_mix_with_manual_facts(tmp_path: Path, capsys) -> None:
+    code = cli.main([
+        "--root", str(tmp_path),
+        "adoption", "describe",
+        "--from-sources",
+        "--fact", "name=Demo",
+    ])
+    output = capsys.readouterr().out
+
+    assert code == 2
+    assert "--from-sources cannot be combined with --fact" in output
