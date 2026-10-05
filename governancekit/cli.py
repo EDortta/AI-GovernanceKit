@@ -272,7 +272,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply", action="store_true", help="Apply the reviewed removal plan after creating a backup."
     )
     adoption_plan = adoption_commands.add_parser(
-        "plan", help="Legacy read-only one-shot adoption recommendation."
+        "plan",
+        help="Legacy one-shot recommendation; prefer discover -> sources -> analyze -> apply.",
     )
     adoption_plan.add_argument("--json", action="store_true", dest="as_json")
 
@@ -792,6 +793,11 @@ def _run_adoption(args) -> int:
     if args.adoption_command != "plan":
         print(f"Unknown adoption command: {args.adoption_command}")
         return 2
+    if not getattr(args, "as_json", False):
+        print(
+            "NOTE: adoption plan is the legacy one-shot flow. "
+            "Prefer: adoption discover -> adoption sources -> adoption analyze -> adoption apply."
+        )
     try:
         plan = build_adoption_selection_plan(args.root, development=args.development)
     except RuntimeError as exc:
