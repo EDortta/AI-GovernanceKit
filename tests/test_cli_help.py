@@ -321,3 +321,55 @@ def test_adoption_describe_show_does_not_probe_llm(monkeypatch, tmp_path, capsys
 
     assert code == 0
     assert "# Demo" in output
+
+
+def test_llm_configure_preflight_shows_saved_and_detected_state(monkeypatch, tmp_path, capsys) -> None:
+    from governancekit.project_config import ProviderConfig, ProjectConfig
+
+    saved_provider = ProviderConfig(
+        name="openai",
+        purpose="general",
+        base_url="https://api.openai.com/v1",
+        model="gpt-5-mini",
+        mode="file-ref",
+        credential_ref=".credentials/llm/openai.key",
+        validation="reference-required",
+        role="primary",
+    )
+    config = ProjectConfig(
+        project_name="demo",
+        domains=[],
+        capabilities=[],
+        agents=[],
+        providers=[saved_provider],
+    )
+    detected_provider = ProviderConfig(
+        name="openai",
+        purpose="general",
+        base_url="https://api.openai.com/v1",
+        model="gpt-5-mini",
+        mode="file-ref",
+        credential_ref=".credentials/llm/openai.key",
+        validation="reference-required",
+        role="primary",
+    )
+
+    monkeypatch.setattr("governancekit.cli.load_project_config", lambda _root: config, raising=False)
+    monkeypatch.setattr(
+        "governancekit.scope_conversation._detected_providers",
+        lambda _root: [detected_provider],
+    )
+    monkeypatch.setattr(
+        "governancekit.scope_conversation._collect_providers",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    code = cli.main(["--root", str(tmp_path), "llm", "configure"])
+    output = capsys.readouterr().out
+
+    assert code == 2
+    assert "AI GovernanceKit LLM configuration preflight" in output
+    assert "saved configuration:" in output
+    assert "primary: openai / gpt-5-mini" in output
+    assert "detected local credentials:" in output
+    assert ".credentials/llm/openai.key" in output
