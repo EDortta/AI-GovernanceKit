@@ -320,3 +320,66 @@ def test_language_specific_audit_is_excluded_when_language_is_not_detected(tmp_p
     assert by_path[".docs/workflows/php-audit.md"].priority == "exclude"
     assert by_path[".docs/workflows/php-audit.md"].selected is False
     assert "Excluded deterministically" in by_path[".docs/workflows/php-audit.md"].reason
+
+
+def test_governance_floor_and_trigger_ceiling_for_software_project(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "README.md").write_text("# Demo\nBrowser outreach tool\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    save_selected_sources(tmp_path, ["README.md"])
+
+    config = tmp_path / ".gk/project-config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(json.dumps({"providers": [{
+        "name": "test",
+        "purpose": "governance-adoption",
+        "base_url": "https://example.invalid/v1",
+        "model": "model",
+        "mode": "env",
+        "credential_ref": "TEST_KEY",
+        "validation": "reference-required",
+        "role": "primary",
+    }]}), encoding="utf-8")
+
+    kit = tmp_path / "kit"
+    (kit / ".docs/agents").mkdir(parents=True)
+    (kit / ".docs/workflows").mkdir(parents=True)
+    for rel in [
+        "AGENTS.md",
+        ".docs/agents/change-governance.md",
+        ".docs/agents/programmer.md",
+        ".docs/agents/reviewer.md",
+        ".docs/agents/design-standards.md",
+        ".docs/workflows/delivery-loop.md",
+        ".docs/workflows/git-delivery.md",
+        ".docs/workflows/sending-email.md",
+    ]:
+        path = kit / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Module\n", encoding="utf-8")
+
+    monkeypatch.setattr("governancekit.adoption_flow._download", lambda *_a, **_k: kit)
+    monkeypatch.setattr("governancekit.adoption_flow.request_completion", lambda *_a, **_k: json.dumps({
+        "modules": [
+            {"path": "AGENTS.md", "priority": "exclude", "reason": "not relevant", "condition": None},
+            {"path": ".docs/agents/change-governance.md", "priority": "exclude", "reason": "not relevant", "condition": None},
+            {"path": ".docs/agents/programmer.md", "priority": "exclude", "reason": "not relevant", "condition": None},
+            {"path": ".docs/agents/reviewer.md", "priority": "exclude", "reason": "not relevant", "condition": None},
+            {"path": ".docs/agents/design-standards.md", "priority": "exclude", "reason": "not relevant", "condition": None},
+            {"path": ".docs/workflows/delivery-loop.md", "priority": "exclude", "reason": "not relevant", "condition": None},
+            {"path": ".docs/workflows/git-delivery.md", "priority": "exclude", "reason": "not relevant", "condition": None},
+            {"path": ".docs/workflows/sending-email.md", "priority": "core", "reason": "outreach sends email", "condition": None},
+        ]
+    }))
+
+    modules = analyze_adoption(tmp_path, development=True)
+    by_path = {item.path: item for item in modules}
+
+    assert by_path["AGENTS.md"].priority == "core"
+    assert by_path[".docs/agents/change-governance.md"].priority == "core"
+    assert by_path[".docs/agents/programmer.md"].priority == "core"
+    assert by_path[".docs/agents/reviewer.md"].priority == "high"
+    assert by_path[".docs/agents/design-standards.md"].priority == "high"
+    assert by_path[".docs/workflows/delivery-loop.md"].priority == "high"
+    assert by_path[".docs/workflows/git-delivery.md"].priority == "high"
+    assert by_path[".docs/workflows/sending-email.md"].priority == "on-demand"
+    assert by_path[".docs/workflows/sending-email.md"].selected is False
