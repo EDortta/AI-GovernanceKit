@@ -324,7 +324,8 @@ def test_adoption_describe_show_does_not_probe_llm(monkeypatch, tmp_path, capsys
 
 
 def test_llm_configure_preflight_shows_saved_and_detected_state(monkeypatch, tmp_path, capsys) -> None:
-    from governancekit.project_config import ProviderConfig, ProjectConfig
+    from types import SimpleNamespace
+    from governancekit.project_config import ProviderConfig
 
     saved_provider = ProviderConfig(
         name="openai",
@@ -336,13 +337,7 @@ def test_llm_configure_preflight_shows_saved_and_detected_state(monkeypatch, tmp
         validation="reference-required",
         role="primary",
     )
-    config = ProjectConfig(
-        project_name="demo",
-        domains=[],
-        capabilities=[],
-        agents=[],
-        providers=[saved_provider],
-    )
+    config = SimpleNamespace(providers=[saved_provider])
     detected_provider = ProviderConfig(
         name="openai",
         purpose="general",
@@ -354,7 +349,7 @@ def test_llm_configure_preflight_shows_saved_and_detected_state(monkeypatch, tmp
         role="primary",
     )
 
-    monkeypatch.setattr("governancekit.cli.load_project_config", lambda _root: config, raising=False)
+    monkeypatch.setattr("governancekit.project_config.load_project_config", lambda _root: config)
     monkeypatch.setattr(
         "governancekit.scope_conversation._detected_providers",
         lambda _root: [detected_provider],
