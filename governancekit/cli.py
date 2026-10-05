@@ -247,6 +247,32 @@ def build_parser() -> argparse.ArgumentParser:
     adoption_sources.add_argument(
         "--select", default=None, help="Select numbered discovery entries, e.g. 1,3-5."
     )
+    adoption_describe = adoption_commands.add_parser(
+        "describe",
+        help="Create, review, accept or reject a project-description proposal without implicit project writes.",
+    )
+    adoption_describe.add_argument(
+        "--fact",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Operator-supplied project fact. Repeat as needed.",
+    )
+    adoption_describe.add_argument(
+        "--show",
+        action="store_true",
+        help="Show the saved proposal without changing project documentation.",
+    )
+    adoption_describe.add_argument(
+        "--accept",
+        action="store_true",
+        help="Promote the reviewed proposal to docs/software-overview.md.",
+    )
+    adoption_describe.add_argument(
+        "--reject",
+        action="store_true",
+        help="Discard the saved proposal and facts without changing project documentation.",
+    )
     adoption_commands.add_parser(
         "analyze", help="Rank the complete AI-Agents governance catalog from selected project sources."
     )
@@ -716,6 +742,79 @@ def _run_llm(args) -> int:
 
 
 def _run_adoption(args) -> int:
+    if args.adoption_command == "describe":
+        from .adoption_flow import (
+            accept_description_proposal,
+            build_description_proposal,
+            load_description_proposal,
+            reject_description_proposal,
+        )
+
+        modes = sum(bool(value) for value in (args.show, args.accept, args.reject))
+        if modes > 1:
+            print("Adoption describe error: choose only one of --show, --accept, or --reject")
+            return 2
+
+        try:
+            if args.show:
+                print(load_description_proposal(args.root))
+                return 0
+            if args.accept:
+                target = accept_description_proposal(args.root)
+                print("AI GovernanceKit project description accepted")
+                print(f"  wrote: {target.relative_to(args.root.resolve())}")
+                return 0
+            if args.reject:
+                removed = reject_description_proposal(args.root)
+                print(
+                    "AI GovernanceKit project description proposal rejected"
+                    if removed
+                    else "AI GovernanceKit project description proposal: nothing to reject"
+                )
+                return 0
+
+            facts: dict[str, str] = {}
+            for entry in args.fact:
+                key, separator, value = entry.partition("=")
+                if not separator or not key.strip() or not value.strip():
+                    raise RuntimeError("each --fact must use KEY=VALUE with a non-empty key and value")
+                facts[key.strip()] = value.strip()
+
+            if not facts:
+                if not sys.stdin.isatty():
+                    raise RuntimeError(
+                        "provide at least one --fact KEY=VALUE in non-interactive mode"
+                    )
+                prompts = (
+                    ("name", "Project name"),
+                    ("purpose", "What does the system do"),
+                    ("users", "Who uses it"),
+                    ("data", "What data does it handle"),
+                    ("integrations", "Which external integrations exist or are planned"),
+                    ("technology", "Which technologies are planned"),
+                    ("security", "Security, privacy or compliance requirements"),
+                    ("delivery", "How will it be delivered or deployed"),
+                )
+                print("AI GovernanceKit project description facts")
+                print("Leave a field empty if it is unknown or not applicable.")
+                for key, prompt in prompts:
+                    value = input(f"{prompt}: ").strip()
+                    if value:
+                        facts[key] = value
+
+            proposal = build_description_proposal(args.root, facts)
+            print("AI GovernanceKit project description proposal")
+            print()
+            print(proposal)
+            print()
+            print(f"proposal: .gk/adoption/description-proposal.md")
+            print("No project documentation was changed.")
+            print("Review/edit the proposal, then run adoption describe --accept or --reject.")
+            return 0
+        except RuntimeError as exc:
+            print(f"Adoption describe error: {exc}")
+            return 2
+
     if args.adoption_command == "remove":
         from .remove_agents import (
             apply_removal_plan,
