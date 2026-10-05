@@ -217,6 +217,29 @@ def _module_tokens(kit_root: Path, path: str) -> int:
     return (len(file.read_text(encoding="utf-8", errors="replace")) + 3) // 4
 
 
+def _parse_json_object(raw: str) -> dict | None:
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].strip().casefold() in {"```", "```json"}:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            value = json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            return None
+    return value if isinstance(value, dict) else None
+
+
 def analyze_adoption(root: Path, *, development: bool = False) -> list[RankedModule]:
     root = root.resolve()
     sources = load_selected_sources(root)
@@ -256,10 +279,29 @@ PROJECT SOURCES:
             allow_project_credential_symlinks=(provider.validation == "tested-external-reference"),
             purpose="adoption ranking",
         )
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("LLM returned invalid JSON for adoption ranking") from exc
+        data = _parse_json_object(raw)
+        if data is None:
+            repaired = request_completion(
+                provider,
+                root,
+                system=(
+                    "Return only valid JSON. Do not change, add, remove, or reinterpret "
+                    "any decision from the supplied response. Repair formatting only."
+                ),
+                user=(
+                    "Reformat the following malformed response as valid JSON only. "
+                    "Preserve its decisions exactly:\n\n" + raw
+                ),
+                allow_project_credential_symlinks=(
+                    provider.validation == "tested-external-reference"
+                ),
+                purpose="adoption ranking JSON repair",
+            )
+            data = _parse_json_object(repaired)
+        if data is None:
+            raise RuntimeError(
+                "LLM returned invalid JSON for adoption ranking after one formatting repair attempt"
+            )
         if not isinstance(data, dict) or set(data) != {"modules"} or not isinstance(data["modules"], list):
             raise RuntimeError("LLM returned invalid adoption ranking")
 
