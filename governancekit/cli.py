@@ -834,9 +834,9 @@ def _run_adoption(args) -> int:
             if args.from_sources:
                 proposal = build_description_from_sources(args.root)
                 print("AI GovernanceKit project description proposal")
-                print()
+                print("--[BEGIN]----")
                 print(proposal)
-                print()
+                print("--[FINISH]----")
                 print("proposal: .gk/adoption/description-proposal.md")
                 print("source: operator-selected adoption sources + deterministic discovery")
                 print("No project documentation was changed.")

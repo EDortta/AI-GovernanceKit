@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,7 +88,7 @@ def render_home(state: WizardState) -> str:
     lines = [
         "+--------------------------------------------------------------------+",
         "|                     AI GOVERNANCEKIT                               |",
-        "|               Project setup and governance                        |",
+        "|               Project setup and governance                         |",
         "+--------------------------------------------------------------------+",
         f" Project : {state.root}",
         f" LLM     : {provider} ({provider_status})",
@@ -191,7 +192,9 @@ def _description_menu(
         "5": ["adoption", "describe", "--reject"],
     }
     if choice in commands:
+        print("--[BEGIN]----")
         _run(execute, state.root, development, commands[choice])
+        print("--[FINISH]----")
         _pause(input_fn)
 
 
@@ -201,22 +204,25 @@ def _llm_menu(
     development: bool,
     input_fn: Callable[[str], str],
 ) -> None:
-    print("\nLLM configuration")
-    print(f"  Current: {state.provider or 'not configured'}")
-    print(f"  Status : {'ready' if state.provider_ready else 'not tested/ready'}")
-    print("  1  Show configuration")
-    print("  2  Configure")
-    print("  3  Test connectivity")
-    print("  B  Back")
-    choice = input_fn("Choice: ").strip().lower()
-    commands = {
-        "1": ["llm", "show"],
-        "2": ["llm", "configure"],
-        "3": ["llm", "test"],
-    }
-    if choice in commands:
-        _run(execute, state.root, development, commands[choice])
-        _pause(input_fn)
+    while True:
+        print("\nLLM configuration")
+        print(f"  Current: {state.provider or 'not configured'}")
+        print(f"  Status : {'ready' if state.provider_ready else 'not tested/ready'}")
+        print("  1  Show configuration")
+        print("  2  Configure")
+        print("  3  Test connectivity")
+        print("  B  Back")
+        choice = input_fn("Choice: ").strip().lower()
+        commands = {
+            "1": ["llm", "show"],
+            "2": ["llm", "configure"],
+            "3": ["llm", "test"],
+        }
+        if choice in commands:
+            _run(execute, state.root, development, commands[choice])
+            # _pause(input_fn)
+        elif choice == 'b':
+            break
 
 
 def _continue_recommended(
@@ -261,7 +267,8 @@ def run_wizard(
     """Run the interactive front door while preserving every advanced subcommand."""
     provider_ready = False
     while True:
-        print("\n" * 2)
+        # print("\n" * 2)
+        os.system('cls' if os.name=='nt' else 'clear')
         state = inspect_wizard_state(root, provider_ready=provider_ready)
         print(render_home(state))
         choice = input_fn("Choice: ").strip().lower()
@@ -274,27 +281,7 @@ def run_wizard(
             if result is not None:
                 provider_ready = result
         elif choice == "2":
-            before = provider_ready
-            print("\nLLM configuration")
-            print(f"  Current: {state.provider or 'not configured'}")
-            print(f"  Session test: {'PASS' if provider_ready else 'not run'}")
-            print("  1  Show configuration")
-            print("  2  Configure")
-            print("  3  Test connectivity")
-            print("  B  Back")
-            sub = input_fn("Choice: ").strip().lower()
-            if sub == "1":
-                _run(execute, state.root, development, ["llm", "show"])
-                _pause(input_fn)
-            elif sub == "2":
-                _run(execute, state.root, development, ["llm", "configure"])
-                provider_ready = False
-                _pause(input_fn)
-            elif sub == "3":
-                provider_ready = (
-                    _run(execute, state.root, development, ["llm", "test"]) == 0
-                )
-                _pause(input_fn)
+            _llm_menu(state, execute, development, input_fn)
         elif choice == "3":
             _run(execute, state.root, development, ["adoption", "discover"])
             _pause(input_fn)
