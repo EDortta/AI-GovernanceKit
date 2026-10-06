@@ -220,13 +220,17 @@ def _llm_menu(
             "3": ["llm", "test"],
         }
         if choice in commands:
-            aux = _run(execute, state.root, development, commands[choice])
-            if choice == "3":
-                llm_ready = aux
-            # _pause(input_fn)
-        elif choice == 'b':
+            exit_code = _run(execute, state.root, development, commands[choice])
+            if choice == "2":
+                # Configuration may have changed the provider; require a fresh test.
+                llm_ready = False
+                state = inspect_wizard_state(state.root, provider_ready=False)
+            elif choice == "3":
+                # CLI convention: exit code 0 means success.
+                llm_ready = exit_code == 0
+                state = inspect_wizard_state(state.root, provider_ready=llm_ready)
+        elif choice == "b":
             return llm_ready
-            break            
 
 
 def _continue_recommended(
