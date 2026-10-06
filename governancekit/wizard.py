@@ -118,9 +118,16 @@ def render_home(state: WizardState) -> str:
     return "\n".join(lines)
 
 
-def _pause(input_fn: Callable[[str], str]) -> None:
-    input_fn("\nPress Enter to return to the menu...")
-
+def _run_section(
+    execute: Callable[[Sequence[str]], int],
+    root: Path,
+    development: bool,
+    args: list[str],
+) -> int:
+    print("\n[BEGIN]------------------------------------------------------------")
+    exit_code = _run(execute, root, development, args)
+    print("[FINISH]-----------------------------------------------------------\n")
+    return exit_code
 
 def _run(execute: Callable[[Sequence[str]], int], root: Path, development: bool, args: list[str]) -> int:
     prefix = ["--root", str(root)]
@@ -167,45 +174,50 @@ def _show_plan(root: Path) -> None:
 
 
 def _description_menu(
-    state: WizardState,
+    root: Path,
+    provider_ready: bool,
     execute: Callable[[Sequence[str]], int],
     development: bool,
     input_fn: Callable[[str], str],
 ) -> None:
-    print("\nProject description")
-    if state.description_accepted:
-        print(f"  Accepted: {PROJECT_DESCRIPTION_FILE}")
-    if state.description_proposal:
-        print(f"  Proposal: {DESCRIPTION_PROPOSAL_FILE}")
-    print("  1  Generate proposal from selected sources")
-    print("  2  Describe project by answering questions")
-    print("  3  Show current proposal")
-    print("  4  Accept current proposal")
-    print("  5  Reject current proposal")
-    print("  B  Back")
-    choice = input_fn("Choice: ").strip().lower()
-    commands = {
-        "1": ["adoption", "describe", "--from-sources"],
-        "2": ["adoption", "describe"],
-        "3": ["adoption", "describe", "--show"],
-        "4": ["adoption", "describe", "--accept"],
-        "5": ["adoption", "describe", "--reject"],
-    }
-    if choice in commands:
-        print("--[BEGIN]----")
-        _run(execute, state.root, development, commands[choice])
-        print("--[FINISH]----")
-        _pause(input_fn)
-
+    while True:
+        state = inspect_wizard_state(root, provider_ready=provider_ready)
+        print("\nProject description")
+        if state.description_accepted:
+            print(f"  Accepted: {PROJECT_DESCRIPTION_FILE}")
+        if state.description_proposal:
+            print(f"  Proposal: {DESCRIPTION_PROPOSAL_FILE}")
+        print("  1  Generate proposal from selected sources")
+        print("  2  Describe project by answering questions")
+        print("  3  Show current proposal")
+        print("  4  Accept current proposal")
+        print("  5  Reject current proposal")
+        print("  B  Back")
+        choice = input_fn("Choice: ").strip().lower()
+        commands = {
+            "1": ["adoption", "describe", "--from-sources"],
+            "2": ["adoption", "describe"],
+            "3": ["adoption", "describe", "--show"],
+            "4": ["adoption", "describe", "--accept"],
+            "5": ["adoption", "describe", "--reject"],
+        }
+        if choice == "b":
+            return
+        if choice in commands:
+            _run_section(execute, state.root, development, commands[choice])
+        else:
+            print("Unknown option.")
 
 def _llm_menu(
-    state: WizardState,
+    root: Path,
+    provider_ready: bool,
     execute: Callable[[Sequence[str]], int],
     development: bool,
     input_fn: Callable[[str], str],
-) -> bool | None:
-    llm_ready = None
+) -> bool:
+    llm_ready = provider_ready
     while True:
+        state = inspect_wizard_state(root, provider_ready=llm_ready)
         print("\nLLM configuration")
         print(f"  Current: {state.provider or 'not configured'}")
         print(f"  Status : {'ready' if state.provider_ready else 'not tested/ready'}")
@@ -219,51 +231,204 @@ def _llm_menu(
             "2": ["llm", "configure"],
             "3": ["llm", "test"],
         }
-        if choice in commands:
-            exit_code = _run(execute, state.root, development, commands[choice])
-            if choice == "2":
-                # Configuration may have changed the provider; require a fresh test.
-                llm_ready = False
-                state = inspect_wizard_state(state.root, provider_ready=False)
-            elif choice == "3":
-                # CLI convention: exit code 0 means success.
-                llm_ready = exit_code == 0
-                state = inspect_wizard_state(state.root, provider_ready=llm_ready)
-        elif choice == "b":
+        if choice == "b":
             return llm_ready
+        if choice not in commands:
+            print("Unknown option.")
+            continue
 
+        exit_code = _run_section(execute, state.root, development, commands[choice])
+        if choice == "2":
+            llm_ready = False
+        elif choice == "3":
+            llm_ready = exit_code == 0
 
 def _continue_recommended(
     state: WizardState,
     execute: Callable[[Sequence[str]], int],
     development: bool,
-    input_fn: Callable[[str], str],
 ) -> bool | None:
     llm_status: bool | None = None
     if state.provider is None:
-        _run(execute, state.root, development, ["llm", "configure"])
+        _run_section(execute, state.root, development, ["llm", "configure"])
         llm_status = False
     elif not state.provider_ready:
-        llm_status = _run(execute, state.root, development, ["llm", "test"]) == 0
+        llm_status = (
+            _run_section(execute, state.root, development, ["llm", "test"]) == 0
+        )
     elif state.selected_sources == 0 and state.documentation_candidates:
-        _run(execute, state.root, development, ["adoption", "sources"])
+        _run_section(execute, state.root, development, ["adoption", "sources"])
     elif state.selected_sources == 0:
-        _run(execute, state.root, development, ["adoption", "describe"])
+        _run_section(execute, state.root, development, ["adoption", "describe"])
     elif not state.description_accepted and state.description_proposal:
-        _run(execute, state.root, development, ["adoption", "describe", "--show"])
-        print("\nUse menu option 5 to accept, reject, or regenerate this proposal.")
+        _run_section(
+            execute, state.root, development,
+            ["adoption", "describe", "--show"],
+        )
+        print("Use Project description to accept, reject, or regenerate this proposal.")
     elif not state.description_accepted:
-        _run(execute, state.root, development, ["adoption", "describe", "--from-sources"])
+        _run_section(
+            execute, state.root, development,
+            ["adoption", "describe", "--from-sources"],
+        )
     elif not state.adoption_plan:
-        _run(execute, state.root, development, ["adoption", "analyze"])
+        _run_section(execute, state.root, development, ["adoption", "analyze"])
     elif not state.adoption_applied:
+        print("\n[BEGIN]------------------------------------------------------------")
         _show_plan(state.root)
-        print("\nReview the plan above. Use option 8 when you want to apply it.")
+        print("[FINISH]-----------------------------------------------------------\n")
+        print("Use Governance adoption to apply the reviewed plan.")
     else:
-        _run(execute, state.root, development, ["doctor"])
-    _pause(input_fn)
+        _run_section(execute, state.root, development, ["doctor"])
     return llm_status
 
+
+def _documentation_menu(
+    root: Path,
+    provider_ready: bool,
+    execute: Callable[[Sequence[str]], int],
+    development: bool,
+    input_fn: Callable[[str], str],
+) -> None:
+    while True:
+        state = inspect_wizard_state(root, provider_ready=provider_ready)
+        print("\nProject documentation")
+        print(f"  Candidates found : {state.documentation_candidates}")
+        print(f"  Sources selected : {state.selected_sources}")
+        print("  1  Discover documentation")
+        print("  2  Show selected sources")
+        print("  3  Select / change sources")
+        print("  B  Back")
+        choice = input_fn("Choice: ").strip().lower()
+        if choice == "b":
+            return
+        if choice == "1":
+            _run_section(execute, state.root, development, ["adoption", "discover"])
+        elif choice == "2":
+            print("\n[BEGIN]------------------------------------------------------------")
+            _show_selected_sources(state.root)
+            print("[FINISH]-----------------------------------------------------------\n")
+        elif choice == "3":
+            _run_section(execute, state.root, development, ["adoption", "sources"])
+        else:
+            print("Unknown option.")
+
+
+def _analysis_menu(
+    root: Path,
+    provider_ready: bool,
+    execute: Callable[[Sequence[str]], int],
+    development: bool,
+    input_fn: Callable[[str], str],
+) -> None:
+    while True:
+        state = inspect_wizard_state(root, provider_ready=provider_ready)
+        print("\nGovernance analysis")
+        print(f"  Existing plan: {'yes' if state.adoption_plan else 'no'}")
+        print("  1  Analyze governance modules")
+        print("  2  Reassess governance modules")
+        print("  3  Review current adoption plan")
+        print("  B  Back")
+        choice = input_fn("Choice: ").strip().lower()
+        if choice == "b":
+            return
+        if choice == "1":
+            _run_section(execute, state.root, development, ["adoption", "analyze"])
+        elif choice == "2":
+            _run_section(execute, state.root, development, ["adoption", "reassess"])
+        elif choice == "3":
+            print("\n[BEGIN]------------------------------------------------------------")
+            _show_plan(state.root)
+            print("[FINISH]-----------------------------------------------------------\n")
+        else:
+            print("Unknown option.")
+
+
+def _adoption_menu(
+    root: Path,
+    provider_ready: bool,
+    execute: Callable[[Sequence[str]], int],
+    development: bool,
+    input_fn: Callable[[str], str],
+) -> None:
+    while True:
+        state = inspect_wizard_state(root, provider_ready=provider_ready)
+        print("\nGovernance adoption")
+        print(f"  Plan available : {'yes' if state.adoption_plan else 'no'}")
+        print(f"  Applied        : {'yes' if state.adoption_applied else 'no'}")
+        print("  1  Review current plan")
+        print("  2  Apply selected governance modules")
+        print("  3  Plan/remove managed governance")
+        print("  B  Back")
+        choice = input_fn("Choice: ").strip().lower()
+        if choice == "b":
+            return
+        if choice == "1":
+            print("\n[BEGIN]------------------------------------------------------------")
+            _show_plan(state.root)
+            print("[FINISH]-----------------------------------------------------------\n")
+        elif choice == "2":
+            confirm = input_fn("Apply the reviewed adoption plan? [y/N]: ").strip().lower()
+            if confirm in {"y", "yes", "s", "sim"}:
+                _run_section(execute, state.root, development, ["adoption", "apply"])
+            else:
+                print("Nothing changed.")
+        elif choice == "3":
+            _run_section(execute, state.root, development, ["adoption", "remove"])
+        else:
+            print("Unknown option.")
+
+
+def _health_menu(
+    root: Path,
+    provider_ready: bool,
+    execute: Callable[[Sequence[str]], int],
+    development: bool,
+    input_fn: Callable[[str], str],
+) -> None:
+    while True:
+        print("\nProject health")
+        print("  1  Run doctor")
+        print("  2  Show session resume")
+        print("  3  Refresh code map")
+        print("  B  Back")
+        choice = input_fn("Choice: ").strip().lower()
+        if choice == "b":
+            return
+        commands = {
+            "1": ["doctor"],
+            "2": ["resume"],
+            "3": ["map"],
+        }
+        if choice in commands:
+            _run_section(execute, root, development, commands[choice])
+        else:
+            print("Unknown option.")
+
+
+def _advanced_menu(
+    root: Path,
+    development: bool,
+    execute: Callable[[Sequence[str]], int],
+    input_fn: Callable[[str], str],
+) -> None:
+    while True:
+        print("\nAdvanced tools")
+        print("  1  Show top-level command help")
+        print("  2  Show adoption command help")
+        print("  3  Show LLM command help")
+        print("  B  Back")
+        choice = input_fn("Choice: ").strip().lower()
+        if choice == "b":
+            return
+        if choice == "1":
+            _run_section(execute, root, development, ["--help"])
+        elif choice == "2":
+            _run_section(execute, root, development, ["adoption", "--help"])
+        elif choice == "3":
+            _run_section(execute, root, development, ["llm", "--help"])
+        else:
+            print("Unknown option.")
 
 def run_wizard(
     root: Path,
@@ -275,8 +440,8 @@ def run_wizard(
     """Run the interactive front door while preserving every advanced subcommand."""
     provider_ready = False
     while True:
-        # print("\n" * 2)
-        os.system('cls' if os.name=='nt' else 'clear')
+        # Only the main menu clears the terminal. Submenus preserve their history.
+        os.system("cls" if os.name == "nt" else "clear")
         state = inspect_wizard_state(root, provider_ready=provider_ready)
         print(render_home(state))
         choice = input_fn("Choice: ").strip().lower()
@@ -285,48 +450,34 @@ def run_wizard(
             print("GovernanceKit closed.")
             return 0
         if choice == "1":
-            result = _continue_recommended(state, execute, development, input_fn)
+            result = _continue_recommended(state, execute, development)
             if result is not None:
                 provider_ready = result
         elif choice == "2":
-            result = _llm_menu(state, execute, development, input_fn)
-            if result is not None:
-                provider_ready = result
-        elif choice == "3":
-            _run(execute, state.root, development, ["adoption", "discover"])
-            _pause(input_fn)
-        elif choice == "4":
-            _show_selected_sources(state.root)
-            print("\n  1  Change source selection")
-            print("  B  Back")
-            sub = input_fn("Choice: ").strip().lower()
-            if sub == "1":
-                _run(execute, state.root, development, ["adoption", "sources"])
-                _pause(input_fn)
+            provider_ready = _llm_menu(
+                root, provider_ready, execute, development, input_fn
+            )
+        elif choice in {"3", "4"}:
+            _documentation_menu(
+                root, provider_ready, execute, development, input_fn
+            )
         elif choice == "5":
-            _description_menu(state, execute, development, input_fn)
-        elif choice == "6":
-            _run(execute, state.root, development, ["adoption", "analyze"])
-            _pause(input_fn)
-        elif choice == "7":
-            _show_plan(state.root)
-            _pause(input_fn)
+            _description_menu(
+                root, provider_ready, execute, development, input_fn
+            )
+        elif choice in {"6", "7"}:
+            _analysis_menu(
+                root, provider_ready, execute, development, input_fn
+            )
         elif choice == "8":
-            print("This copies the modules currently marked selected=true in the reviewed plan.")
-            confirm = input_fn("Apply the reviewed adoption plan? [y/N]: ").strip().lower()
-            if confirm in {"y", "yes", "s", "sim"}:
-                _run(execute, state.root, development, ["adoption", "apply"])
-            else:
-                print("Nothing changed.")
-            _pause(input_fn)
+            _adoption_menu(
+                root, provider_ready, execute, development, input_fn
+            )
         elif choice == "9":
-            _run(execute, state.root, development, ["doctor"])
-            _pause(input_fn)
+            _health_menu(
+                root, provider_ready, execute, development, input_fn
+            )
         elif choice == "a":
-            print("\nAdvanced commands remain available exactly as before.")
-            print("Use: governancekit --help")
-            print("     governancekit <command> --help")
-            _pause(input_fn)
+            _advanced_menu(root, development, execute, input_fn)
         else:
             print("Unknown option.")
-            _pause(input_fn)
