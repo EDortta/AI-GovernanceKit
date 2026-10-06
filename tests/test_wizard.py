@@ -36,10 +36,10 @@ def test_wizard_state_recommends_llm_first_when_unconfigured(tmp_path: Path) -> 
     state = inspect_wizard_state(tmp_path)
 
     assert state.provider is None
-    assert state.next_step == "Configure and test the project LLM"
+    assert state.next_step == "Configure the project LLM"
     output = render_home(state)
     assert "AI GOVERNANCEKIT" in output
-    assert "Recommended next step: Configure and test the project LLM" in output
+    assert "Recommended next step: Configure the project LLM" in output
 
 
 def test_wizard_state_recommends_sources_after_llm_is_ready(tmp_path: Path) -> None:
