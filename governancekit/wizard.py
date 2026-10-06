@@ -15,7 +15,6 @@ from .adoption_flow import (
     SOURCES_FILE,
     discover_documentation,
 )
-from .llm_test import check_configured_providers
 
 
 @dataclass(frozen=True)
@@ -49,19 +48,9 @@ class WizardState:
         return "Run project health checks"
 
 
-def inspect_wizard_state(root: Path) -> WizardState:
+def inspect_wizard_state(root: Path, *, provider_ready: bool = False) -> WizardState:
     root = root.resolve()
     provider = configured_adoption_provider(root)
-    provider_ready = False
-    if provider is not None:
-        try:
-            checks = check_configured_providers(root)
-        except RuntimeError:
-            checks = []
-        provider_ready = any(
-            item.name == provider.name and item.model == provider.model and item.ok
-            for item in checks
-        )
 
     selected_sources = 0
     try:
@@ -76,7 +65,7 @@ def inspect_wizard_state(root: Path) -> WizardState:
     return WizardState(
         root=root,
         provider=provider_text,
-        provider_ready=provider_ready,
+        provider_ready=bool(provider and provider_ready),
         documentation_candidates=len(discover_documentation(root)),
         selected_sources=selected_sources,
         description_proposal=(root / DESCRIPTION_PROPOSAL_FILE).is_file(),
@@ -265,9 +254,10 @@ def run_wizard(
     input_fn: Callable[[str], str] = input,
 ) -> int:
     """Run the interactive front door while preserving every advanced subcommand."""
+    provider_ready = False
     while True:
         print("\n" * 2)
-        state = inspect_wizard_state(root)
+        state = inspect_wizard_state(root, provider_ready=provider_ready)
         print(render_home(state))
         choice = input_fn("Choice: ").strip().lower()
 
@@ -277,7 +267,27 @@ def run_wizard(
         if choice == "1":
             _continue_recommended(state, execute, development, input_fn)
         elif choice == "2":
-            _llm_menu(state, execute, development, input_fn)
+            before = provider_ready
+            print("\nLLM configuration")
+            print(f"  Current: {state.provider or 'not configured'}")
+            print(f"  Session test: {'PASS' if provider_ready else 'not run'}")
+            print("  1  Show configuration")
+            print("  2  Configure")
+            print("  3  Test connectivity")
+            print("  B  Back")
+            sub = input_fn("Choice: ").strip().lower()
+            if sub == "1":
+                _run(execute, state.root, development, ["llm", "show"])
+                _pause(input_fn)
+            elif sub == "2":
+                _run(execute, state.root, development, ["llm", "configure"])
+                provider_ready = False
+                _pause(input_fn)
+            elif sub == "3":
+                provider_ready = (
+                    _run(execute, state.root, development, ["llm", "test"]) == 0
+                )
+                _pause(input_fn)
         elif choice == "3":
             _run(execute, state.root, development, ["adoption", "discover"])
             _pause(input_fn)
