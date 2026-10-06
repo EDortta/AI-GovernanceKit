@@ -1,0 +1,37 @@
+Reusing isolated virtual environment at .venv
+Installing this checkout and test runner into .venv
+Obtaining file:///home/esteban/Sync/Projects/AI-GovernanceKit-v2
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Checking if build backend supports build_editable: started
+  Checking if build backend supports build_editable: finished with status 'done'
+  Getting requirements to build editable: started
+  Getting requirements to build editable: finished with status 'done'
+  Preparing editable metadata (pyproject.toml): started
+  Preparing editable metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: pytest in ./.venv/lib/python3.10/site-packages (9.1.1)
+Requirement already satisfied: tomli>=1 in ./.venv/lib/python3.10/site-packages (from pytest) (2.4.1)
+Requirement already satisfied: pluggy<2,>=1.5 in ./.venv/lib/python3.10/site-packages (from pytest) (1.6.0)
+Requirement already satisfied: packaging>=22 in ./.venv/lib/python3.10/site-packages (from pytest) (26.3)
+Requirement already satisfied: iniconfig>=1.0.1 in ./.venv/lib/python3.10/site-packages (from pytest) (2.3.0)
+Requirement already satisfied: exceptiongroup>=1 in ./.venv/lib/python3.10/site-packages (from pytest) (1.3.1)
+Requirement already satisfied: pygments>=2.7.2 in ./.venv/lib/python3.10/site-packages (from pytest) (2.21.0)
+Requirement already satisfied: PyYAML>=6.0 in ./.venv/lib/python3.10/site-packages (from ai-governancekit==2.3.0) (6.0.3)
+Requirement already satisfied: jsonschema>=4.18 in ./.venv/lib/python3.10/site-packages (from ai-governancekit==2.3.0) (4.26.0)
+Requirement already satisfied: typing-extensions>=4.6.0 in ./.venv/lib/python3.10/site-packages (from exceptiongroup>=1->pytest) (4.16.0)
+Requirement already satisfied: attrs>=22.2.0 in ./.venv/lib/python3.10/site-packages (from jsonschema>=4.18->ai-governancekit==2.3.0) (26.1.0)
+Requirement already satisfied: referencing>=0.28.4 in ./.venv/lib/python3.10/site-packages (from jsonschema>=4.18->ai-governancekit==2.3.0) (0.37.0)
+Requirement already satisfied: rpds-py>=0.25.0 in ./.venv/lib/python3.10/site-packages (from jsonschema>=4.18->ai-governancekit==2.3.0) (0.30.0)
+Requirement already satisfied: jsonschema-specifications>=2023.03.6 in ./.venv/lib/python3.10/site-packages (from jsonschema>=4.18->ai-governancekit==2.3.0) (2025.9.1)
+Building wheels for collected packages: ai-governancekit
+  Building editable for ai-governancekit (pyproject.toml): started
+  Building editable for ai-governancekit (pyproject.toml): finished with status 'done'
+  Created wheel for ai-governancekit: filename=ai_governancekit-2.3.0-0.editable-py3-none-any.whl size=7898 sha256=46f4f49d6eb11099f3afa1b970a2c032e3acd19bc09490b4a0d9badfaf5cc38c
+  Stored in directory: /tmp/pip-ephem-wheel-cache-12mx8cm2/wheels/7a/da/b4/d4f97a5699dd23d7907f9a24e0a4ba0a0b94c932b018d6a153
+Successfully built ai-governancekit
+Installing collected packages: ai-governancekit
+  Attempting uninstall: ai-governancekit
+    Found existing installation: ai-governancekit 2.3.0
+    Uninstalling ai-governancekit-2.3.0:
+      Successfully uninstalled ai-governancekit-2.3.0
+Successfully installed ai-governancekit-2.3.0

@@ -1,0 +1,26 @@
+AI-GovernanceKit test evidence
+timestamp=2026-10-05-12-14-05
+root=/home/esteban/Sync/Projects/AI-GovernanceKit-v2
+branch=feature/v2-change-gate
+head=b4712e47026b10fe51e304f060415efa35d53107
+python3=/usr/bin/python3
+Python 3.10.12
+
+[git status before]
+ M evidence/test-runs/LATEST
+?? evidence/test-runs/2026-10-05-11-43-02/
+?? evidence/test-runs/2026-10-05-12-02-52/
+?? evidence/test-runs/2026-10-05-12-06-59/
+?? evidence/test-runs/2026-10-05-12-14-05/
+
+[isolated interpreter]
+sys.executable=/home/esteban/Sync/Projects/AI-GovernanceKit-v2/.venv/bin/python
+governancekit.__file__=/home/esteban/Sync/Projects/AI-GovernanceKit-v2/governancekit/__init__.py
+governancekit.__version__=2.3.0
+
+[git status after]
+ M evidence/test-runs/LATEST
+?? evidence/test-runs/2026-10-05-11-43-02/
+?? evidence/test-runs/2026-10-05-12-02-52/
+?? evidence/test-runs/2026-10-05-12-06-59/
+?? evidence/test-runs/2026-10-05-12-14-05/
