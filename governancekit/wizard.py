@@ -133,7 +133,12 @@ def _run(execute: Callable[[Sequence[str]], int], root: Path, development: bool,
     prefix = ["--root", str(root)]
     if development:
         prefix.insert(0, "--development")
-    return execute([*prefix, *args])
+    try:
+        return execute([*prefix, *args])
+    except SystemExit as exc:
+        # argparse uses SystemExit for --help. Inside the wizard, help is only
+        # another submenu result and must never terminate the whole application.
+        return int(exc.code or 0)
 
 
 def _show_selected_sources(root: Path) -> None:
