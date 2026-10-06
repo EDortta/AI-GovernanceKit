@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from governancekit import cli
-from governancekit.wizard import inspect_wizard_state, render_home
+from governancekit.wizard import _llm_menu, inspect_wizard_state, render_home
 
 
 class _InteractiveStdin:
@@ -135,3 +135,41 @@ def test_wizard_state_recommends_source_based_description_after_selection(tmp_pa
 
     assert state.selected_sources == 1
     assert state.next_step == "Let the LLM propose a description from selected sources"
+
+
+def test_llm_menu_maps_zero_exit_code_to_ready(monkeypatch, tmp_path: Path) -> None:
+    state = inspect_wizard_state(tmp_path, provider_ready=False)
+    answers = iter(["3", "b"])
+
+    monkeypatch.setattr(
+        "governancekit.wizard._run",
+        lambda *_args, **_kwargs: 0,
+    )
+
+    result = _llm_menu(
+        state,
+        execute=lambda _args: 0,
+        development=False,
+        input_fn=lambda _prompt: next(answers),
+    )
+
+    assert result is True
+
+
+def test_llm_menu_maps_nonzero_exit_code_to_not_ready(monkeypatch, tmp_path: Path) -> None:
+    state = inspect_wizard_state(tmp_path, provider_ready=False)
+    answers = iter(["3", "b"])
+
+    monkeypatch.setattr(
+        "governancekit.wizard._run",
+        lambda *_args, **_kwargs: 1,
+    )
+
+    result = _llm_menu(
+        state,
+        execute=lambda _args: 1,
+        development=False,
+        input_fn=lambda _prompt: next(answers),
+    )
+
+    assert result is False
