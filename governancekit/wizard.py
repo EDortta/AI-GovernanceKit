@@ -31,8 +31,10 @@ class WizardState:
 
     @property
     def next_step(self) -> str:
-        if self.provider is None or not self.provider_ready:
-            return "Configure and test the project LLM"
+        if self.provider is None:
+            return "Configure the project LLM"
+        if not self.provider_ready:
+            return "Test the configured LLM"
         if self.selected_sources == 0:
             if self.documentation_candidates:
                 return "Discover and select project documentation"
