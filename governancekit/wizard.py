@@ -222,11 +222,13 @@ def _continue_recommended(
     execute: Callable[[Sequence[str]], int],
     development: bool,
     input_fn: Callable[[str], str],
-) -> None:
+) -> bool | None:
+    llm_status: bool | None = None
     if state.provider is None:
         _run(execute, state.root, development, ["llm", "configure"])
+        llm_status = False
     elif not state.provider_ready:
-        _run(execute, state.root, development, ["llm", "test"])
+        llm_status = _run(execute, state.root, development, ["llm", "test"]) == 0
     elif state.selected_sources == 0 and state.documentation_candidates:
         _run(execute, state.root, development, ["adoption", "sources"])
     elif state.selected_sources == 0:
@@ -244,6 +246,7 @@ def _continue_recommended(
     else:
         _run(execute, state.root, development, ["doctor"])
     _pause(input_fn)
+    return llm_status
 
 
 def run_wizard(
@@ -265,7 +268,9 @@ def run_wizard(
             print("GovernanceKit closed.")
             return 0
         if choice == "1":
-            _continue_recommended(state, execute, development, input_fn)
+            result = _continue_recommended(state, execute, development, input_fn)
+            if result is not None:
+                provider_ready = result
         elif choice == "2":
             before = provider_ready
             print("\nLLM configuration")
