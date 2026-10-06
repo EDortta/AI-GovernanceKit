@@ -1724,9 +1724,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(format_version(get_version_info(args.root)))
         return 0
     if args.command is None:
-        parser.print_help()
-        print("\ngovernancekit: error: a command is required")
-        return 2
+        if not sys.stdin.isatty():
+            parser.print_help()
+            print("\ngovernancekit: error: a command is required")
+            return 2
+        try:
+            assert_governable_root(args.root)
+        except UnsafeRootError as exc:
+            print(f"Unsafe --root: {exc}", file=sys.stderr)
+            return 2
+        from .wizard import run_wizard
+        return run_wizard(
+            args.root.resolve(),
+            development=args.development,
+            execute=lambda nested: main(list(nested)),
+        )
 
     try:
         assert_governable_root(args.root)
