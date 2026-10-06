@@ -203,7 +203,8 @@ def _llm_menu(
     execute: Callable[[Sequence[str]], int],
     development: bool,
     input_fn: Callable[[str], str],
-) -> None:
+) -> bool | None:
+    llm_ready = None
     while True:
         print("\nLLM configuration")
         print(f"  Current: {state.provider or 'not configured'}")
@@ -219,10 +220,13 @@ def _llm_menu(
             "3": ["llm", "test"],
         }
         if choice in commands:
-            _run(execute, state.root, development, commands[choice])
+            aux = _run(execute, state.root, development, commands[choice])
+            if choice == "3":
+                llm_ready = aux
             # _pause(input_fn)
         elif choice == 'b':
-            break
+            return llm_ready
+            break            
 
 
 def _continue_recommended(
@@ -281,7 +285,9 @@ def run_wizard(
             if result is not None:
                 provider_ready = result
         elif choice == "2":
-            _llm_menu(state, execute, development, input_fn)
+            result = _llm_menu(state, execute, development, input_fn)
+            if result is not None:
+                provider_ready = result
         elif choice == "3":
             _run(execute, state.root, development, ["adoption", "discover"])
             _pause(input_fn)
