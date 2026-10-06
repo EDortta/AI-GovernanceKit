@@ -138,7 +138,6 @@ def test_wizard_state_recommends_source_based_description_after_selection(tmp_pa
 
 
 def test_llm_menu_maps_zero_exit_code_to_ready(monkeypatch, tmp_path: Path) -> None:
-    state = inspect_wizard_state(tmp_path, provider_ready=False)
     answers = iter(["3", "b"])
 
     monkeypatch.setattr(
@@ -147,7 +146,8 @@ def test_llm_menu_maps_zero_exit_code_to_ready(monkeypatch, tmp_path: Path) -> N
     )
 
     result = _llm_menu(
-        state,
+        tmp_path,
+        False,
         execute=lambda _args: 0,
         development=False,
         input_fn=lambda _prompt: next(answers),
@@ -157,7 +157,6 @@ def test_llm_menu_maps_zero_exit_code_to_ready(monkeypatch, tmp_path: Path) -> N
 
 
 def test_llm_menu_maps_nonzero_exit_code_to_not_ready(monkeypatch, tmp_path: Path) -> None:
-    state = inspect_wizard_state(tmp_path, provider_ready=False)
     answers = iter(["3", "b"])
 
     monkeypatch.setattr(
@@ -166,10 +165,43 @@ def test_llm_menu_maps_nonzero_exit_code_to_not_ready(monkeypatch, tmp_path: Pat
     )
 
     result = _llm_menu(
-        state,
+        tmp_path,
+        False,
         execute=lambda _args: 1,
         development=False,
         input_fn=lambda _prompt: next(answers),
     )
 
     assert result is False
+
+
+def test_submenu_command_is_framed_and_menu_reappears(monkeypatch, tmp_path: Path, capsys) -> None:
+    from governancekit.wizard import _documentation_menu
+
+    answers = iter(["1", "b"])
+    monkeypatch.setattr(
+        "governancekit.wizard._run",
+        lambda *_args, **_kwargs: 0,
+    )
+
+    _documentation_menu(
+        tmp_path,
+        False,
+        execute=lambda _args: 0,
+        development=False,
+        input_fn=lambda _prompt: next(answers),
+    )
+
+    output = capsys.readouterr().out
+    assert "[BEGIN]" in output
+    assert "[FINISH]" in output
+    assert output.count("Project documentation") == 2
+
+
+def test_internal_help_systemexit_does_not_leave_wizard(tmp_path: Path) -> None:
+    from governancekit.wizard import _run
+
+    def fake_execute(_args):
+        raise SystemExit(0)
+
+    assert _run(fake_execute, tmp_path, False, ["--help"]) == 0
