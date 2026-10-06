@@ -256,6 +256,6 @@ governancekit --root /project doctor</code></pre>
 <p><code>adoption sources --select 1,3-5</code>: selects numbered discovery entries; without <code>--source</code> or <code>--select</code>, the command opens interactive selection.</p>
 <p><code>adoption apply --track-managed</code> / <code>--no-track-managed</code>: chooses whether managed AI-Agents modules are tracked; project rules under <code>docs/ai-governance/overrides/</code> remain project-owned.</p>
 <p><code>adoption remove --apply</code>: applies conservative removal of managed files after generating the plan and backup.</p>
-<p><code>adoption describe --fact KEY=VALUE</code>: creates a proposal under <code>.gk/adoption/</code> without changing project documentation. Use <code>--show</code> to review it, <code>--accept</code> to promote it to <code>docs/software-overview.md</code>, and <code>--reject</code> to discard it.</p>
+<p><code>adoption describe --fact KEY=VALUE</code>: creates a proposal under <code>.gk/adoption/</code> without changing project documentation. Use <code>adoption describe --from-sources</code> to infer the proposal from the operator-selected adoption sources plus deterministic project discovery. Use <code>--show</code> to review it, <code>--accept</code> to promote it to <code>docs/software-overview.md</code>, and <code>--reject</code> to discard it.</p>
 </body>
 </html>
