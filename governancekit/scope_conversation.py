@@ -296,20 +296,20 @@ def _print_provider_help(locale: str) -> None:
 
 def _print_provider_catalog(locale: str) -> None:
     if locale == "pt-BR":
-        print("\nProvedores pré-configurados, compatíveis com a API OpenAI:")
+        print("\nProvedores conhecidos compatíveis com a API OpenAI:")
         print("  gemini - Google Gemini; URL, modelo e GEMINI_API_KEY sugeridos automaticamente.")
         print("  nvidia - NVIDIA NIM; URL, modelo Nemotron e NVIDIA_API_KEY sugeridos automaticamente.")
         print("  openai - OpenAI; URL, modelo e OPENAI_API_KEY sugeridos automaticamente.")
         print("  outro  - qualquer endpoint compatível; informe URL, modelo e a referência da credencial.")
         return
     if locale == "es":
-        print("\nProveedores preconfigurados compatibles con la API OpenAI:")
+        print("\nProveedores conocidos compatibles con la API OpenAI:")
         print("  gemini - Google Gemini; URL, modelo y GEMINI_API_KEY sugeridos automáticamente.")
         print("  nvidia - NVIDIA NIM; URL, modelo Nemotron y NVIDIA_API_KEY sugeridos automáticamente.")
         print("  openai - OpenAI; URL, modelo y OPENAI_API_KEY sugeridos automáticamente.")
         print("  otro   - cualquier endpoint compatible; indique URL, modelo y referencia de credencial.")
         return
-    print("\nPreconfigured OpenAI-compatible providers:")
+    print("\nWell-known OpenAI-compatible providers:")
     print("  gemini - Google Gemini; suggests its URL, model, and GEMINI_API_KEY.")
     print("  nvidia - NVIDIA NIM; suggests its URL, Nemotron model, and NVIDIA_API_KEY.")
     print("  openai - OpenAI; suggests its URL, model, and OPENAI_API_KEY.")
@@ -636,7 +636,16 @@ def _collect_providers(root: Path, locale: str, existing: ProjectConfig | None) 
             credential_ref = _write_credential_file(root, name, secret)
         else:
             mode = "env" if method == "env" else "file-ref"
-            default_ref = preset[2] if mode == "env" and preset else ""
+            if mode == "env":
+                default_ref = preset[2] if preset else ""
+            else:
+                local_ref = Path(".credentials/llm") / f"{name}.key"
+                local_candidate = root.resolve() / local_ref
+                default_ref = (
+                    local_ref.as_posix()
+                    if local_candidate.is_file() and not local_candidate.is_symlink()
+                    else ""
+                )
             credential_ref = ""
             while not credential_ref:
                 label = "Nome da variável de ambiente" if mode == "env" and locale == "pt-BR" else _message(locale, "provider_ref")

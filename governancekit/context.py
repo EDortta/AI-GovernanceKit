@@ -187,6 +187,29 @@ def _excluded(path: str, patterns: Sequence[str]) -> bool:
     return any(candidate.match(pattern) for pattern in patterns)
 
 
+def _with_project_override(root: Path, rel: str, text: str) -> tuple[str, tuple[str, ...]]:
+    """Compose a managed governance module with a project-owned addendum.
+
+    Managed AI-Agents files stay immutable. A project can augment one by creating
+    docs/ai-governance/overrides/<basename>. The addendum never replaces the base.
+    """
+    if not (rel == "AGENTS.md" or rel.startswith(".docs/agents/") or rel.startswith(".docs/workflows/")):
+        return text, ()
+    override = root / "docs/ai-governance/overrides" / Path(rel).name
+    if not override.is_file() or override.is_symlink():
+        return text, ()
+    try:
+        override.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise ContextError(f"project governance override escapes repository root: {override}") from exc
+    addition = override.read_text(encoding="utf-8")
+    if not addition.strip():
+        return text, ()
+    return text.rstrip() + "\n\n# Project Addendum\n\n" + addition.strip() + "\n", (
+        f"project-override:{override.relative_to(root).as_posix()}",
+    )
+
+
 def _markdown_sections(text: str) -> list[tuple[str, int, int, str]]:
     matches = list(re.finditer(r"(?m)^(#{1,6})\s+(.+?)\s*$", text))
     sections: list[tuple[str, int, int, str]] = []
@@ -412,6 +435,7 @@ def build_context(
             warnings.append(message)
             continue
         text = path.read_text(encoding="utf-8")
+        text, override_provenance = _with_project_override(root, rel, text)
         content, provenance = _select_content(
             text,
             str(entry["mode"]),
@@ -431,7 +455,15 @@ def build_context(
         if category not in category_budgets or category == "reserve":
             raise ContextError(f"source {rel} references unbudgeted category: {category}")
         candidates.append(
-            Source(rel, category, tokens, required, str(entry["mode"]), content, provenance)
+            Source(
+                rel,
+                category,
+                tokens,
+                required,
+                str(entry["mode"]),
+                content,
+                tuple(provenance) + override_provenance,
+            )
         )
         seen_paths.add(path)
 
@@ -493,6 +525,58 @@ def build_context(
     if write_telemetry:
         _write_telemetry(root, manifest, result, issue_abs)
     return result
+
+
+def estimate_all_tasks(
+    root: Path,
+    *,
+    manifest_path: Path | None = None,
+    counter: TokenCounter | None = None,
+) -> list[ContextResult]:
+    """Estimate every declared task profile without writing telemetry or content."""
+    root = root.resolve()
+    counter = counter or DeterministicTokenCounter()
+    manifest = load_manifest(root, manifest_path)
+    tasks = manifest.get("tasks", {})
+    if not isinstance(tasks, dict) or not tasks:
+        raise ContextError("context manifest declares no tasks")
+    return [
+        build_context(
+            root,
+            str(task),
+            manifest_path=manifest_path,
+            counter=counter,
+            write_telemetry=False,
+            strict=False,
+        )
+        for task in tasks
+    ]
+
+
+def format_context_estimate(results: Sequence[ContextResult], *, source: str) -> str:
+    lines = [f"Context estimate ({source})"]
+    for result in results:
+        usage = (result.total_tokens / result.budget * 100) if result.budget else 0.0
+        base = result.category_tokens.get("base_contracts", 0)
+        lines.extend([
+            "",
+            result.task,
+            f"  estimated tokens: {result.total_tokens}",
+            f"  budget: {result.budget}",
+            f"  usable budget: {result.usable_budget}",
+            f"  usage: {usage:.1f}%",
+            f"  base contracts: {base}",
+            f"  sources: {len(result.sources)}",
+            f"  exceeded: {'yes' if result.exceeded else 'no'}",
+        ])
+        largest = sorted(result.sources, key=lambda item: item.tokens, reverse=True)[:5]
+        if largest:
+            lines.append("  largest contributors:")
+            for item in largest:
+                lines.append(f"    - {item.path}: {item.tokens}")
+        for violation in result.hard_violations:
+            lines.append(f"  violation: {violation}")
+    return "\n".join(lines)
 
 
 def _work_id(issue: Path | None) -> str:

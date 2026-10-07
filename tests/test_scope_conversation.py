@@ -253,3 +253,27 @@ def test_scope_conversation_reuses_pending_configuration_as_defaults(tmp_path: P
     assert conversation.capability_domains == {"manage-sessions": "sessions"}
     assert conversation.scope_summary == "Existing scope."
     assert "configuração salva ou pendente" in capsys.readouterr().out
+
+
+def test_provider_file_method_defaults_to_existing_local_key(tmp_path: Path, monkeypatch) -> None:
+    credential = tmp_path / ".credentials/llm/openai.key"
+    credential.parent.mkdir(parents=True)
+    credential.write_text("secret\n", encoding="utf-8")
+
+    answers = iter([
+        "y",          # configure providers
+        "openai",     # name
+        "",           # purpose
+        "",           # role
+        "file",       # credential method
+        "",           # accept detected default credential path
+        "",           # base URL preset
+        "",           # model preset
+        "n",          # no additional provider
+    ])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    providers = _collect_providers(tmp_path, "en", None)
+
+    assert providers[0].mode == "file-ref"
+    assert providers[0].credential_ref == ".credentials/llm/openai.key"

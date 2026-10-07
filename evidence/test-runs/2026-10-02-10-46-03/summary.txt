@@ -1,0 +1,4 @@
+timestamp=2026-10-02-10-46-03
+exit_code=1
+result=FAIL
+evidence_dir=evidence/test-runs/2026-10-02-10-46-03

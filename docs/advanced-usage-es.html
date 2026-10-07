@@ -33,6 +33,7 @@
     <table><tbody>
       <tr><td><code>--root PATH</code></td><td>Selecciona el repositorio. Es global, debe aparecer antes del comando y usa el directorio actual por defecto.</td></tr>
       <tr><td><code>--version</code></td><td>Muestra las versiones de GovernanceKit, AI-Agents predeterminada y AI-Agents del proyecto, incluido el estado de actualización.</td></tr>
+      <tr><td><code>--development</code></td><td>Usa explícitamente la línea v2 aún no publicada de AI-Agents y registra esa procedencia en la configuración del proyecto. Nunca se presenta como una release publicada.</td></tr>
       <tr><td><code>-h</code>, <code>--help</code></td><td>Muestra la ayuda global o del comando seleccionado.</td></tr>
     </tbody></table>
   </section>
@@ -54,6 +55,22 @@ governancekit --root /proyecto install-agents --upgrade</code></pre>
       <tr><td><code>--install-awt</code></td><td>Instala el helper descargado <code>agent-worktree.sh</code> en PATH.</td></tr>
       <tr><td><code>--track</code></td><td>Mantiene la documentación del kit rastreada por Git y guarda la elección.</td></tr>
       <tr><td><code>--no-track</code></td><td>Mantiene esa documentación fuera de Git; incompatible con <code>--track</code>.</td></tr>
+    </tbody></table>
+  </section>
+
+
+  <section>
+    <h2><code>change-gate</code></h2>
+    <pre><code>governancekit --root /proyecto change-gate \
+  --contract docs/ai-governance/changes/WK-YYYYMMDD-ejemplo.yaml
+
+governancekit --root /proyecto change-gate \
+  --contract docs/ai-governance/changes/WK-YYYYMMDD-ejemplo.yaml \
+  --staged --json</code></pre>
+    <table><tbody>
+      <tr><td><code>--contract PATH</code></td><td>Contrato obligatorio de cambio de AI-Agents v2 dentro del proyecto.</td></tr>
+      <tr><td><code>--staged</code></td><td>Valida solo los cambios staged en lugar de todo el árbol de trabajo.</td></tr>
+      <tr><td><code>--json</code></td><td>Emite el resultado estructurado para CI.</td></tr>
     </tbody></table>
   </section>
 
@@ -200,5 +217,11 @@ governancekit --root /proyecto doctor</code></pre>
   </section>
 </main>
 <footer><main>AI GovernanceKit · documentación avanzada · <a href="./index.html">volver a la landing page</a></main></footer>
+<p><code>llm test --credentials-dir PATH</code>: prueba proveedores conocidos usando archivos de credenciales de un directorio externo, sin copiar los secretos al proyecto.</p>
+<p><code>adoption sources --source FILE_OR_DIRECTORY</code>: guarda una o más fuentes de documentación elegidas por el operador para el análisis selectivo; repita <code>--source</code> para archivos o directorios adicionales.</p>
+<p><code>adoption sources --select 1,3-5</code>: selecciona entradas numeradas del descubrimiento; sin <code>--source</code> ni <code>--select</code>, abre selección interactiva.</p>
+<p><code>adoption apply --track-managed</code> / <code>--no-track-managed</code>: elige si los módulos administrados de AI-Agents se versionan; las reglas propias en <code>docs/ai-governance/overrides/</code> siguen perteneciendo al proyecto.</p>
+<p><code>adoption remove --apply</code>: aplica la eliminación conservadora de los archivos administrados después de generar el plan y la copia de seguridad.</p>
+<p><code>adoption describe --fact CLAVE=VALOR</code>: genera una propuesta en <code>.gk/adoption/</code> sin modificar la documentación del proyecto. Use <code>adoption describe --from-sources</code> para inferir la propuesta a partir de las fuentes de adopción elegidas por el operador más el descubrimiento determinista del proyecto. Use <code>--show</code> para revisarla, <code>--accept</code> para promoverla a <code>docs/software-overview.md</code> y <code>--reject</code> para descartarla.</p>
 </body>
 </html>

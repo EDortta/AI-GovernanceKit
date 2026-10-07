@@ -33,7 +33,7 @@ def test_finds_project_manifest_from_nested_directory(tmp_path: Path) -> None:
                 "schema_version": 1,
                 "ai_agents": {"repo": REPO, "ref": DEFAULT_REF},
                 "governancekit": {
-                    "version_range": ">=0.2.2,<0.4.0",
+                    "version_range": ">=2.3.0,<3.0.0",
                     "required_features": ["version-reporting"],
                 },
             }
@@ -71,7 +71,7 @@ def test_human_format_contains_all_versions(tmp_path: Path) -> None:
                 "schema_version": 1,
                 "ai_agents": {"repo": REPO, "ref": DEFAULT_REF},
                 "governancekit": {
-                    "version_range": ">=0.2.2,<0.4.0",
+                    "version_range": ">=2.3.0,<3.0.0",
                     "required_features": ["version-reporting"],
                 },
             }

@@ -59,6 +59,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Repository root to inspect. Defaults to the current directory.",
     )
     parser.add_argument(
+        "--development",
+        action="store_true",
+        help=(
+            "Use the unreleased AI-Agents v2 development line explicitly. "
+            "Development provenance is persisted in project configuration."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="store_true",
         dest="show_version",
@@ -75,6 +83,28 @@ def build_parser() -> argparse.ArgumentParser:
         dest="as_json",
         action="store_true",
         help="Output results as JSON (useful for CI scripts).",
+    )
+
+    change_gate_parser = subparsers.add_parser(
+        "change-gate",
+        help="Validate current writes against an AI-Agents v2 change contract.",
+    )
+    change_gate_parser.add_argument(
+        "--contract",
+        type=Path,
+        required=True,
+        help="Project-relative path to docs/ai-governance/changes/<work_id>.yaml.",
+    )
+    change_gate_parser.add_argument(
+        "--staged",
+        action="store_true",
+        help="Validate only the staged diff instead of all working-tree changes.",
+    )
+    change_gate_parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="Output the gate result as JSON.",
     )
 
     concurrency_parser = subparsers.add_parser(
@@ -176,10 +206,117 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also move ~/Sync/agent-log.md to XDG state (refused if a canonical log exists).",
     )
 
+    llm_parser = subparsers.add_parser(
+        "llm", help="Configure and inspect the project's LLM analysis provider."
+    )
+    llm_commands = llm_parser.add_subparsers(dest="llm_command", required=True)
+    llm_commands.add_parser("configure", help="Configure a project-local LLM provider and credential reference.")
+    llm_commands.add_parser("show", help="Show configured LLM providers without reading secrets.")
+    llm_select = llm_commands.add_parser(
+        "select", help="Select a tested well-known provider using an external credential directory."
+    )
+    llm_select.add_argument("provider", choices=["gemini", "nvidia", "openai"])
+    llm_select.add_argument(
+        "--credentials-dir",
+        type=Path,
+        required=True,
+        help="External directory containing provider credential files.",
+    )
+    llm_test = llm_commands.add_parser("test", help="Test configured LLM providers without exposing credentials.")
+    llm_test.add_argument(
+        "--credentials-dir",
+        type=Path,
+        default=None,
+        help="Optionally test well-known providers using credential files from this external directory.",
+    )
+    llm_test.add_argument("--json", action="store_true", dest="as_json")
+
+    adoption_parser = subparsers.add_parser(
+        "adoption", help="Plan selective AI-Agents adoption for this project."
+    )
+    adoption_commands = adoption_parser.add_subparsers(dest="adoption_command", required=True)
+    adoption_commands.add_parser(
+        "discover", help="Discover likely project documentation sources without writing project state."
+    )
+    adoption_sources = adoption_commands.add_parser(
+        "sources", help="Save the operator-selected documentation sources for adoption analysis."
+    )
+    adoption_sources.add_argument(
+        "--source", action="append", default=[], help="Project-relative file or directory; repeat as needed."
+    )
+    adoption_sources.add_argument(
+        "--select", default=None, help="Select numbered discovery entries, e.g. 1,3-5."
+    )
+    adoption_describe = adoption_commands.add_parser(
+        "describe",
+        help="Create, review, accept or reject a project-description proposal without implicit project writes.",
+    )
+    adoption_describe.add_argument(
+        "--fact",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Operator-supplied project fact. Repeat as needed.",
+    )
+    adoption_describe.add_argument(
+        "--from-sources",
+        action="store_true",
+        help="Infer the description from previously selected adoption sources plus deterministic discovery.",
+    )
+    adoption_describe.add_argument(
+        "--show",
+        action="store_true",
+        help="Show the saved proposal without changing project documentation.",
+    )
+    adoption_describe.add_argument(
+        "--accept",
+        action="store_true",
+        help="Promote the reviewed proposal to docs/software-overview.md.",
+    )
+    adoption_describe.add_argument(
+        "--reject",
+        action="store_true",
+        help="Discard the saved proposal and facts without changing project documentation.",
+    )
+    adoption_commands.add_parser(
+        "analyze", help="Rank the complete AI-Agents governance catalog from selected project sources."
+    )
+    adoption_apply = adoption_commands.add_parser(
+        "apply", help="Copy only modules marked selected=true in the reviewed adoption plan."
+    )
+    managed_tracking = adoption_apply.add_mutually_exclusive_group()
+    managed_tracking.add_argument(
+        "--track-managed", action="store_true", dest="track_managed", default=None,
+        help="Keep managed AI-Agents files visible to git."
+    )
+    managed_tracking.add_argument(
+        "--no-track-managed", action="store_false", dest="track_managed", default=None,
+        help="Ignore managed AI-Agents files while leaving project overrides trackable."
+    )
+    adoption_commands.add_parser(
+        "reassess", help="Repeat analysis using the previously selected documentation sources."
+    )
+    adoption_remove = adoption_commands.add_parser(
+        "remove", help="Plan or apply conservative removal of managed AI-Agents files."
+    )
+    adoption_remove.add_argument(
+        "--apply", action="store_true", help="Apply the reviewed removal plan after creating a backup."
+    )
+    adoption_plan = adoption_commands.add_parser(
+        "plan",
+        help="Legacy one-shot recommendation; prefer discover -> sources -> analyze -> apply.",
+    )
+    adoption_plan.add_argument("--json", action="store_true", dest="as_json")
+
     context_parser = subparsers.add_parser(
         "context", help="Advanced: deterministic task context tools (see below)."
     )
     context_commands = context_parser.add_subparsers(dest="context_command", required=True)
+    estimate_parser = context_commands.add_parser(
+        "estimate",
+        help="Estimate all declared task profiles without modifying the project.",
+    )
+    estimate_parser.add_argument("--json", action="store_true", dest="as_json")
     for command in ("inspect", "build"):
         command_parser = context_commands.add_parser(command)
         command_parser.add_argument("--task", default="implementation")
@@ -201,13 +338,16 @@ def build_parser() -> argparse.ArgumentParser:
         "install-agents",
         help="Install AI-Agents kit (github.com/EDortta/AI-Agents) into the project.",
     )
-    from .install_agents import DEFAULT_REF, REPO
+    from .install_agents import DEFAULT_REF, DEVELOPMENT_REF, REPO
 
     install_parser.add_argument(
         "--ref",
         default=DEFAULT_REF,
         metavar="REF",
-        help=f"Git ref (branch, tag, or commit) to download. Default: {DEFAULT_REF} (checksum-verified).",
+        help=(
+            f"Git ref (branch, tag, or commit) to download. Default: {DEFAULT_REF} "
+            f"(checksum-verified); with --development: {DEVELOPMENT_REF}."
+        ),
     )
     install_parser.add_argument(
         "--repo",
@@ -514,7 +654,396 @@ def format_resume(result) -> str:
     return "\n".join(lines)
 
 
+def _run_llm(args) -> int:
+    from .project_config import apply_project_config_plan, build_project_config_plan, load_project_config
+    from .scope_conversation import _collect_providers, _detected_providers, resolve_locale
+
+    root = args.root.resolve()
+    if args.llm_command == "select":
+        from .llm_select import select_well_known_provider
+
+        try:
+            provider, written = select_well_known_provider(
+                root,
+                args.provider,
+                args.credentials_dir,
+                development=args.development,
+            )
+        except RuntimeError as exc:
+            print(f"LLM selection error: {exc}")
+            return 2
+        print("AI GovernanceKit LLM provider selected")
+        print(f"  primary: {provider.name} / {provider.model}")
+        print(f"  credential ref: {provider.credential_ref}")
+        for path in written:
+            print(f"  wrote: {path}")
+        return 0
+
+    if args.llm_command == "test":
+        from .llm_test import (
+            check_configured_providers,
+            check_well_known_from_directory,
+            format_llm_test,
+        )
+
+        try:
+            results = (
+                check_well_known_from_directory(args.credentials_dir)
+                if args.credentials_dir is not None
+                else check_configured_providers(root)
+            )
+        except RuntimeError as exc:
+            if getattr(args, "as_json", False):
+                print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+            else:
+                print(f"LLM test error: {exc}")
+            return 2
+        if getattr(args, "as_json", False):
+            print(json.dumps({
+                "ok": all(item.ok for item in results) if results else False,
+                "providers": [item.as_dict() for item in results],
+            }, sort_keys=True, ensure_ascii=False))
+        else:
+            print(format_llm_test(results))
+        return 0 if results and all(item.ok for item in results) else 1
+
+    if args.llm_command == "show":
+        config = load_project_config(root)
+        providers = [] if config is None else [p for p in config.providers if p.mode != "manual"]
+        print("AI GovernanceKit LLM configuration")
+        if not providers:
+            print("  no LLM provider configured")
+            return 1
+        for provider in providers:
+            print(
+                f"  {provider.role}: {provider.name} / {provider.model or '(unset)'} "
+                f"[{provider.mode}: {provider.credential_ref or '(unset)'}]"
+            )
+        return 0
+
+    existing = load_project_config(root)
+    locale = resolve_locale(root=root)
+
+    saved = [] if existing is None else [p for p in existing.providers if p.mode != "manual"]
+    detected = _detected_providers(root)
+    print("AI GovernanceKit LLM configuration preflight")
+    print(f"  root: {root}")
+    if saved:
+        print("  saved configuration:")
+        for provider in saved:
+            print(
+                f"    - {provider.role}: {provider.name} / {provider.model or '(unset)'} "
+                f"[{provider.mode}: {provider.credential_ref or '(unset)'}]"
+            )
+    else:
+        print("  saved configuration: none")
+    if detected:
+        print("  detected local credentials:")
+        for provider in detected:
+            print(
+                f"    - {provider.name}: {provider.credential_ref} "
+                f"({provider.model or '(unset)'})"
+            )
+    else:
+        print("  detected local credentials: none")
+
+    try:
+        providers = _collect_providers(root, locale, existing)
+    except (EOFError, KeyboardInterrupt, RuntimeError) as exc:
+        print(f"LLM configuration stopped: {exc}")
+        return 2
+    plan = build_project_config_plan(
+        root,
+        provider_configs=providers,
+        development=args.development,
+    )
+    written = apply_project_config_plan(plan)
+    print("AI GovernanceKit LLM configuration saved")
+    for path in written:
+        print(f"  wrote: {path}")
+    for provider in plan.config.providers:
+        if provider.mode != "manual":
+            print(
+                f"  {provider.role}: {provider.name} / {provider.model or '(unset)'} "
+                f"[credential ref: {provider.credential_ref or '(unset)'}]"
+            )
+    return 0
+
+
+def _run_adoption(args) -> int:
+    if args.adoption_command == "describe":
+        from .adoption_flow import (
+            accept_description_proposal,
+            build_description_from_sources,
+            build_description_proposal,
+            load_description_proposal,
+            reject_description_proposal,
+        )
+
+        modes = sum(bool(value) for value in (args.show, args.accept, args.reject))
+        if modes > 1:
+            print("Adoption describe error: choose only one of --show, --accept, or --reject")
+            return 2
+        if args.from_sources and args.fact:
+            print("Adoption describe error: --from-sources cannot be combined with --fact")
+            return 2
+        if args.from_sources and modes:
+            print("Adoption describe error: --from-sources cannot be combined with --show, --accept, or --reject")
+            return 2
+
+        try:
+            if args.show:
+                print(load_description_proposal(args.root))
+                return 0
+            if args.accept:
+                target = accept_description_proposal(args.root)
+                print("AI GovernanceKit project description accepted")
+                print(f"  wrote: {target.relative_to(args.root.resolve())}")
+                return 0
+            if args.reject:
+                removed = reject_description_proposal(args.root)
+                print(
+                    "AI GovernanceKit project description proposal rejected"
+                    if removed
+                    else "AI GovernanceKit project description proposal: nothing to reject"
+                )
+                return 0
+
+            from .adoption import configured_adoption_provider, provider_label
+            from .llm_test import check_configured_providers
+
+            provider = configured_adoption_provider(args.root)
+            if provider is None:
+                raise RuntimeError(
+                    "no configured primary LLM provider; run 'governancekit --root PROJECT llm configure' "
+                    "or select a tested provider, then run 'governancekit --root PROJECT llm test'"
+                )
+            checks = check_configured_providers(args.root)
+            matching = [
+                item for item in checks
+                if item.name == provider.name and item.model == provider.model
+            ]
+            if not matching or not matching[0].ok:
+                detail = matching[0].detail if matching else "configured primary provider was not tested"
+                raise RuntimeError(
+                    f"primary LLM provider {provider_label(provider)} is not ready: {detail}; "
+                    "fix the provider and verify with 'governancekit --root PROJECT llm test'"
+                )
+            print(f"LLM ready: {provider_label(provider)}")
+
+            if args.from_sources:
+                proposal = build_description_from_sources(args.root)
+                print("AI GovernanceKit project description proposal")
+                print("--[BEGIN]----")
+                print(proposal)
+                print("--[FINISH]----")
+                print("proposal: .gk/adoption/description-proposal.md")
+                print("source: operator-selected adoption sources + deterministic discovery")
+                print("No project documentation was changed.")
+                print("Review/edit the proposal, then run adoption describe --accept or --reject.")
+                return 0
+
+            facts: dict[str, str] = {}
+            for entry in args.fact:
+                key, separator, value = entry.partition("=")
+                if not separator or not key.strip() or not value.strip():
+                    raise RuntimeError("each --fact must use KEY=VALUE with a non-empty key and value")
+                facts[key.strip()] = value.strip()
+
+            if not facts:
+                if not sys.stdin.isatty():
+                    raise RuntimeError(
+                        "provide at least one --fact KEY=VALUE in non-interactive mode"
+                    )
+                prompts = (
+                    ("name", "Project name"),
+                    ("purpose", "What does the system do"),
+                    ("users", "Who uses it"),
+                    ("data", "What data does it handle"),
+                    ("integrations", "Which external integrations exist or are planned"),
+                    ("technology", "Which technologies are planned"),
+                    ("security", "Security, privacy or compliance requirements"),
+                    ("delivery", "How will it be delivered or deployed"),
+                )
+                print("AI GovernanceKit project description facts")
+                print("Leave a field empty if it is unknown or not applicable.")
+                for key, prompt in prompts:
+                    value = input(f"{prompt}: ").strip()
+                    if value:
+                        facts[key] = value
+
+            proposal = build_description_proposal(args.root, facts)
+            print("AI GovernanceKit project description proposal")
+            print()
+            print(proposal)
+            print()
+            print(f"proposal: .gk/adoption/description-proposal.md")
+            print("No project documentation was changed.")
+            print("Review/edit the proposal, then run adoption describe --accept or --reject.")
+            return 0
+        except RuntimeError as exc:
+            print(f"Adoption describe error: {exc}")
+            return 2
+
+    if args.adoption_command == "remove":
+        from .remove_agents import (
+            apply_removal_plan,
+            build_removal_plan,
+            format_removal_plan,
+            write_removal_plan,
+        )
+        try:
+            plan = build_removal_plan(args.root)
+            plan_path = write_removal_plan(args.root, plan)
+            if not args.apply:
+                print(format_removal_plan(plan))
+                print(f"plan: {plan_path.relative_to(args.root.resolve())}")
+                return 0
+            result = apply_removal_plan(args.root, plan)
+            print("AI GovernanceKit adoption removal applied")
+            print(f"  backup: {result.backup_dir.relative_to(args.root.resolve())}")
+            for path in result.removed:
+                print(f"  removed: {path}")
+            return 0
+        except (RuntimeError, ValueError) as exc:
+            print(f"Adoption remove error: {exc}")
+            return 2
+
+    if args.adoption_command in {"discover", "sources", "analyze", "apply", "reassess"}:
+        from .adoption_flow import (
+            analyze_adoption,
+            apply_adoption,
+            discover_documentation,
+            format_documentation_sources,
+            format_ranked_modules,
+            save_selected_sources,
+        )
+        try:
+            if args.adoption_command == "discover":
+                print(format_documentation_sources(discover_documentation(args.root)))
+                return 0
+            if args.adoption_command == "sources":
+                from .adoption_flow import parse_source_selection
+                selections = list(args.source)
+                discovered = discover_documentation(args.root)
+                if args.select:
+                    selections.extend(parse_source_selection(args.select, discovered))
+                if not selections:
+                    print(format_documentation_sources(discovered))
+                    answer = input("Select documentation [e.g. 1,3-5]: ").strip()
+                    selections.extend(parse_source_selection(answer, discovered))
+                selected = save_selected_sources(args.root, selections)
+                print("AI GovernanceKit adoption sources saved")
+                for path in selected:
+                    print(f"  - {path}")
+                return 0
+            if args.adoption_command in {"analyze", "reassess"}:
+                modules = analyze_adoption(args.root, development=args.development)
+                print(format_ranked_modules(modules))
+                return 0
+            written = apply_adoption(
+                args.root,
+                development=args.development,
+                track_managed=getattr(args, "track_managed", None),
+            )
+            print("AI GovernanceKit selective adoption applied")
+            for path in written:
+                print(f"  wrote: {path}")
+            return 0
+        except RuntimeError as exc:
+            print(f"Adoption {args.adoption_command} error: {exc}")
+            return 2
+
+    from .adoption_selection import (
+        build_adoption_selection_plan,
+        format_adoption_selection_plan,
+    )
+
+    if args.adoption_command != "plan":
+        print(f"Unknown adoption command: {args.adoption_command}")
+        return 2
+    if not getattr(args, "as_json", False):
+        print(
+            "NOTE: adoption plan is the legacy one-shot flow. "
+            "Prefer: adoption discover -> adoption sources -> adoption analyze -> adoption apply."
+        )
+    try:
+        plan = build_adoption_selection_plan(args.root, development=args.development)
+    except RuntimeError as exc:
+        if getattr(args, "as_json", False):
+            print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+        else:
+            message = str(exc)
+
+            if ":" in message:
+                title, details = message.split(":", 1)
+
+                print(f"Adoption plan error: {title.strip()}")
+
+                items = [item.strip() for item in details.split(",") if item.strip()]
+                for item in items:
+                    print(f"  - {item}")
+            else:
+                print(f"Adoption plan error: {message}")
+                
+        return 2
+    if getattr(args, "as_json", False):
+        print(json.dumps(plan.as_dict(), sort_keys=True, ensure_ascii=False))
+    else:
+        print(format_adoption_selection_plan(plan))
+    return 0
+
+
 def _run_context(args) -> int:
+    if args.context_command == "estimate":
+        import tempfile
+
+        from .context import (
+            DeterministicTokenCounter,
+            estimate_all_tasks,
+            format_context_estimate,
+        )
+        from .install_agents import DEFAULT_REF, DEVELOPMENT_REF, REPO, _download
+
+        target_manifest = args.root.resolve() / ".docs/context-manifest.yaml"
+        source_label = "installed project"
+        estimate_root = args.root.resolve()
+        temporary = None
+        try:
+            if not target_manifest.is_file():
+                selected_ref = DEVELOPMENT_REF if args.development else DEFAULT_REF
+                temporary = tempfile.TemporaryDirectory()
+                estimate_root = _download(
+                    REPO,
+                    selected_ref,
+                    Path(temporary.name),
+                    allow_unverified=args.development,
+                )
+                source_label = f"target AI-Agents {selected_ref} (pre-adoption)"
+            results = estimate_all_tasks(
+                estimate_root,
+                counter=DeterministicTokenCounter(),
+            )
+        except (ContextError, RuntimeError) as exc:
+            if getattr(args, "as_json", False):
+                print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+            else:
+                print(f"Context estimate error: {exc}")
+            return 2
+        finally:
+            if temporary is not None:
+                temporary.cleanup()
+
+        if getattr(args, "as_json", False):
+            print(json.dumps({
+                "ok": True,
+                "source": source_label,
+                "profiles": [result.as_dict(include_content=False) for result in results],
+            }, sort_keys=True, ensure_ascii=False))
+        else:
+            print(format_context_estimate(results, source=source_label))
+        return 1 if any(result.exceeded or result.hard_violations for result in results) else 0
+
     if args.context_command == "telemetry":
         from .context import prune_telemetry
 
@@ -557,6 +1086,31 @@ def _run_doctor(args) -> int:
         print(format_doctor_json(result))
     else:
         print(format_doctor(result))
+    return 0 if result.ok else 1
+
+
+def _run_change_gate(args) -> int:
+    from .change_gate import ChangeGateError, evaluate_change_gate
+
+    try:
+        result = evaluate_change_gate(args.root, args.contract, staged_only=args.staged)
+    except ChangeGateError as exc:
+        if getattr(args, "as_json", False):
+            print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+        else:
+            print(f"Change gate error: {exc}")
+        return 2
+
+    if getattr(args, "as_json", False):
+        print(json.dumps(result.as_dict(), sort_keys=True, ensure_ascii=False))
+    else:
+        print(f"Change gate: {'PASS' if result.ok else 'FAIL'}")
+        print(f"  contract: {result.contract}")
+        print(f"  changed files: {len(result.changed_files)}")
+        for warning in result.warnings:
+            print(f"  warning: {warning}")
+        for violation in result.violations:
+            print(f"  violation: {violation}")
     return 0 if result.ok else 1
 
 
@@ -620,11 +1174,18 @@ def _run_install_agents(args) -> int:
     if sum(bool(m) for m in modes) > 1:
         parser.error("--force, --upgrade, and --docs-only are mutually exclusive.")
     print(f"AI GovernanceKit {__version__} · install-agents")
-    from .install_agents import run_install_agents
+    from .install_agents import DEFAULT_REF, DEVELOPMENT_REF, run_install_agents
+    selected_ref = (
+        DEVELOPMENT_REF
+        if args.development and args.ref == DEFAULT_REF
+        else args.ref
+    )
+    if args.development:
+        print(f"development mode: AI-Agents ref {selected_ref}")
     try:
         result = run_install_agents(
             args.root,
-            ref=args.ref,
+            ref=selected_ref,
             repo=args.repo,
             force=args.force,
             upgrade=args.upgrade,
@@ -632,6 +1193,7 @@ def _run_install_agents(args) -> int:
             migrate_content=args.migrate_content,
             track=args.track,
             install_awt=args.install_awt,
+            allow_unverified=args.development,
         )
     except RuntimeError as exc:
         print(f"ERROR: {exc}", flush=True)
@@ -953,6 +1515,7 @@ def _run_configure_project(args) -> int:
         capabilities=args.capabilities,
         agents=args.agents,
         provider_names=args.providers,
+        development=args.development,
     )
     if args.project_command == "plan":
         if getattr(args, "as_json", False):
@@ -1161,9 +1724,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(format_version(get_version_info(args.root)))
         return 0
     if args.command is None:
-        parser.print_help()
-        print("\ngovernancekit: error: a command is required")
-        return 2
+        if not sys.stdin.isatty():
+            parser.print_help()
+            print("\ngovernancekit: error: a command is required")
+            return 2
+        try:
+            assert_governable_root(args.root)
+        except UnsafeRootError as exc:
+            print(f"Unsafe --root: {exc}", file=sys.stderr)
+            return 2
+        from .wizard import run_wizard
+        return run_wizard(
+            args.root.resolve(),
+            development=args.development,
+            execute=lambda nested: main(list(nested)),
+        )
 
     try:
         assert_governable_root(args.root)
@@ -1412,10 +1987,13 @@ def _run_council(args) -> int:
 
 _COMMANDS = {
     "context": _run_context,
+    "llm": _run_llm,
+    "adoption": _run_adoption,
     "author-context": _run_author_context,
     "concurrency": _run_concurrency,
     "council": _run_council,
     "doctor": _run_doctor,
+    "change-gate": _run_change_gate,
     "discover": _run_discover,
     "map": _run_map,
     "resume": _run_resume,

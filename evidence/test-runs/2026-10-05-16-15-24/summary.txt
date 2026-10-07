@@ -1,0 +1,4 @@
+timestamp=2026-10-05-16-15-24
+exit_code=0
+result=PASS
+evidence_dir=evidence/test-runs/2026-10-05-16-15-24

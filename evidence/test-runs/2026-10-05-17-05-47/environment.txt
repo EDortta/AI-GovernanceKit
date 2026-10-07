@@ -1,0 +1,36 @@
+AI-GovernanceKit test evidence
+timestamp=2026-10-05-17-05-47
+root=/home/esteban/Sync/Projects/AI-GovernanceKit-v2
+branch=feature/v2-change-gate
+head=4456b4a9420db8d2770cccbc37ba016d89a9b1f5
+python3=/usr/bin/python3
+Python 3.10.12
+
+[git status before]
+ M evidence/test-runs/LATEST
+?? evidence/test-runs/2026-10-05-11-43-02/
+?? evidence/test-runs/2026-10-05-12-02-52/
+?? evidence/test-runs/2026-10-05-12-06-59/
+?? evidence/test-runs/2026-10-05-12-14-05/
+?? evidence/test-runs/2026-10-05-16-15-24/
+?? evidence/test-runs/2026-10-05-16-43-28/
+?? evidence/test-runs/2026-10-05-16-48-30/
+?? evidence/test-runs/2026-10-05-17-05-47/
+?? projetos-alvo-testes.txt
+
+[isolated interpreter]
+sys.executable=/home/esteban/Sync/Projects/AI-GovernanceKit-v2/.venv/bin/python
+governancekit.__file__=/home/esteban/Sync/Projects/AI-GovernanceKit-v2/governancekit/__init__.py
+governancekit.__version__=2.3.0
+
+[git status after]
+ M evidence/test-runs/LATEST
+?? evidence/test-runs/2026-10-05-11-43-02/
+?? evidence/test-runs/2026-10-05-12-02-52/
+?? evidence/test-runs/2026-10-05-12-06-59/
+?? evidence/test-runs/2026-10-05-12-14-05/
+?? evidence/test-runs/2026-10-05-16-15-24/
+?? evidence/test-runs/2026-10-05-16-43-28/
+?? evidence/test-runs/2026-10-05-16-48-30/
+?? evidence/test-runs/2026-10-05-17-05-47/
+?? projetos-alvo-testes.txt

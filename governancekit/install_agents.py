@@ -19,6 +19,7 @@ REPO = "EDortta/AI-Agents"
 # reproducible and can be checksum-verified. Bump alongside KNOWN_TARBALL_SHA256
 # when a new AI-Agents release is adopted.
 DEFAULT_REF = "v1.2.1"
+DEVELOPMENT_REF = "feature/v2-change-governance"
 
 # codeload.github.com tarball SHA-256 for (repo, ref) pairs we can vouch for.
 # Only the upstream default repo/ref is pinned here; a custom --repo/--ref
@@ -543,8 +544,9 @@ def _download(repo: str, ref: str, tmp: Path, *, allow_unverified: bool = False)
             )
     elif allow_unverified:
         print(
-            f"Warning: no known checksum for {repo}@{ref} — installing unverified "
-            "because --allow-unverified was given.",
+            f"Development AI-Agents ref: {repo}@{ref}\n"
+            "  no pinned checksum exists for this mutable development ref\n"
+            "  download allowed because development mode explicitly accepts an unpinned ref",
             file=sys.stderr,
         )
     else:

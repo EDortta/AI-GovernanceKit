@@ -10,6 +10,26 @@ upgrade indication when the installed semantic version is older.
 
 AI GovernanceKit is a local-first runtime orchestration toolkit for agentic software work.
 
+## Interactive front door
+
+For normal occasional use, run only:
+
+```bash
+governancekit
+```
+
+In an interactive terminal this opens a text-mode project assistant. It shows the
+current project state, recommends the next step, and lets the operator navigate
+LLM setup/testing, documentation discovery and selection, project-description
+review, governance-module analysis, adoption, and health checks without memorizing
+subcommands.
+
+All existing subcommands remain available as the advanced/scriptable interface.
+The interactive assistant calls those same commands internally; it is a navigation
+layer, not a second implementation. In non-interactive execution, a bare
+`governancekit` still prints help and exits rather than prompting.
+
+
 The project turns repository governance rules into executable workflows that can be reused by CLI tools, IDE agents, MCP-compatible agents, and CI jobs. Its first responsibility is not to replace coding agents, but to make their work predictable: restore context, validate boundaries, run checks, collect evidence, and close sessions consistently.
 
 ## Product Shape
@@ -47,6 +67,13 @@ Three CLI commands are available:
 - **`governancekit resume`** — run at the start of every session. Prints the active work_id, branch, status, and next step from RESUME.md, plus the most recent handoff summary. Both agents and humans run this before touching code.
 
 - **`governancekit doctor`** — validates the governance scaffold (required files, readiness flags, active issue, secret tracking). Fix every `[FAIL]` before starting work. `[HINT]` lines are advisory — address when convenient. Use `--json` for CI integration: `governancekit doctor --json | jq '.ok'`
+
+- **`governancekit change-gate`** — AI-Agents v2 write-boundary gate. It validates a project-owned change contract and rejects changed files outside `write_scope`, any file in `forbidden_scope`, malformed contracts, and undeclared cross-domain writes.
+
+```bash
+governancekit change-gate --contract docs/ai-governance/changes/WK-20261001-example.yaml
+governancekit change-gate --contract docs/ai-governance/changes/WK-20261001-example.yaml --staged --json
+```
 
 - **`governancekit map`** — generates `docs/codemap.md`: a Markdown index of the project's file tree, entry points, and Python symbol index. AI agents read this file at session start instead of re-scanning the codebase. Run after significant changes and commit the result.
 

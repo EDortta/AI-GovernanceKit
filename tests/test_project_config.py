@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from governancekit import cli
+from governancekit import __version__, cli
 from governancekit.project_config import (
     _PROJECT_CONFIG_FILE,
     ProviderConfig,
@@ -23,7 +23,7 @@ def _seed_contract(root: Path) -> None:
                 "schema_version": 1,
                 "ai_agents": {"repo": "EDortta/AI-Agents", "ref": "v1.1.6"},
                 "governancekit": {
-                    "version_range": ">=0.2.2,<0.4.0",
+                    "version_range": ">=2.3.0,<3.0.0",
                     "required_features": ["version-reporting"],
                 },
             }
@@ -46,6 +46,9 @@ def test_build_plan_uses_discovery_defaults(tmp_path: Path) -> None:
     plan = build_project_config_plan(tmp_path)
 
     assert plan.config.project_state == "existing"
+    assert plan.config.governancekit_version == __version__
+    assert plan.config.governancekit_mode == "release"
+    assert plan.config.ai_agents_installed_ref is None
     assert "react" in plan.config.domains
     assert "react-runtime" in plan.config.capabilities
     assert "openai-agents" in plan.config.agents
@@ -63,6 +66,8 @@ def test_apply_writes_shareable_files(tmp_path: Path) -> None:
     loaded = load_project_config(tmp_path)
     assert loaded is not None
     assert loaded.project_name == "Demo"
+    assert loaded.governancekit_version == __version__
+    assert loaded.governancekit_mode == "release"
 
 
 def test_parse_provider_specs_supports_modes_and_refs() -> None:
@@ -128,6 +133,11 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
     assert code == 0
     output = capsys.readouterr().out
     assert "configure-project plan" in output
+    assert f"governancekit runtime: {__version__}" in output
+    assert "governancekit config snapshot:" in output
+    assert "ai-agents installed:" in output
+    assert "ai-agents target:" in output
+    assert "ai-agents stable default:" in output
     assert "backend" in output
 
     code = cli.main(
@@ -153,5 +163,49 @@ def test_cli_plan_and_apply_roundtrip(tmp_path: Path, capsys) -> None:
     assert code == 0
     current = json.loads(capsys.readouterr().out)
     assert current["project_name"] == "Sample"
+    assert current["governancekit_version"] == __version__
+    assert "ai_agents_installed_ref" in current
+    assert "ai_agents_target_ref" in current
     assert current["domains"] == ["backend"]
     assert current["providers"][0]["credential_ref"] == "OPENAI_API_KEY"
+
+
+def test_development_plan_records_unreleased_v2_provenance(tmp_path: Path) -> None:
+    from governancekit.install_agents import DEVELOPMENT_REF, REPO
+
+    plan = build_project_config_plan(tmp_path, development=True)
+
+    assert plan.config.governancekit_version == __version__
+    assert plan.config.governancekit_mode == "development"
+    assert plan.config.ai_agents_installed_ref is None
+    assert plan.config.ai_agents_installed_repo is None
+    assert plan.config.ai_agents_target_ref == DEVELOPMENT_REF
+    assert plan.config.ai_agents_target_repo == REPO
+
+
+def test_cli_development_plan_is_explicit(tmp_path: Path, capsys) -> None:
+    code = cli.main([
+        "--development",
+        "--root", str(tmp_path),
+        "configure-project", "plan",
+    ])
+
+    assert code == 0
+    output = capsys.readouterr().out
+    assert "governancekit mode: development" in output
+    assert "ai-agents installed: (not installed)" in output
+    assert "ai-agents target: feature/v2-change-governance" in output
+
+
+def test_existing_install_is_reported_separately_from_development_target(tmp_path: Path) -> None:
+    manifest = tmp_path / ".gk" / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps({"repo": "EDortta/AI-Agents", "ref": "v1.2.1"}),
+        encoding="utf-8",
+    )
+
+    plan = build_project_config_plan(tmp_path, development=True)
+
+    assert plan.config.ai_agents_installed_ref == "v1.2.1"
+    assert plan.config.ai_agents_target_ref == "feature/v2-change-governance"

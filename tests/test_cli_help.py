@@ -25,7 +25,7 @@ def test_main_without_command_prints_expanded_help() -> None:
 
     output = stdout.getvalue()
     assert code == 2
-    assert "usage: governancekit [-h] [--root ROOT] [--version]" in output
+    assert "usage: governancekit [-h] [--root ROOT] [--development] [--version]" in output
     assert "positional arguments:" in output
     assert "doctor              Validate required governance files and readiness" in output
     assert "install-agents      Install AI-Agents kit" in output
@@ -222,3 +222,162 @@ def test_root_guard_runs_before_the_handler(monkeypatch, tmp_path) -> None:
         with redirect_stderr(stderr):
             assert cli.main(["--root", str(home), command]) == 2
         assert "Unsafe --root" in stderr.getvalue()
+
+
+def test_development_is_a_global_explicit_flag() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["--development", "discover"])
+    assert args.development is True
+
+
+def test_legacy_adoption_plan_is_marked_as_legacy(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.setattr(
+        "governancekit.adoption_selection.build_adoption_selection_plan",
+        lambda *_args, **_kwargs: type("Plan", (), {"as_dict": lambda self: {}})(),
+    )
+    monkeypatch.setattr(
+        "governancekit.adoption_selection.format_adoption_selection_plan",
+        lambda _plan: "legacy-plan",
+    )
+
+    code = cli.main(["--root", str(tmp_path), "adoption", "plan"])
+    output = capsys.readouterr().out
+
+    assert code == 0
+    assert "legacy one-shot flow" in output
+    assert "adoption discover -> adoption sources -> adoption analyze -> adoption apply" in output
+
+
+def test_adoption_describe_checks_llm_before_prompting(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.setattr(cli.sys, "stdin", _InteractiveStdin())
+    prompted: list[str] = []
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: (prompted.append(prompt), "unexpected")[1],
+    )
+    monkeypatch.setattr(
+        "governancekit.adoption.configured_adoption_provider",
+        lambda _root: None,
+    )
+
+    code = cli.main(["--root", str(tmp_path), "adoption", "describe"])
+    output = capsys.readouterr().out
+
+    assert code == 2
+    assert prompted == []
+    assert "no configured primary LLM provider" in output
+    assert "llm test" in output
+
+
+def test_adoption_describe_checks_llm_health_before_prompting(monkeypatch, tmp_path, capsys) -> None:
+    from governancekit.llm_test import LlmTestResult
+    from governancekit.project_config import ProviderConfig
+
+    provider = ProviderConfig(
+        name="openai",
+        purpose="governance-adoption",
+        base_url="https://example.invalid/v1",
+        model="gpt-test",
+        mode="env",
+        credential_ref="TEST_KEY",
+        validation="reference-required",
+        role="primary",
+    )
+    monkeypatch.setattr(cli.sys, "stdin", _InteractiveStdin())
+    prompted: list[str] = []
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: (prompted.append(prompt), "unexpected")[1],
+    )
+    monkeypatch.setattr(
+        "governancekit.adoption.configured_adoption_provider",
+        lambda _root: provider,
+    )
+    monkeypatch.setattr(
+        "governancekit.llm_test.check_configured_providers",
+        lambda _root: [LlmTestResult("openai", "gpt-test", False, "credential unavailable")],
+    )
+
+    code = cli.main(["--root", str(tmp_path), "adoption", "describe"])
+    output = capsys.readouterr().out
+
+    assert code == 2
+    assert prompted == []
+    assert "primary LLM provider openai / gpt-test is not ready" in output
+    assert "credential unavailable" in output
+
+
+def test_adoption_describe_show_does_not_probe_llm(monkeypatch, tmp_path, capsys) -> None:
+    proposal = tmp_path / ".gk/adoption/description-proposal.md"
+    proposal.parent.mkdir(parents=True)
+    proposal.write_text("# Demo\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "governancekit.llm_test.check_configured_providers",
+        lambda _root: pytest.fail("--show must not probe the LLM"),
+    )
+
+    code = cli.main(["--root", str(tmp_path), "adoption", "describe", "--show"])
+    output = capsys.readouterr().out
+
+    assert code == 0
+    assert "# Demo" in output
+
+
+def test_llm_configure_preflight_shows_saved_and_detected_state(monkeypatch, tmp_path, capsys) -> None:
+    from types import SimpleNamespace
+    from governancekit.project_config import ProviderConfig
+
+    saved_provider = ProviderConfig(
+        name="openai",
+        purpose="general",
+        base_url="https://api.openai.com/v1",
+        model="gpt-5-mini",
+        mode="file-ref",
+        credential_ref=".credentials/llm/openai.key",
+        validation="reference-required",
+        role="primary",
+    )
+    config = SimpleNamespace(providers=[saved_provider])
+    detected_provider = ProviderConfig(
+        name="openai",
+        purpose="general",
+        base_url="https://api.openai.com/v1",
+        model="gpt-5-mini",
+        mode="file-ref",
+        credential_ref=".credentials/llm/openai.key",
+        validation="reference-required",
+        role="primary",
+    )
+
+    monkeypatch.setattr("governancekit.project_config.load_project_config", lambda _root: config)
+    monkeypatch.setattr(
+        "governancekit.scope_conversation._detected_providers",
+        lambda _root: [detected_provider],
+    )
+    monkeypatch.setattr(
+        "governancekit.scope_conversation._collect_providers",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    code = cli.main(["--root", str(tmp_path), "llm", "configure"])
+    output = capsys.readouterr().out
+
+    assert code == 2
+    assert "AI GovernanceKit LLM configuration preflight" in output
+    assert "saved configuration:" in output
+    assert "primary: openai / gpt-5-mini" in output
+    assert "detected local credentials:" in output
+    assert ".credentials/llm/openai.key" in output
+
+
+def test_adoption_describe_from_sources_cannot_mix_with_manual_facts(tmp_path: Path, capsys) -> None:
+    code = cli.main([
+        "--root", str(tmp_path),
+        "adoption", "describe",
+        "--from-sources",
+        "--fact", "name=Demo",
+    ])
+    output = capsys.readouterr().out
+
+    assert code == 2
+    assert "--from-sources cannot be combined with --fact" in output

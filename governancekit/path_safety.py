@@ -32,6 +32,15 @@ def assert_governable_root(root: Path) -> Path:
     resolved = root.resolve()
     home = _home()
 
+    if not resolved.exists():
+        raise UnsafeRootError(
+            f"project root does not exist: {resolved}"
+        )
+    if not resolved.is_dir():
+        raise UnsafeRootError(
+            f"project root must be a directory, not a file: {resolved}"
+        )
+
     if resolved == Path(resolved.anchor):
         raise UnsafeRootError(
             f"refusing to operate on the filesystem root: {resolved}"

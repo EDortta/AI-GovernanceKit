@@ -11,7 +11,9 @@ from governancekit.context import (
     ContextError,
     DeterministicTokenCounter,
     build_context,
+    estimate_all_tasks,
     format_context,
+    format_context_estimate,
     prune_telemetry,
 )
 
@@ -296,3 +298,34 @@ def test_telemetry_has_timestamp_and_prune_applies_retention(tmp_path: Path) -> 
     telemetry.write_text(json.dumps(old) + "\n" + json.dumps(current) + "\n")
     assert prune_telemetry(root, now=now) == 1
     assert len(telemetry.read_text().splitlines()) == 1
+
+
+def test_estimate_all_tasks_reports_every_profile_without_writes(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    results = estimate_all_tasks(root, counter=DeterministicTokenCounter())
+
+    assert [result.task for result in results] == ["implementation", "review", "council"]
+    assert not (root / ".gk/context-telemetry.jsonl").exists()
+    rendered = format_context_estimate(results, source="test")
+    assert "Context estimate (test)" in rendered
+    assert "implementation" in rendered
+    assert "estimated tokens:" in rendered
+    assert "usage:" in rendered
+
+
+def test_project_override_augments_managed_module_without_replacing_base(tmp_path: Path) -> None:
+    from governancekit.context import _with_project_override
+
+    override = tmp_path / "docs/ai-governance/overrides/security.md"
+    override.parent.mkdir(parents=True)
+    override.write_text("# Local Security\nNever send customer data externally.\n", encoding="utf-8")
+
+    content, provenance = _with_project_override(
+        tmp_path,
+        ".docs/agents/security.md",
+        "# Security\nBase kit rule.\n",
+    )
+
+    assert "Base kit rule." in content
+    assert "Never send customer data externally." in content
+    assert provenance == ("project-override:docs/ai-governance/overrides/security.md",)
