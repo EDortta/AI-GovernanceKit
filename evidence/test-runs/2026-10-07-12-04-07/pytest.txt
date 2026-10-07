@@ -1,0 +1,57 @@
+Running pytest with the .venv interpreter
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/esteban/Sync/Projects/AI-GovernanceKit-v2
+configfile: pyproject.toml
+collected 519 items
+
+tests/test_activity_monitor.py ........                                  [  1%]
+tests/test_adoption.py .......                                           [  2%]
+tests/test_adoption_flow.py .................                            [  6%]
+tests/test_adoption_selection.py ......                                  [  7%]
+tests/test_advanced_usage_docs.py .......                                [  8%]
+tests/test_agent_scope.py ..............                                 [ 11%]
+tests/test_change_gate.py ......                                         [ 12%]
+tests/test_classification.py ...                                         [ 13%]
+tests/test_cli_help.py ..................                                [ 16%]
+tests/test_codemap.py ............................                       [ 21%]
+tests/test_concurrency.py ..............                                 [ 24%]
+tests/test_config_session.py .....                                       [ 25%]
+tests/test_configure.py ................                                 [ 28%]
+tests/test_configure_identity_backed.py ....                             [ 29%]
+tests/test_context.py ............s.......                               [ 33%]
+tests/test_context_authoring.py ..................                       [ 36%]
+tests/test_council.py ...............................                    [ 42%]
+tests/test_development_download_warning.py .                             [ 42%]
+tests/test_discover.py ......                                            [ 44%]
+tests/test_doctor.py ...........................                         [ 49%]
+tests/test_doctor_advisory_scan.py ......                                [ 50%]
+tests/test_doctor_gitignore.py ............s...                          [ 53%]
+tests/test_doctor_local_sources.py ..............................        [ 59%]
+tests/test_doctor_sending_email.py ................                      [ 62%]
+tests/test_doctor_tracked_secrets.py ............                        [ 64%]
+tests/test_hooks.py ....                                                 [ 65%]
+tests/test_install_agents.py ........................................... [ 73%]
+....................                                                     [ 77%]
+tests/test_install_agents_integrity.py ........                          [ 79%]
+tests/test_install_agents_safe_extract.py ...                            [ 79%]
+tests/test_integration.py ....                                           [ 80%]
+tests/test_issue_bootstrap.py ..                                         [ 80%]
+tests/test_kit_drift.py ...........                                      [ 83%]
+tests/test_llm_diagnostic_script.py ...                                  [ 83%]
+tests/test_llm_test.py .......                                           [ 84%]
+tests/test_project_config.py ........                                    [ 86%]
+tests/test_readiness_migration.py .......                                [ 87%]
+tests/test_remove_agents.py ......                                       [ 89%]
+tests/test_remove_agents_poisoned_manifest.py .....                      [ 89%]
+tests/test_resume.py .............                                       [ 92%]
+tests/test_root_safety.py ......                                         [ 93%]
+tests/test_scope_conversation.py ..................                      [ 97%]
+tests/test_version.py .....                                              [ 98%]
+tests/test_voice.py ..                                                   [ 98%]
+tests/test_wizard.py ........                                            [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_context.py:242: companion AI-Agents checkout is not available
+SKIPPED [1] tests/test_doctor_gitignore.py:231: companion AI-Agents checkout is not available
+======================== 517 passed, 2 skipped in 6.95s ========================
